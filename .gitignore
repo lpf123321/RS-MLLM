@@ -1,0 +1,15 @@
+models/
+datasets/
+shared_data/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+__pycache__/
+*.pyc
+*.out
+*.err
+*.log
+wandb/
+
