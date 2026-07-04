@@ -4,7 +4,7 @@
 
 ```bash
 # 克隆仓库
-git clone <repo-url>
+git clone git@github.com:lpf123321/RS-MLLM.git
 cd RS-MLLM
 
 # 一键安装环境（自动建 conda 环境 + 装所有依赖）
@@ -17,9 +17,11 @@ bash setup.sh
 
 ```bash
 # 模型
+mkdir -p models
 ln -s /users/u2024311136/shared/shared_models/Qwen3-VL-2B-Instruct models/Qwen3-VL-2B-Instruct
 
 # 数据集
+mkdir -p datasets
 ln -s /users/u2024311136/shared/shared_datasets datasets
 ```
 
