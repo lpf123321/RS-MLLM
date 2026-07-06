@@ -27,21 +27,17 @@ ln -s /users/u2024311136/shared/shared_datasets datasets
 
 ## 数据预处理
 
-### VRSBench（预处理）
+### VRSBench（已完成预处理）
 
-VRSBench 训练和评测数据需预处理为 Qwen3-VL 的 `messages` 格式。运行以下命令生成：
-
-```bash
-python scripts/preprocess_vrsbench.py
-```
-
-生成的文件位于：
+VRSBench 训练和评测数据已预处理为 Qwen3-VL 的 `messages` 格式，位于共享数据集目录中：
 
 ```
-output/
+datasets/VRSBench/
 ├── vrsbench_train.jsonl    # 训练数据，142,390 条
 └── vrsbench_eval.jsonl     # 评测数据，62,918 条
 ```
+
+建立好 `datasets` 软链接后可直接读取，无需再运行预处理脚本。
 
 **格式说明**（每条数据一个 JSON 对象，每行一条）：
 
@@ -73,17 +69,9 @@ output/
 | `[CAP]` | 图像描述 | `"The image shows..."` |
 | `[REF]` | 指代表达定位 | `"{<45><45><59><59>}"` |
 
-**使用方式**：微调时读取生成的 JSONL 文件即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
+**使用方式**：微调时直接读取 `datasets/VRSBench/vrsbench_train.jsonl` 和 `datasets/VRSBench/vrsbench_eval.jsonl` 即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
 
-> 预处理脚本：`scripts/preprocess_vrsbench.py`
-
-### 从原始数据重新预处理
-
-如需重新生成：
-
-```bash
-python scripts/preprocess_vrsbench.py
-```
+> 如需从原始标注重新生成，可运行 `python scripts/preprocess_vrsbench.py`。
 
 ## 提交代码
 
