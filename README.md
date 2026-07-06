@@ -27,9 +27,15 @@ ln -s /users/u2024311136/shared/shared_datasets datasets
 
 ## 数据预处理
 
-### VRSBench（已完成预处理）
+### VRSBench（预处理）
 
-VRSBench 训练和评测数据已预处理为 Qwen3-VL 的 `messages` 格式，位于：
+VRSBench 训练和评测数据需预处理为 Qwen3-VL 的 `messages` 格式。运行以下命令生成：
+
+```bash
+python scripts/preprocess_vrsbench.py
+```
+
+生成的文件位于：
 
 ```
 output/
@@ -67,7 +73,7 @@ output/
 | `[CAP]` | 图像描述 | `"The image shows..."` |
 | `[REF]` | 指代表达定位 | `"{<45><45><59><59>}"` |
 
-**使用方式**：微调时直接读取 JSONL 文件即可，无需额外处理。图像使用绝对路径，确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
+**使用方式**：微调时读取生成的 JSONL 文件即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
 
 > 预处理脚本：`scripts/preprocess_vrsbench.py`
 
