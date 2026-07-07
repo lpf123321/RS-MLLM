@@ -121,6 +121,7 @@ datasets/LEVIR-CC/
 
 > 如需从原始标注重新生成，可运行 `python scripts/preprocess_levircc.py`。
 
+
 ## finetune_framework 说明
 ### 1、VRSbench
 #### 目录结构
@@ -224,6 +225,8 @@ bash merge_lora.sh checkpoint-600 output/merged_model_ckpt600
 ```
 
 合并后的完整模型默认输出到 `output/merged_model/`，包含模型权重 + tokenizer + processor，可直接用于推理或部署。
+
+
 
 
 
