@@ -73,6 +73,113 @@ datasets/VRSBench/
 
 > 如需从原始标注重新生成，可运行 `python scripts/preprocess_vrsbench.py`。
 
+
+## finetune_framework 说明
+### 1、VRSbench
+#### 目录结构
+
+```
+finetune_framework/
+├── Qwen-VL-Series-Finetune/       # Qwen 官方微调框架
+└── VRSbench/                      # VRSBench 微调工作区
+    ├── finetune_test.sh           # LoRA 微调脚本
+    ├── merge_lora.sh              # LoRA 权重合并脚本
+    ├── VRSBench_train.json        # 训练数据（LLaVA 格式，142,383 条）
+    └── output/                    # 训练输出（checkpoint + LoRA 权重 + TensorBoard）
+```
+
+#### 快速开始
+
+```bash
+# 1. 激活环境
+conda activate rs_mllm
+cd finetune_framework/VRSbench
+
+# 2. 运行微调
+bash finetune_test.sh
+
+# 3. 查看结果：终端输出 loss / grad_norm / lr，或查看 trainer_state.json
+```
+
+#### 数据格式
+
+训练代码（`SupervisedDataset`）使用 **LLaVA 格式**。VRSBench 原始标注已预处理并过滤后放置在 `finetune_framework/VRSbench/VRSBench_train.json`（从原始 142,390 条中移除了 7 条损坏图片的条目，剩余 142,383 条）：内部通过llava_to_openai() 转换为 openai喂给qwen3-vl
+
+```json
+[
+  {
+    "image": "00002_0000.png",
+    "conversations": [
+      {"from": "human", "value": "<image>\n[VQA] 问题文本"},
+      {"from": "gpt",   "value": "答案文本"}
+    ]
+  }
+]
+```
+
+`image` 字段为文件名，运行时通过 `--image_folder` 拼接为完整路径。三种任务通过 `[VQA]`/`[CAP]`/`[REF]` 前缀区分，统一由 cross-entropy loss（仅计算 assistant 回复部分）优化。
+
+
+#### 关键参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--model_id` | 本地 Qwen3-VL-2B | 模型路径或 HuggingFace ID |
+| `--data_path` | `VRSBench_train.json` | 训练数据，LLaVA 格式 JSON 数组 |
+| `--image_folder` | `Images_train/` | 图片所在目录 |
+| `--lora_enable` | `True` | LoRA 微调（单卡必需） |
+| `--lora_rank` | `32` | LoRA 秩，越大适配能力越强但参数越多 |
+| `--freeze_llm` | `True` | 冻结 LLM 主干，仅训练 LoRA adapter |
+| `--freeze_vision_tower` | `False` | 是否冻结视觉编码器 |
+| `--learning_rate` | `1e-4` | LoRA 学习率（全量微调用 `1e-5`） |
+| `--deepspeed` | `zero2.json` | ZeRO-2 单卡可用；ZeRO-3 offload 需 GLIBC ≥ 2.29 |
+| `--per_device_train_batch_size` | `2` | 每卡 batch size |
+| `--gradient_accumulation_steps` | `16` | 梯度累积步数，有效 batch = bs × acc |
+| `--image_min_pixels` | `512×32²` | 图片最小像素数（Qwen3-VL 须为 32² 的倍数） |
+| `--image_max_pixels` | `1280×32²` | 图片最大像素数 |
+
+脚本调用qwen微调框架中的train_sft.py进行微调
+#### 训练输出
+
+```
+output/finetune_test/
+├── runs/                       # TensorBoard 事件文件
+└── checkpoint-*/               # DeepSpeed 断点，每个 checkpoint 内有：
+    ├── adapter_model.safetensors   # 该 checkpoint 的 LoRA 权重（~200 MiB）
+    ├── adapter_config.json         # LoRA 超参（rank/alpha/dropout）
+    ├── non_lora_state_dict.bin     # 非 LLM 的可训练参数（vision tower / merger）
+    ├── trainer_state.json          # 训练日志（loss / grad_norm / lr / step）
+    └── ...                      # tokenizer / scheduler / training_args 等
+```
+
+训练过程中每隔 `--save_steps` 步保存一个 checkpoint，`adapter_model.safetensors` 等文件位于每个 checkpoint 目录内。训练正常结束后，最优模型的权重也会输出到根目录。如训练中断，可使用任意 checkpoint 直接合并或续训。
+
+> 再次运行脚本时，如 `checkpoint-*` 存在会自动从断点续训。如需从头开始，先 `rm -rf output/finetune_test`。
+
+#### LoRA 权重合并
+
+LoRA 微调只训练 adapter 旁路矩阵（A、B），**基座模型权重未被修改**。合并操作将 LoRA 权重融入原模型（`W_new = W + BA`），得到一个完整的微调后模型。
+
+
+**使用方法：**
+
+```bash
+cd finetune_framework/VRSbench
+
+# 合并最终模型（需训练完成，根目录有 adapter_model.safetensors）
+bash merge_lora.sh
+
+# 合并指定 checkpoint（训练中断也能用）
+bash merge_lora.sh checkpoint-200
+
+# 指定输出路径
+bash merge_lora.sh checkpoint-600 output/merged_model_ckpt600
+```
+
+合并后的完整模型默认输出到 `output/merged_model/`，包含模型权重 + tokenizer + processor，可直接用于推理或部署。
+
+
+
 ## 提交代码
 
 ```bash
