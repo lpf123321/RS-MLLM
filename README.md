@@ -73,6 +73,53 @@ datasets/VRSBench/
 
 > 如需从原始标注重新生成，可运行 `python scripts/preprocess_vrsbench.py`。
 
+### LEVIR-CC（已完成预处理）
+
+LEVIR-CC 是遥感变化描述数据集，每对图像包含 5 句描述。已预处理为 Qwen3-VL 的 `messages` 格式，位于共享数据集目录中：
+
+```
+datasets/LEVIR-CC/
+├── levircc_train.jsonl    # 训练数据，34,075 条
+├── levircc_val.jsonl      # 验证数据，6,665 条
+└── levircc_test.jsonl     # 评测数据，9,645 条
+```
+
+建立好 `datasets` 软链接后可直接读取，无需再运行预处理脚本。
+
+**格式说明**（每条数据一个 JSON 对象，每行一条）：
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "image", "image": "/absolute/path/to/train/A/image.png"},
+        {"type": "image", "image": "/absolute/path/to/train/B/image.png"},
+        {"type": "text", "text": "[CD] Describe the changes between these two images."}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "text", "text": "caption text"}
+      ]
+    }
+  ]
+}
+```
+
+**与 VRSBench 格式差异**：
+
+| 维度 | VRSBench | LEVIR-CC |
+|------|---------|---------|
+| image 数量 | 1 张 | 2 张（A 变化前，B 变化后） |
+| 任务前缀 | `[CAP]` `[VQA]` `[REF]` | `[CD]` |
+| 指令文本 | 来自原对话 | 固定 `"Describe the changes between these two images."` |
+
+**使用方式**：微调时直接读取 `datasets/LEVIR-CC/levircc_train.jsonl` 等文件即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。两个数据集可合并到同一 JSONL 中混合训练（LoRA 对多图输入原生支持）。
+
+> 如需从原始标注重新生成，可运行 `python scripts/preprocess_levircc.py`。
 
 ## finetune_framework 说明
 ### 1、VRSbench
