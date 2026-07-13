@@ -79,14 +79,17 @@ LEVIR-CC 是遥感变化描述数据集，每对图像包含 5 句描述。已�
 
 ```
 datasets/LEVIR-CC/
-├── levircc_train.jsonl    # 训练数据，34,075 条
-├── levircc_val.jsonl      # 验证数据，6,665 条
-└── levircc_test.jsonl     # 评测数据，9,645 条
+├── levircc_train.jsonl    # 训练数据，34,075 条（每 caption 独立一条）
+├── levircc_val.jsonl      # 验证数据，1,333 条（分组，5 条 reference / 条）
+└── levircc_test.jsonl     # 评测数据，1,929 条（分组，5 条 reference / 条）
 ```
 
 建立好 `datasets` 软链接后可直接读取，无需再运行预处理脚本。
 
-**格式说明**（每条数据一个 JSON 对象，每行一条）：
+**格式说明**：
+
+- **train**：每句 caption 展开为 1 条独立样本（同 VRSBench messages 格式）
+- **val / test**：每个 image pair 合为 1 条，保留 5 条 reference 用于多参考评测
 
 ```json
 {
@@ -102,9 +105,16 @@ datasets/LEVIR-CC/
     {
       "role": "assistant",
       "content": [
-        {"type": "text", "text": "caption text"}
+        {"type": "text", "text": "first caption"}
       ]
     }
+  ],
+  "references": [
+    "first caption",
+    "second caption",
+    "third caption",
+    "fourth caption",
+    "fifth caption"
   ]
 }
 ```
@@ -117,7 +127,7 @@ datasets/LEVIR-CC/
 | 任务前缀 | `[CAP]` `[VQA]` `[REF]` | `[CD]` |
 | 指令文本 | 来自原对话 | 固定 `"Describe the changes between these two images."` |
 
-**使用方式**：微调时直接读取 `datasets/LEVIR-CC/levircc_train.jsonl` 等文件即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。两个数据集可合并到同一 JSONL 中混合训练（LoRA 对多图输入原生支持）。
+**使用方式**：微调时读取 `datasets/LEVIR-CC/levircc_train.jsonl`，评测时读取 `levircc_val.jsonl` / `levircc_test.jsonl` 并使用 `references` 字段计算多参考指标。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
 
 > 如需从原始标注重新生成，可运行 `python scripts/preprocess_levircc.py`。
 

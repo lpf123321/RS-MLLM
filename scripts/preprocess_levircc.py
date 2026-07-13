@@ -20,9 +20,12 @@ INSTRUCTION = "[CD] Describe the changes between these two images."
 
 EXPECTED_LINES = {
     "train": 34075,
-    "val": 6665,
-    "test": 9645,
+    "val": 1333,
+    "test": 1929,
 }
+
+# val/test use grouped format: 1 entry per image pair with 5 references
+EVAL_SPLITS = {"val", "test"}
 
 
 def get_image_paths(split: str, filename: str):
@@ -51,11 +54,13 @@ def process_split(split: str, data: dict):
                 skipped += 1
                 continue
 
-            for sentence in img["sentences"]:
-                caption = sentence["raw"].strip()
-                if not caption:
-                    continue
+            references = [s["raw"].strip() for s in img["sentences"] if s["raw"].strip()]
+            if not references:
+                skipped += 1
+                continue
 
+            if split in EVAL_SPLITS:
+                # grouped format: 1 entry per image pair, references for multi-ref eval
                 record = {
                     "messages": [
                         {
@@ -69,13 +74,37 @@ def process_split(split: str, data: dict):
                         {
                             "role": "assistant",
                             "content": [
-                                {"type": "text", "text": caption},
+                                {"type": "text", "text": references[0]},
                             ],
                         },
-                    ]
+                    ],
+                    "references": references,
                 }
                 out.write(json.dumps(record, ensure_ascii=False) + "\n")
                 total += 1
+            else:
+                # train: expand each sentence into independent sample
+                for caption in references:
+                    record = {
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "image", "image": a_path},
+                                    {"type": "image", "image": b_path},
+                                    {"type": "text", "text": INSTRUCTION},
+                                ],
+                            },
+                            {
+                                "role": "assistant",
+                                "content": [
+                                    {"type": "text", "text": caption},
+                                ],
+                            },
+                        ]
+                    }
+                    out.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    total += 1
 
     expected = EXPECTED_LINES.get(split, "?")
     print(f"  {split}: wrote {total} lines to {out_path} (expected ~{expected}, skipped {skipped})")
@@ -90,8 +119,8 @@ def verify(split: str):
     print(f"\n=== Verify {split} ===")
     print(f"  lines: {len(lines)}")
 
-    samples = random.sample(lines, min(3, len(lines)))
     all_images_exist = True
+    all_refs_ok = True
     for line in lines:
         rec = json.loads(line)
         for item in rec["messages"][0]["content"]:
@@ -100,11 +129,18 @@ def verify(split: str):
                     print(f"  WARN: missing image {item['image']}")
                     all_images_exist = False
                     break
-        if not all_images_exist:
-            break
+
+        if split in EVAL_SPLITS:
+            refs = rec.get("references", [])
+            if len(refs) != 5:
+                print(f"  WARN: expected 5 references, got {len(refs)}")
+                all_refs_ok = False
 
     print(f"  all image paths exist: {all_images_exist}")
+    if split in EVAL_SPLITS:
+        print(f"  all entries have 5 references: {all_refs_ok}")
 
+    samples = random.sample(lines, min(3, len(lines)))
     for i, sample in enumerate(samples):
         rec = json.loads(sample)
         content = rec["messages"][0]["content"]
@@ -115,7 +151,12 @@ def verify(split: str):
         print(f"    A image: {images[0]['image']}")
         print(f"    B image: {images[1]['image']}")
         print(f"    instruction: {texts[0]['text']}")
-        print(f"    caption: {assistant_text}")
+        print(f"    answer: {assistant_text}")
+        if split in EVAL_SPLITS:
+            refs = rec.get("references", [])
+            print(f"    references ({len(refs)}):")
+            for j, r in enumerate(refs):
+                print(f"      [{j}] {r}")
         print(f"    A exists: {os.path.exists(images[0]['image'])}")
         print(f"    B exists: {os.path.exists(images[1]['image'])}")
 
