@@ -1,0 +1,12 @@
+{
+  "extraPaths": [
+    "finetune_framework/Qwen-VL-Series-Finetune/src"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*"
+  ],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic"
+}
