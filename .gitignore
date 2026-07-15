@@ -1,18 +1,36 @@
+# Local model and dataset storage
 models/
 datasets/
 shared_data/
+.ms_cache/
+.hf_cache/
+.image_cache/
+finetune_data/
+
+# Generated experiment artifacts
+logs/
+results/
+wandb/
+*.out
+*.err
+*.log
+
+# Model weights
 *.pt
 *.pth
 *.bin
 *.safetensors
 
+# Python and uv environments
 __pycache__/
 *.pyc
-*.out
-*.err
-*.log
-wandb/
+.venv/
+**/.venv/
 
 data/
 output/
 outputs/
+# Local backups and macOS metadata
+*.bak.*
+._*
+.DS_Store
