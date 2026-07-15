@@ -555,6 +555,11 @@ def evaluate_task(
     else:
         print(f"  数据: {len(data)} 样本 (全部)")
 
+    # Referring 任务强制使用训练 prompt（带 [refer] 标记和 <p> 包裹），
+    # 否则模型无法判断该输出坐标格式还是自然语言。
+    if task_type == "referring":
+        use_training_prompt = True
+
     # 如果使用训练 prompt，替换 question
     if use_training_prompt and task_type in TRAINING_PROMPTS:
         template = TRAINING_PROMPTS[task_type]
