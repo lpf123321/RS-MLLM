@@ -135,12 +135,12 @@ datasets/LEVIR-CC/
 
 XLRS-Bench-lite 是遥感多选问答（MCQ）评测集，共 **3,080 条** QA 对，覆盖 **13 个子任务**（目标分类、颜色、计数、空间关系、复杂推理等）。所有图像嵌入在 HuggingFace Datasets Arrow 格式中（3080 条对 800 张唯一图片，每张图约 3.85 个问题）。
 
-已预处理为 Qwen3-VL `messages` 格式，位于：
+已预处理为 Qwen3-VL `messages` 格式，位于共享数据集目录：
 
 ```
-output/
-├── xlrs.jsonl              # 3,080 行
-└── images/xlrs_*.png       # 800 张 resize 后的图片（最长边 ≤ 1024）
+datasets/XLRS-Bench-lite/
+├── xlrs.jsonl                    # 3,080 行
+└── images_resized/xlrs_*.png     # 800 张 resize 后的图片（最长边 ≤ 1024）
 ```
 
 **格式说明：**
@@ -151,7 +151,7 @@ output/
     {
       "role": "user",
       "content": [
-        {"type": "image", "image": "/absolute/path/to/xlrs_00000.png"},
+        {"type": "image", "image": "/users/u2024311136/shared/shared_datasets/XLRS-Bench-lite/images_resized/xlrs_00000.png"},
         {"type": "text", "text": "[MCQ] The width and calmness of the river in the picture suggest?\n(A) It is a vital...\n(B) This area...\n(C) This area...\n(D) It may serve..."}
       ]
     },
@@ -173,18 +173,20 @@ output/
 | 图像数量 | 1 张 |
 | 分辨率 | resize 至最长边 ≤ 1024（BICUBIC，保持宽高比） |
 
+**使用方式**：微调时直接读取 `datasets/XLRS-Bench-lite/xlrs.jsonl` 即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
+
 > 如需从原始 Arrow 文件重新生成，可运行 `python scripts/preprocess_xlrs.py`。
 
 ### MME-RealWorld-RS（已完成预处理）
 
 MME-RealWorld-RS 是 MME-RealWorld 基准的遥感子集，共 **3,736 条** MCQ，覆盖 **3 个类别**（color / count / position），涉及 **1,264 张**唯一遥感图像（来自 DOTA-v2 和 Toronto 数据集）。
 
-已预处理为 Qwen3-VL `messages` 格式，位于：
+已预处理为 Qwen3-VL `messages` 格式，位于共享数据集目录：
 
 ```
-output/
-├── mme_rs.jsonl            # 3,736 行
-└── images/mme_*.png        # 1,264 张 resize 后的图片（最长边 ≤ 1024）
+datasets/MME-RealWorld-RS/
+├── mme_rs.jsonl                  # 3,736 行
+└── images_resized/mme_*.png      # 1,264 张 resize 后的图片（最长边 ≤ 1024）
 ```
 
 **格式说明**（与 XLRS-Bench-lite 完全一致）：：
@@ -195,7 +197,7 @@ output/
     {
       "role": "user",
       "content": [
-        {"type": "image", "image": "/absolute/path/to/mme_03553_Toronto.png"},
+        {"type": "image", "image": "/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS/images_resized/mme_03553_Toronto.png"},
         {"type": "text", "text": "[MCQ] What color is the roof of the square building in the lower right area of the picture?\n(A) Yellow\n(B) Blue\n(C) Gray\n(D) White\n(E) The image does not feature the color."}
       ]
     },
@@ -220,6 +222,8 @@ output/
 | 分辨率处理 | resize ≤ 1024 | resize ≤ 1024 |
 
 两个数据集的 `jsonl` 可直接合并，作为同一类 MCQ 任务参与等比例采样。
+
+**使用方式**：微调时直接读取 `datasets/MME-RealWorld-RS/mme_rs.jsonl` 即可。图像路径为绝对路径，需确保软链接 `datasets → /users/u2024311136/shared/shared_datasets` 已建立。
 
 > 如需从原始 JSON + PNG 重新生成，可运行 `python scripts/preprocess_mme.py`。
 

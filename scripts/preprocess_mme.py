@@ -20,8 +20,8 @@ Image.MAX_IMAGE_PIXELS = None
 
 ANNOT_PATH = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS/MME_RealWorld.json")
 IMAGE_ROOT = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS")
-OUTPUT_DIR = Path("/home/u2024311136/RS-MLLM/output")
-IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images"
+OUTPUT_DIR = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS")
+IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images_resized"
 MAX_LONG_EDGE = 1024
 LOG_FILE = OUTPUT_DIR / "preprocess_mme.log"
 
