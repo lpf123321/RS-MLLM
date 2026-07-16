@@ -12,3 +12,8 @@ pillow>=10.0.0
 einops
 huggingface_hub
 requests
+
+# evaluation
+nltk
+rouge_score
+tqdm
