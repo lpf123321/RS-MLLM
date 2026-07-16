@@ -19,14 +19,18 @@ DATASETS="all"
 MAX_SAMPLES=100
 DEVICE="cuda"
 OUTPUT="$REPO_ROOT/evaluation/results.json"
+EVAL_BATCH_SIZE=4
+COMPILE_MODEL="--compile_model"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --model_path)   MODEL_PATH="$2";    shift 2 ;;
-        --datasets)     DATASETS="$2";      shift 2 ;;
-        --max_samples)  MAX_SAMPLES="$2";   shift 2 ;;
-        --device)       DEVICE="$2";        shift 2 ;;
-        --output)       OUTPUT="$2";        shift 2 ;;
+        --model_path)       MODEL_PATH="$2";        shift 2 ;;
+        --datasets)         DATASETS="$2";          shift 2 ;;
+        --max_samples)      MAX_SAMPLES="$2";       shift 2 ;;
+        --device)           DEVICE="$2";            shift 2 ;;
+        --output)           OUTPUT="$2";            shift 2 ;;
+        --eval_batch_size)  EVAL_BATCH_SIZE="$2";   shift 2 ;;
+        --no_compile)       COMPILE_MODEL="";       shift ;;
         *) echo "Unknown: $1"; exit 1 ;;
     esac
 done
@@ -34,11 +38,13 @@ done
 echo "============================================"
 echo "  RS-MLLM Evaluation"
 echo "============================================"
-echo "  Model:      $MODEL_PATH"
-echo "  Datasets:   $DATASETS"
-echo "  Max samples: $MAX_SAMPLES"
-echo "  Device:     $DEVICE"
-echo "  Output:     $OUTPUT"
+echo "  Model:          $MODEL_PATH"
+echo "  Datasets:       $DATASETS"
+echo "  Max samples:    $MAX_SAMPLES"
+echo "  Device:         $DEVICE"
+echo "  Output:         $OUTPUT"
+echo "  Eval batch size: $EVAL_BATCH_SIZE"
+echo "  Compile model:  $([ -n "$COMPILE_MODEL" ] && echo yes || echo no)"
 echo "============================================"
 
 python "$REPO_ROOT/evaluation/main.py" \
@@ -46,4 +52,6 @@ python "$REPO_ROOT/evaluation/main.py" \
     --datasets $DATASETS \
     --max_samples $MAX_SAMPLES \
     --device "$DEVICE" \
-    --output "$OUTPUT"
+    --output "$OUTPUT" \
+    --eval_batch_size $EVAL_BATCH_SIZE \
+    $COMPILE_MODEL

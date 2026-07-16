@@ -1,10 +1,10 @@
 import json
 
-from evaluation.metrics import Accuracy
+from evaluation.metrics import Accuracy, MCQAccuracy
 
 NAME = "MME-RealWorld-RS"
 
-TASK_METRICS = {"vqa": [Accuracy()]}
+TASK_METRICS = {"vqa": [Accuracy(), MCQAccuracy()]}
 
 
 def load_data(data_path: str):
