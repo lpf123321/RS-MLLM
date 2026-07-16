@@ -1,7 +1,0 @@
-{"dataset":"xlrs_lite","task":"vqa","question":"q1","ground_truth":"A","prediction":"A","correct":true}
-{"dataset":"xlrs_lite","task":"vqa","question":"q2","ground_truth":"B","prediction":"C","correct":false}
-{"dataset":"vrsbench","task":"caption","image_id":"img1","question":"Describe.","ground_truth":"A red car is on the road.","prediction":"A red car is on the road.","correct":false}
-{"dataset":"vrsbench","task":"refer","image_id":"img-ref-1","question":"Locate the vehicle.","ground_truth":"{<25><40><33><60>}","prediction":"[244,398,337,602]","correct":true}
-{"dataset":"vrsbench","task":"refer","image_id":"img-ref-2","question":"Locate the ship.","ground_truth":"{<10><20><30><40>}","prediction":"[10,20,30]","correct":false}
-{"dataset":"levir_cc","task":"change_caption","image_id":"pair1","ground_truth":"No visible change has occurred.","prediction":"No visible change has occurred.","changeflag":0}
-{"dataset":"levir_cc","task":"change_caption","image_id":"pair1","ground_truth":"The two scenes remain the same.","prediction":"No visible change has occurred.","changeflag":0}
