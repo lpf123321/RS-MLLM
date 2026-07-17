@@ -14,7 +14,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-MODEL_PATH="$REPO_ROOT/models/Qwen3-VL-2B-Instruct"
+MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
 DATASETS="all"
 MAX_SAMPLES=100
 DEVICE="cuda"
@@ -47,11 +47,12 @@ echo "  Eval batch size: $EVAL_BATCH_SIZE"
 echo "  Compile model:  $([ -n "$COMPILE_MODEL" ] && echo yes || echo no)"
 echo "============================================"
 
-python "$REPO_ROOT/evaluation/main.py" \
+cd "$REPO_ROOT"
+python -m evaluation.main \
     --model_path "$MODEL_PATH" \
     --datasets $DATASETS \
-    --max_samples $MAX_SAMPLES \
+    --max_samples "$MAX_SAMPLES" \
     --device "$DEVICE" \
     --output "$OUTPUT" \
-    --eval_batch_size $EVAL_BATCH_SIZE \
+    --eval_batch_size "$EVAL_BATCH_SIZE" \
     $COMPILE_MODEL

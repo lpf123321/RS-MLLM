@@ -32,7 +32,7 @@ echo "  PyTorch CUDA:     $(python -c 'import torch; print(torch.cuda.is_availab
 echo "============================================"
 
 # ===== Configurable =====
-MODEL_PATH="$REPO_ROOT/models/Qwen3-VL-2B-Instruct"
+MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
 DATASETS="all"
 MAX_SAMPLES=0
 DEVICE="cuda"

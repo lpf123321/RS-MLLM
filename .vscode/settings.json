@@ -4,5 +4,12 @@
     "finetune_framework/Qwen-VL-Series-Finetune/src"
   ],
   "python.analysis.diagnosticMode": "workspace",
-  "python.languageServer": "Pylance"
+  "python.languageServer": "Pylance",
+  "python-envs.pythonProjects": [
+    {
+      "path": ".",
+      "envManager": "ms-python.python:conda",
+      "packageManager": "ms-python.python:conda"
+    }
+  ]
 }
