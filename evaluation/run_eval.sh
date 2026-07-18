@@ -14,7 +14,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
+MODEL_PATH="$REPO_ROOT/models/Qwen3.5-2B"
 DATASETS="all"
 MAX_SAMPLES=100
 DEVICE="cuda"

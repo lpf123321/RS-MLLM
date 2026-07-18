@@ -32,12 +32,12 @@ echo "  PyTorch CUDA:     $(python -c 'import torch; print(torch.cuda.is_availab
 echo "============================================"
 
 # ===== Configurable =====
-MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
+MODEL_PATH="$REPO_ROOT/models/Qwen3.5-2B"
 DATASETS="all"
 MAX_SAMPLES=0
 DEVICE="cuda"
 OUTPUT="$REPO_ROOT/evaluation/results.json"
-EVAL_BATCH_SIZE=4
+EVAL_BATCH_SIZE=4 #
 COMPILE_MODEL=""
 
 # Override from command line args (e.g. --datasets vrsbench levircc)

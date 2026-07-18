@@ -5,7 +5,7 @@ import os
 
 from tqdm import tqdm
 
-from evaluation.adapters import Qwen35Adapter
+from evaluation.adapters import Qwen35_2BAdapter
 from evaluation.evalsets import vrsbench, mme, xlrs, levircc
 
 SHARED = "/users/u2024311136/shared/shared_datasets"
@@ -98,8 +98,8 @@ def main():
     ds_names = list(DATASETS.keys()) if "all" in args.datasets else args.datasets
 
     print("Loading model adapter ...", flush=True)
-    adapter = Qwen35Adapter(args.model_path, device=args.device,
-                            compile_model=args.compile_model)
+    adapter = Qwen35_2BAdapter(args.model_path, device=args.device,
+                               compile_model=args.compile_model)
     print(f"  Model loaded on {adapter.device}", flush=True)
     print(f"  Compile model: {args.compile_model}", flush=True)
     print(f"  Eval batch size: {args.eval_batch_size}", flush=True)
