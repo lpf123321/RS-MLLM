@@ -68,7 +68,7 @@ def evaluate(adapter, module, data_path, max_samples, eval_batch_size):
             scale_y = 99.0 / max(h, 1)
             norm = [int(max(0, min(99, round(x * scale_x if j % 2 == 0 else x * scale_y))))
                     for j, x in enumerate(coords)]
-            predictions[i] = "{{<{}><{}><{}><{}}}".format(*norm)
+            predictions[i] = "{{<{}><{}><{}><{}>}}".format(*norm)
         except Exception:
             pass
 
