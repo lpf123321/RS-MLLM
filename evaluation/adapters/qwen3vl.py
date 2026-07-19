@@ -17,9 +17,9 @@ class Qwen3VLAdapter(BaseModelAdapter):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
-            device_map=self.device,
             trust_remote_code=True,
         )
+        self.model = self.model.to(self.device)
         self.model.eval()
         self.system_prompt = system_prompt
 

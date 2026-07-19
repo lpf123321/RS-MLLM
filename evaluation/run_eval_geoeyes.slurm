@@ -31,10 +31,9 @@ echo "  Python:           $(which python)"
 echo "  PyTorch CUDA:     $(python -c 'import torch; print(torch.cuda.is_available())')"
 echo "============================================"
 
-# ===== Configurable =====
 MODEL_PATH="$REPO_ROOT/models/GeoEyes"
 DATASETS="all"
-MAX_SAMPLES=100
+MAX_SAMPLES=0
 DEVICE="cuda"
 OUTPUT="$REPO_ROOT/evaluation/results_geoeyes.json"
 GPU_MEMORY_UTILIZATION=0.92

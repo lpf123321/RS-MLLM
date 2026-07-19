@@ -18,13 +18,11 @@ SYSTEM_PROMPTS = {
     "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
 }
 
-# GeoEyes uses its own built-in system prompt (tool definitions) so these
-# are passed as part of the user message instead.
 GEOEYES_PROMPTS = {
-    "vrsbench": "Follow the task prefix:\n- [VQA] Answer with a single word or short phrase only.\n- [CAP] Describe the image in detail, covering all visible objects and their layout.\n- [REF] Output the bounding box as {<x1><y1><x2><y2>} with integer coordinates 0-99, e.g. {<25><40><33><60>}.",
-    "mme": "This is a multiple-choice question. You MUST answer EXACTLY in this format (including the parentheses):\nX. (X) FullOptionText\nExample: D. (D) White\nOutput ONLY ONE line after <answer>.",
-    "xlrs": "This is a multiple-choice question. You MUST answer EXACTLY in this format (including the parentheses):\nX. (X) FullOptionText\nExample: A. (A) Some description\nOutput ONLY ONE line after <answer>.",
-    "levircc": "Describe the changes between the two images concisely in 1-2 sentences. Focus on what has changed, not what stayed the same.",
+    "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-99, e.g. {<25><40><33><60>}. No other text.",
+    "mme": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"D. (D) White\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
+    "xlrs": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"A. (A) Some description\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
+    "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
 }
 
 DATASETS = {
