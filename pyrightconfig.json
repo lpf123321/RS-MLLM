@@ -1,6 +1,6 @@
 {
   "extraPaths": [
-    "finetune_framework/Qwen-VL-Series-Finetune/src"
+    "finetune_framework/backends/qwen_vl/src"
   ],
   "exclude": [
     "**/node_modules",

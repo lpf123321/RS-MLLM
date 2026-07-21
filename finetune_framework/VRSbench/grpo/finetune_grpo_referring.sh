@@ -6,37 +6,39 @@ set -e
 #
 # 流程:
 #   1. 合并 SFT LoRA → merged model (如果尚未合并)
-#   2. 提取 referring-only 数据 (如果尚未提取)
+#   2. 提取全量 referring-only 数据 (如果尚未提取)
 #   3. 在 merged model 基础上用 IoU reward 进行 GRPO 微调
 #
 # 用法:
-#   bash finetune_grpo_referring.sh                           # 完整流程
-#   bash finetune_grpo_referring.sh --skip_merge              # 跳过合并 (已合并过)
-#   bash finetune_grpo_referring.sh --skip_prepare            # 跳过数据准备
-#   bash finetune_grpo_referring.sh --lr 1e-5 --num_gen 8    # 自定义参数
+#   bash finetune_framework/VRSbench/grpo/finetune_grpo_referring.sh
+#   bash finetune_framework/VRSbench/grpo/finetune_grpo_referring.sh --skip_merge
+#   bash finetune_framework/VRSbench/grpo/finetune_grpo_referring.sh --skip_prepare
+#   bash finetune_framework/VRSbench/grpo/finetune_grpo_referring.sh --lr 1e-5 --num_gen 8
 # ================================================================
 
 set -eo pipefail
 
 # --- 项目根目录 ---
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT_DIR="$REPO_ROOT/finetune_framework/VRSbench"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VRSBENCH_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$VRSBENCH_ROOT/../.." && pwd)"
 FINETUNE_HOME="$REPO_ROOT/finetune_framework/Qwen-VL-Series-Finetune"
+OUTPUT_ROOT="$REPO_ROOT/finetune_framework/outputs/vrsbench"
 
 # --- 路径配置 ---
 BASE_MODEL="$REPO_ROOT/models/Qwen3-VL-2B-Instruct"
-SFT_LORA="$SCRIPT_DIR/output/finetune_test"                    # SFT 第一阶段输出
-MERGED_MODEL="$SCRIPT_DIR/output/merged_model"                 # 合并后的模型
-GRPO_OUTPUT="$SCRIPT_DIR/output/grpo_referring"                # GRPO 输出目录
+SFT_LORA="$OUTPUT_ROOT/sft"                                    # SFT 第一阶段输出
+MERGED_MODEL="$OUTPUT_ROOT/merged_model"                       # 合并后的模型
+GRPO_OUTPUT="${GRPO_OUTPUT:-$OUTPUT_ROOT/grpo_referring_full}" # 全量 GRPO 新实验输出
 
 # --- 数据路径 ---
-REFERRING_DATA="$SCRIPT_DIR/VRSBench_referring_grpo.json"      # referring-only 数据
+REFERRING_DATA="${REFERRING_DATA:-$VRSBENCH_ROOT/data/VRSBench_referring_grpo_full.json}" # 全量 referring 数据
 IMAGE_FOLDER="$REPO_ROOT/datasets/shared_datasets/VRSBench/images/Images_train"
 
 # --- 环境 ---
 export CC="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
 export CXX="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-g++"
-export PYTHONPATH="$FINETUNE_HOME/src:$PYTHONPATH"
+export PYTHONPATH="$FINETUNE_HOME/src:${PYTHONPATH:-}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # --- 可覆盖的默认参数 ---
@@ -45,7 +47,7 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-2}"  # 每个 prompt 生成的候选数
 BETA="${BETA:-0.04}"                    # KL 惩罚系数
 MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-32}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-768}"
-MAX_SAMPLES="${MAX_SAMPLES:-10000}"     # GRPO 数据采样数 (0=全部)
+MAX_SAMPLES="${MAX_SAMPLES:-0}"         # 默认使用全部 referring 数据
 BATCH_PER_DEVICE="${BATCH_PER_DEVICE:-2}"
 GRAD_ACCUM="${GRAD_ACCUM:-2}"
 NUM_EPOCHS="${NUM_EPOCHS:-1}"
@@ -108,21 +110,21 @@ else
 fi
 
 # ================================================================
-# Step 2: 准备 referring-only 数据 (如果需要)
+# Step 2: 准备全量 referring-only 数据 (如果需要)
 # ================================================================
 if [ "$SKIP_PREPARE" = false ]; then
     echo ""
     echo "============================================================"
-    echo "Step 2/3: 准备 Referring-only 数据"
+    echo "Step 2/3: 准备全量 Referring-only 数据"
     echo "============================================================"
 
     if [ -f "$REFERRING_DATA" ]; then
         echo "  ✅ 数据已存在: $REFERRING_DATA"
         COUNT=$(python3 -c "import json; print(len(json.load(open('$REFERRING_DATA'))))")
-        echo "     共 $COUNT 条 referring 数据"
+        echo "     共 $COUNT 条全量 referring 数据"
     else
         python3 "$SCRIPT_DIR/prepare_referring_grpo_data.py" \
-            --input "$SCRIPT_DIR/VRSBench_train.json" \
+            --input "$VRSBENCH_ROOT/data/VRSBench_train.json" \
             --output "$REFERRING_DATA" \
             --max_samples "$MAX_SAMPLES"
     fi
@@ -153,6 +155,14 @@ echo "  Batch/卡:     $BATCH_PER_DEVICE × $GRAD_ACCUM acc"
 echo "  Epochs:       $NUM_EPOCHS"
 echo "  输出:         $GRPO_OUTPUT"
 echo "============================================================"
+
+LATEST_CHECKPOINT=""
+if [ -d "$GRPO_OUTPUT" ]; then
+    LATEST_CHECKPOINT="$(find "$GRPO_OUTPUT" -maxdepth 1 -type d -name 'checkpoint-*' | sort -V | tail -n 1)"
+fi
+if [ -n "$LATEST_CHECKPOINT" ]; then
+    echo "  ↻ 检测到 checkpoint，将自动续训: $LATEST_CHECKPOINT"
+fi
 
 # 检查数据
 if [ ! -f "$REFERRING_DATA" ]; then
@@ -224,12 +234,12 @@ echo "   输出目录: $GRPO_OUTPUT"
 echo ""
 echo "评估命令 (对比 GRPO 前后效果):"
 echo "   # 评估 GRPO 模型"
-echo "   python $SCRIPT_DIR/eval_metrics.py --task referring --base_model $MERGED_MODEL --lora_path $GRPO_OUTPUT"
+echo "   python $VRSBENCH_ROOT/tools/eval_metrics.py --task referring --base_model $MERGED_MODEL --lora_path $GRPO_OUTPUT"
 echo ""
 echo "   # 评估 SFT 模型 (对比基线)"
-echo "   python $SCRIPT_DIR/eval_metrics.py --task referring --base_model $BASE_MODEL --lora_path $SFT_LORA"
+echo "   python $VRSBENCH_ROOT/tools/eval_metrics.py --task referring --base_model $BASE_MODEL --lora_path $SFT_LORA"
 echo ""
 echo "   # 一次性对比"
-echo "   python $SCRIPT_DIR/eval_metrics.py --task referring --base_model $MERGED_MODEL --lora_path $GRPO_OUTPUT --output $SCRIPT_DIR/output/grpo_eval.json"
-echo "   python $SCRIPT_DIR/compare_results.py $SCRIPT_DIR/output/grpo_eval.json -t"
+echo "   python $VRSBENCH_ROOT/tools/eval_metrics.py --task referring --base_model $MERGED_MODEL --lora_path $GRPO_OUTPUT --output $OUTPUT_ROOT/grpo_full_eval.json"
+echo "   python $VRSBENCH_ROOT/tools/compare_results.py $OUTPUT_ROOT/grpo_full_eval.json -t"
 echo "============================================================"

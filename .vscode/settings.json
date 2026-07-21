@@ -1,7 +1,7 @@
 {
   "python.defaultInterpreterPath": "/home/u2024311164/.conda/envs/rs_mllm/bin/python",
   "python.analysis.extraPaths": [
-    "finetune_framework/Qwen-VL-Series-Finetune/src"
+    "finetune_framework/backends/qwen_vl/src"
   ],
   "python.analysis.diagnosticMode": "workspace",
   "python.languageServer": "Pylance",

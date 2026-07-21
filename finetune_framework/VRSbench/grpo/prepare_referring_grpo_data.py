@@ -3,9 +3,9 @@
 从 VRSBench_train.json 中提取 referring 任务数据，用于 GRPO 微调。
 
 用法:
-    python prepare_referring_grpo_data.py                          # 增量数据
-    python prepare_referring_grpo_data.py --incremental             # 同上
-    python prepare_referring_grpo_data.py --val_split 0.05          # 额外划分验证集
+    python prepare_referring_grpo_data.py                          # 生成全量数据
+    python prepare_referring_grpo_data.py --max_samples 10000      # 固定种子采样
+    python prepare_referring_grpo_data.py --val_split 0.05         # 额外划分验证集
 """
 
 import argparse
@@ -21,12 +21,12 @@ def main():
     parser.add_argument(
         "--input",
         default=None,
-        help="输入 JSON 路径 (默认: 同目录下的 VRSBench_train.json)",
+        help="输入 JSON 路径 (默认: VRSBench/data/VRSBench_train.json)",
     )
     parser.add_argument(
         "--output",
         default=None,
-        help="输出 JSON 路径 (默认: 同目录下的 VRSBench_referring_grpo.json)",
+        help="输出 JSON 路径 (默认: VRSBench/data/VRSBench_referring_grpo_full.json)",
     )
     parser.add_argument(
         "--val_split",
@@ -48,11 +48,14 @@ def main():
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(os.path.dirname(script_dir), "data")
 
-    input_path = args.input or os.path.join(script_dir, "VRSBench_train.json")
-    output_path = args.output or os.path.join(script_dir, "VRSBench_referring_grpo.json")
+    input_path = args.input or os.path.join(data_dir, "VRSBench_train.json")
+    output_path = args.output or os.path.join(
+        data_dir, "VRSBench_referring_grpo_full.json"
+    )
     val_output = args.val_output or os.path.join(
-        script_dir, "VRSBench_referring_grpo_val.json"
+        data_dir, "VRSBench_referring_grpo_full_val.json"
     )
 
     if not os.path.exists(input_path):

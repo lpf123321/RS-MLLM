@@ -45,12 +45,15 @@ from peft import PeftModel
 # 路径配置
 # ============================================================
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASE_MODEL_PATH = os.path.join(REPO_ROOT, "models", "Qwen3-VL-2B-Instruct")
+PROJECT_ROOT = os.path.dirname(REPO_ROOT)  # 真正的项目根目录
+# 基座模型：SFT 合并后的模型（merge_lora 输出）
+BASE_MODEL_PATH = os.path.join(REPO_ROOT, "outputs", "vrsbench", "merged_model")
+# GRPO 微调后的 LoRA adapter（基于 merged_model 继续训练）
 LORA_ADAPTER_PATH = os.path.join(
-    REPO_ROOT, "finetune_framework", "VRSbench", "output", "finetune_test"
+    REPO_ROOT, "outputs", "vrsbench", "grpo_referring_full", "checkpoint-18155"
 )
-IMAGE_FOLDER = os.path.join(REPO_ROOT, "datasets", "shared_datasets", "VRSBench", "images", "val")
-EVAL_DIR = os.path.join(REPO_ROOT, "datasets", "shared_datasets", "VRSBench")
+IMAGE_FOLDER = os.path.join(PROJECT_ROOT, "datasets", "shared_datasets", "VRSBench", "images", "val")
+EVAL_DIR = os.path.join(PROJECT_ROOT, "datasets", "shared_datasets", "VRSBench")
 
 EVAL_FILES = {
     "caption": os.path.join(EVAL_DIR, "VRSBench_EVAL_Cap.json"),
