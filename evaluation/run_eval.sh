@@ -14,6 +14,9 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# --- 数据根目录: 优先用环境变量，回调到 datasets/ ---
+export DATA_ROOT="${DATA_ROOT:-$REPO_ROOT/datasets}"
+
 MODEL_PATH="$REPO_ROOT/models/Qwen3-VL-2B-Instruct"
 DATASETS="all"
 MAX_SAMPLES=100

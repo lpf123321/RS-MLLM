@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from evaluation.evalsets import vrsbench, mme, xlrs, levircc
 
-SHARED = "/users/u2024311136/shared/shared_datasets"
+SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
 
 SYSTEM_PROMPTS = {
     "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-99, e.g. {<25><40><33><60>}. No other text.",
