@@ -132,7 +132,7 @@ def main():
     parser = argparse.ArgumentParser(description="RS-MLLM Evaluation")
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--adapter", type=str, default="qwen3vl",
-                        choices=["qwen3vl", "geoeyes"])
+                        choices=["qwen3vl", "qwen35vl", "qwen35_2b", "geoeyes"])
     parser.add_argument("--datasets", type=str, nargs="+",
                         choices=list(DATASETS.keys()) + ["all"], default=["all"])
     parser.add_argument("--data_root", type=str, default="output")
@@ -175,6 +175,16 @@ def main():
             max_model_len=args.vllm_max_model_len,
         )
         prompt_map = GEOEYES_PROMPTS
+    elif args.adapter == "qwen35_2b":
+        from evaluation.adapters.qwen35_2b import Qwen35_2BAdapter
+        adapter = Qwen35_2BAdapter(args.model_path, device=args.device,
+                                   compile_model=args.compile_model)
+        prompt_map = SYSTEM_PROMPTS
+    elif args.adapter == "qwen35vl":
+        from evaluation.adapters.qwen35vl import Qwen35VLAdapter
+        adapter = Qwen35VLAdapter(args.model_path, device=args.device,
+                                  compile_model=args.compile_model)
+        prompt_map = SYSTEM_PROMPTS
     else:
         from evaluation.adapters.qwen3vl import Qwen3VLAdapter
         adapter = Qwen3VLAdapter(args.model_path, device=args.device,

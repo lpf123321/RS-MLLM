@@ -1,32 +1,65 @@
+import json
+import os
+import re
 from typing import List, Tuple
 
 import torch
 from qwen_vl_utils import process_vision_info
 from tqdm import tqdm
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+from transformers import AutoProcessor
 
 from evaluation.base.adapter import BaseModelAdapter
 
+# Qwen3.5 models may emit <think>...</think> blocks; strip them from output
+_THINKING_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def _detect_model_type(model_path: str) -> str:
+    """Read config.json to determine whether this is a qwen3_5 or qwen3_vl checkpoint."""
+    config_path = os.path.join(model_path, "config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    return config.get("model_type", "")
+
 
 class Qwen3VLAdapter(BaseModelAdapter):
-    def __init__(self, model_path: str, device: str = "cuda", max_new_tokens: int = 256, compile_model: bool = False, system_prompt: str = ""):
+    def __init__(self, model_path: str, device: str = "cuda",
+                 max_new_tokens: int = 256, compile_model: bool = False,
+                 system_prompt: str = "", disable_thinking: bool = True):
         self.max_new_tokens = max_new_tokens
         self.device = device if device == "cuda" and torch.cuda.is_available() else "cpu"
+        self.disable_thinking = disable_thinking
+
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
 
         dt = torch.bfloat16
-        if device == "cuda" and torch.cuda.is_available():
+        if self.device == "cuda":
             cap = torch.cuda.get_device_capability()[0]
             if cap < 8 and not torch.cuda.is_bf16_supported():
                 dt = torch.float16
+                print(f"  GPU CC {cap} → using float16 (bf16 not supported)", flush=True)
 
-        self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            model_path,
-            torch_dtype=dt,
-            trust_remote_code=True,
-        )
-        self.model = self.model.to(self.device)
+        model_type = _detect_model_type(model_path)
+        print(f"  Detected model_type={model_type}", flush=True)
+
+        if model_type == "qwen3_5":
+            from transformers import Qwen3_5ForConditionalGeneration
+            self.model = Qwen3_5ForConditionalGeneration.from_pretrained(
+                model_path,
+                torch_dtype=dt,
+                device_map=self.device,
+                trust_remote_code=True,
+            )
+        else:
+            from transformers import Qwen3VLForConditionalGeneration
+            self.model = Qwen3VLForConditionalGeneration.from_pretrained(
+                model_path,
+                torch_dtype=dt,
+                trust_remote_code=True,
+            )
+            self.model = self.model.to(self.device)
+
         self.model.eval()
         self.system_prompt = system_prompt
 
@@ -46,7 +79,10 @@ class Qwen3VLAdapter(BaseModelAdapter):
                 + [{"type": "text", "text": prompt}]
             ),
         }]
-        text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        chat_kwargs = {"add_generation_prompt": True}
+        if self.disable_thinking:
+            chat_kwargs["enable_thinking"] = False
+        text = self.processor.apply_chat_template(messages, tokenize=False, **chat_kwargs)
         image_inputs, video_inputs = process_vision_info(messages)
         inputs = self.processor(
             text=[text], images=image_inputs, videos=video_inputs,
@@ -64,6 +100,7 @@ class Qwen3VLAdapter(BaseModelAdapter):
         output_text = self.processor.batch_decode(
             generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False,
         )[0]
+        output_text = _THINKING_PATTERN.sub("", output_text)
         return output_text.strip()
 
     def batch_generate(self, batch: List[Tuple[List[str], str]], batch_size: int = 4) -> List[str]:
@@ -88,7 +125,10 @@ class Qwen3VLAdapter(BaseModelAdapter):
                     + [{"type": "text", "text": prompt}]
                 ),
             })
-            text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            chat_kwargs = {"add_generation_prompt": True}
+            if self.disable_thinking:
+                chat_kwargs["enable_thinking"] = False
+            text = self.processor.apply_chat_template(messages, tokenize=False, **chat_kwargs)
             image_inputs, video_inputs = process_vision_info(messages)
             texts.append(text)
             all_images.append(image_inputs)
@@ -115,4 +155,4 @@ class Qwen3VLAdapter(BaseModelAdapter):
         output_texts = self.processor.batch_decode(
             generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False,
         )
-        return [t.strip() for t in output_texts]
+        return [_THINKING_PATTERN.sub("", t).strip() for t in output_texts]
