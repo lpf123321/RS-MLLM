@@ -14,18 +14,29 @@ class Qwen3VLAdapter(BaseModelAdapter):
         self.device = device if device == "cuda" and torch.cuda.is_available() else "cpu"
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
+
+        dt = torch.bfloat16
+        if device == "cuda" and torch.cuda.is_available():
+            cap = torch.cuda.get_device_capability()[0]
+            if cap < 8 and not torch.cuda.is_bf16_supported():
+                dt = torch.float16
+
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_path,
-            torch_dtype=torch.bfloat16,
-            device_map=self.device,
+            torch_dtype=dt,
             trust_remote_code=True,
         )
+        self.model = self.model.to(self.device)
         self.model.eval()
         self.system_prompt = system_prompt
 
         if compile_model and self.device == "cuda":
-            print("  Compiling model with torch.compile ...")
-            self.model = torch.compile(self.model, mode="default")
+            cap = torch.cuda.get_device_capability()
+            if cap[0] >= 8:
+                print("  Compiling model with torch.compile ...", flush=True)
+                self.model = torch.compile(self.model, mode="default")
+            else:
+                print(f"  GPU CC {cap} → torch.compile disabled (needs SM80+)", flush=True)
 
     def generate(self, images: List[str], prompt: str) -> str:
         messages = [{

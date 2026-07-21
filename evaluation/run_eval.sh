@@ -14,7 +14,10 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-MODEL_PATH="$REPO_ROOT/models/Qwen3.5-2B"
+# --- 数据根目录: 优先用环境变量，回调到 datasets/ ---
+export DATA_ROOT="${DATA_ROOT:-$REPO_ROOT/datasets}"
+
+MODEL_PATH="$REPO_ROOT/models/Qwen3-VL-2B-Instruct"
 DATASETS="all"
 MAX_SAMPLES=100
 DEVICE="cuda"
@@ -47,12 +50,11 @@ echo "  Eval batch size: $EVAL_BATCH_SIZE"
 echo "  Compile model:  $([ -n "$COMPILE_MODEL" ] && echo yes || echo no)"
 echo "============================================"
 
-cd "$REPO_ROOT"
-python -m evaluation.main \
+python "$REPO_ROOT/evaluation/main.py" \
     --model_path "$MODEL_PATH" \
     --datasets $DATASETS \
-    --max_samples "$MAX_SAMPLES" \
+    --max_samples $MAX_SAMPLES \
     --device "$DEVICE" \
     --output "$OUTPUT" \
-    --eval_batch_size "$EVAL_BATCH_SIZE" \
+    --eval_batch_size $EVAL_BATCH_SIZE \
     $COMPILE_MODEL

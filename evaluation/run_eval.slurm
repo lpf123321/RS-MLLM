@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 
 set -e
 export PYTHONUNBUFFERED=1
@@ -15,6 +15,8 @@ export PYTHONUNBUFFERED=1
 REPO_ROOT="$SLURM_SUBMIT_DIR"
 LOG_DIR="$REPO_ROOT/evaluation/logs"
 mkdir -p "$LOG_DIR"
+
+export DATA_ROOT="${DATA_ROOT:-$REPO_ROOT/datasets}"
 
 echo "============================================"
 echo "  SLURM Job ID:     $SLURM_JOB_ID"
@@ -37,7 +39,7 @@ DATASETS="all"
 MAX_SAMPLES=0
 DEVICE="cuda"
 OUTPUT="$REPO_ROOT/evaluation/results.json"
-EVAL_BATCH_SIZE=4 #
+EVAL_BATCH_SIZE=32 #
 COMPILE_MODEL=""
 
 # Override from command line args (e.g. --datasets vrsbench levircc)
