@@ -48,15 +48,21 @@ def evaluate(adapter, module, data_path, max_samples, eval_batch_size):
     predictions = adapter.batch_generate(batch, batch_size=eval_batch_size)
 
     # Normalize referring bbox predictions from pixel space to 0-99
-    _BBOX_RE = re.compile(r"\{<\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*>\}")
+    # Support both {<x1><y1><x2><y2>} and {x1,y1,x2,y2} formats
+    _BBOX_ANGLE_RE = re.compile(r"\{<\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*>\}")
+    _BBOX_COMMA_RE = re.compile(
+        r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"
+    )
     for i, s in enumerate(samples):
         if s["task"] != "referring":
             continue
-        m = _BBOX_RE.search(predictions[i])
+        pred = _BBOX_COMMA_RE.sub(r"{<\1><\2><\3><\4>}", predictions[i])
+        m = _BBOX_ANGLE_RE.search(pred)
         if not m:
             continue
         coords = list(map(float, m.groups()))
         if max(coords) <= 99:
+            predictions[i] = pred
             continue
         img_path = s["images"][0]
         try:
@@ -68,7 +74,7 @@ def evaluate(adapter, module, data_path, max_samples, eval_batch_size):
                     for j, x in enumerate(coords)]
             predictions[i] = "{{<{}><{}><{}><{}>}}".format(*norm)
         except Exception:
-            pass
+            predictions[i] = pred
 
     for s, pred in zip(samples, predictions):
         grouped[s["task"]]["predictions"].append(pred)

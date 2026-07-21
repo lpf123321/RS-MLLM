@@ -5,13 +5,17 @@ import numpy as np
 
 from evaluation.base.metric import BaseMetric
 
-_BBOX_RE = re.compile(
+_BBOX_ANGLE_RE = re.compile(
     r"\{<\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*>\}"
+)
+_BBOX_COMMA_RE = re.compile(
+    r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"
 )
 
 
 def _parse_bbox(text: str) -> Optional[Tuple[float, float, float, float]]:
-    m = _BBOX_RE.search(text)
+    text = _BBOX_COMMA_RE.sub(r"{<\1><\2><\3><\4>}", text)
+    m = _BBOX_ANGLE_RE.search(text)
     return tuple(map(float, m.groups())) if m else None
 
 

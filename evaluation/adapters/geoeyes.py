@@ -67,7 +67,7 @@ class GeoEyesAdapter(BaseModelAdapter):
         self,
         model_path: str,
         device: str = "cuda",
-        max_new_tokens: int = 1024,
+        max_new_tokens: int = 256,
         vllm_port: Optional[int] = None,
         vllm_url: Optional[str] = None,
         gpu_memory_utilization: float = 0.92,
@@ -103,6 +103,9 @@ class GeoEyesAdapter(BaseModelAdapter):
     def _start_vllm_server(self, gpu_memory_utilization, tensor_parallel_size, max_model_len):
         env = os.environ.copy()
         env["VLLM_USE_V1"] = "0"
+        # Ensure sitecustomize.py is loaded for transformers compat patches
+        patches_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_patches")
+        env["PYTHONPATH"] = patches_dir + os.pathsep + env.get("PYTHONPATH", "")
         cmd = [
             sys.executable, "-m", "vllm.entrypoints.openai.api_server",
             "--host", "127.0.0.1",
