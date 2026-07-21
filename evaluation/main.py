@@ -10,6 +10,7 @@ from tqdm import tqdm
 from evaluation.evalsets import vrsbench, mme, xlrs, levircc
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
 
 SYSTEM_PROMPTS = {
     "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-99, e.g. {<25><40><33><60>}. No other text.",
@@ -33,10 +34,17 @@ DATASETS = {
 }
 
 
-def evaluate(adapter, module, data_path, max_samples, eval_batch_size):
+def evaluate(adapter, module, data_path, max_samples, eval_batch_size, start_offset=0):
     samples = module.load_data(data_path)
+    if start_offset > 0:
+        samples = samples[start_offset:]
     if 0 < max_samples < len(samples):
         samples = samples[:max_samples]
+
+    # Rewrite image paths for cross-server compatibility
+    if OLD_DATA_ROOT:
+        for s in samples:
+            s["images"] = [img.replace(OLD_DATA_ROOT, SHARED) for img in s["images"]]
 
     grouped = {}
     for s in samples:
