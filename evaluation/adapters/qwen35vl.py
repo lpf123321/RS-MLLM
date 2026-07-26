@@ -17,10 +17,12 @@ THINKING_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 class Qwen35VLAdapter(BaseModelAdapter):
     def __init__(self, model_path: str, device: str = "cuda",
                  max_new_tokens: int = 256, compile_model: bool = False,
-                 system_prompt: str = "", disable_thinking: bool = True):
+                 system_prompt: str = "", disable_thinking: bool = True,
+                 prune_method: str = None, prune_r: float = 0.5, prune_k: int = 2):
         self.max_new_tokens = max_new_tokens
         self.device = device if device == "cuda" and torch.cuda.is_available() else "cpu"
         self.disable_thinking = disable_thinking
+        self.prune_method = prune_method
 
         self.processor = AutoProcessor.from_pretrained(
             model_path, trust_remote_code=True,
@@ -34,6 +36,11 @@ class Qwen35VLAdapter(BaseModelAdapter):
                 dt = torch.float16
                 print(f"  GPU CC {cap} → using float16 (bf16 not supported)", flush=True)
 
+        # Apply monkey-patch before loading model (required for pruning)
+        if prune_method and prune_method != "none":
+            from evaluation._patches.prune import apply_pruning, enable_pruning
+            apply_pruning()
+
         self.model = Qwen3_5ForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype=dt,
@@ -41,6 +48,10 @@ class Qwen35VLAdapter(BaseModelAdapter):
             trust_remote_code=True,
         )
         self.model.eval()
+
+        if prune_method and prune_method != "none":
+            enable_pruning(self.model, method=prune_method, r=prune_r, k=prune_k)
+
         self.system_prompt = system_prompt
 
         if compile_model and self.device == "cuda":

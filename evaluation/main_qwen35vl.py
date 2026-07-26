@@ -47,6 +47,11 @@ def main():
                         help="Skip first N samples of each dataset")
     parser.add_argument("--no_resume", action="store_true", default=False,
                         help="Ignore checkpoint and start from scratch")
+    parser.add_argument("--prune_method", type=str, default=None,
+                        choices=["l2", "k2", "divprune"],
+                        help="Token pruning method (default: no pruning)")
+    parser.add_argument("--prune_r", type=float, default=0.5,
+                        help="Pruning ratio (0.5 = keep 50%% of image tokens)")
     args = parser.parse_args()
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,7 +76,11 @@ def main():
         args.model_path, device=args.device,
         compile_model=args.compile_model,
         disable_thinking=disable_thinking,
+        prune_method=args.prune_method,
+        prune_r=args.prune_r,
     )
+    if args.prune_method:
+        print(f"  Pruning: {args.prune_method} (R={args.prune_r})", flush=True)
     print(f"  Model loaded on {adapter.device}", flush=True)
     print(f"  Compile model: {args.compile_model}", flush=True)
     print(f"  Eval batch size: {args.eval_batch_size}", flush=True)
