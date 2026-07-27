@@ -27,8 +27,8 @@ from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
 
 def load_model(model_path, device="cuda", prune_method=None, prune_r=0.5,
-               load_in_4bit=False, load_in_8bit=False):
-    """加载模型，可选启用剪枝和量化。"""
+               load_in_4bit=False, load_in_8bit=False, lora_path=None):
+    """加载模型，可选启用剪枝、量化和 LoRA adapter。"""
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     processor.tokenizer.padding_side = "left"
 
@@ -56,6 +56,14 @@ def load_model(model_path, device="cuda", prune_method=None, prune_r=0.5,
         trust_remote_code=True,
         **quant_kwargs,
     )
+
+    # 加载 LoRA adapter（可选）
+    if lora_path:
+        from peft import PeftModel
+        model = PeftModel.from_pretrained(model, lora_path)
+        model = model.merge_and_unload()
+        print(f"LoRA adapter loaded: {lora_path}")
+
     model.eval()
 
     if prune_method and prune_method != "none":
@@ -64,20 +72,25 @@ def load_model(model_path, device="cuda", prune_method=None, prune_r=0.5,
     return model, processor
 
 
-def run_batch_inference(model, processor, samples_batch, max_new_tokens=256, disable_thinking=True):
-    """批量推理 —— 多个样本一起过 model.generate()。"""
+def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
+    """批量推理。预填空 think 块抑制 CoT，system prompt 控制输出格式。"""
     texts = []
     all_images = []
     for s in samples_batch:
-        messages = [{"role": "user", "content": [
+        # 构建 chat template 文本（含 system prompt + 预填空 think）
+        messages = []
+        if s.get("system_prompt"):
+            messages.append({"role": "system", "content": s["system_prompt"]})
+        messages.append({"role": "user", "content": [
             *[{"type": "image", "image": img} for img in s["images"]],
             {"type": "text", "text": s["prompt"]},
-        ]}]
-        chat_kwargs = {"add_generation_prompt": True}
-        if disable_thinking:
-            chat_kwargs["enable_thinking"] = False
-        texts.append(processor.apply_chat_template(messages, tokenize=False, **chat_kwargs))
-        image_inputs, _ = process_vision_info(messages)
+        ]})
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        text = text.rstrip() + "<think>\n\n</think>\n\n"
+        texts.append(text)
+        # 单独提取图像（只传 user 消息，不含 system prompt）
+        img_msg = [{"role": "user", "content": [{"type": "image", "image": img} for img in s["images"]]}]
+        image_inputs, _ = process_vision_info(img_msg)
         all_images.append(image_inputs)
 
     inputs = processor(
@@ -98,7 +111,16 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256, dis
             generated_ids[i:i+1, input_len:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL).strip()
+        out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL)
+        idx = out.rfind("</think>")
+        if idx >= 0:
+            out = out[idx + len("</think>"):]
+        # Stop at next dialog turn (keep full caption, not just first line)
+        for stop in ["\nuser", "\nassistant", "<|im_start|>", "\n<think>"]:
+            si = out.find(stop)
+            if si >= 0:
+                out = out[:si]
+        out = out.strip()
         outputs.append(out)
 
     img_tokens = (inputs.input_ids == model.config.image_token_id).sum().item()
@@ -135,8 +157,13 @@ def load_vrsbench(data_path, max_samples=0):
     return samples
 
 
-def load_mcq(data_path, max_samples=0):
+def load_mcq(data_path, dataset_type, max_samples=0):
     """MME / XLRS: MCQ，单图。"""
+    prompts = {
+        "mme": 'Answer EXACTLY in format "X. (X) FullOptionText" with the letter repeated in parentheses. Example: "D. (D) White". You MUST include the parenthesized letter - never omit it. Output ONLY that line.',
+        "xlrs": 'Answer EXACTLY in format "X. (X) FullOptionText" with the letter repeated in parentheses. Example: "A. (A) Some description". You MUST include the parenthesized letter - never omit it. Output ONLY that line.',
+    }
+    sp = prompts.get(dataset_type, "")
     samples = []
     with open(data_path) as f:
         for line in f:
@@ -149,7 +176,7 @@ def load_mcq(data_path, max_samples=0):
             images = [c["image"] for c in user if c["type"] == "image"]
             samples.append({
                 "task": "vqa", "images": images, "prompt": prompt,
-                "reference": assistant,
+                "reference": assistant, "system_prompt": sp,
             })
     return samples
 
@@ -190,12 +217,15 @@ def compute_accuracy(references, predictions):
 
 
 def compute_mcq_accuracy(references, predictions):
-    """MCQ letter-only accuracy: extract answer letter。"""
+    """MCQ letter-only accuracy: extract answer letter from patterns like 'D.', '(D)', 'D)'."""
+    def _extract_letter(text):
+        m = re.search(r'(?<!\w)([A-Da-d])\s*[.)]', str(text).strip())
+        return m.group(1).upper() if m else ""
     correct = 0
     for r, p in zip(references, predictions):
-        r_letter = re.match(r"^[A-D]", str(r).strip())
-        p_letter = re.match(r"^[A-D]", str(p).strip())
-        if r_letter and p_letter and r_letter.group() == p_letter.group():
+        rl = _extract_letter(r)
+        pl = _extract_letter(p)
+        if rl and pl and rl == pl:
             correct += 1
     return correct / len(predictions) if predictions else 0
 
@@ -215,22 +245,25 @@ def compute_bleu(references, predictions, max_n=4):
     for n in range(1, max_n + 1):
         weights = [1.0 / n] * n
         try:
-            bleus[f"BLEU-{n}"] = corpus_bleu(list_of_refs, hyps, weights=weights, smoothing_function=smooth)
+            bleu = corpus_bleu(list_of_refs, hyps, weights=weights, smoothing_function=smooth)
+            if bleu > 1.0:
+                bleu = bleu / 100.0
+            bleus[f"BLEU-{n}"] = bleu
         except Exception:
             bleus[f"BLEU-{n}"] = 0.0
     return bleus
 
 
 def compute_rouge_l(references, predictions):
-    """ROUGE-L。"""
+    """ROUGE-L，取多参考中最高分。"""
     try:
         from rouge_score import rouge_scorer
         scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=False)
         scores = []
         for ref, pred in zip(references, predictions):
-            r = ref[0] if isinstance(ref, list) else ref
-            s = scorer.score(str(r), str(pred))
-            scores.append(s["rougeL"].fmeasure)
+            refs = ref if isinstance(ref, list) else [ref]
+            best = max(scorer.score(str(r), str(pred))["rougeL"].fmeasure for r in refs)
+            scores.append(best)
         return np.mean(scores) if scores else 0.0
     except ImportError:
         return 0.0
@@ -238,22 +271,26 @@ def compute_rouge_l(references, predictions):
 
 def compute_referring_acc(references, predictions, threshold=0.5):
     """Referring expression IoU accuracy。"""
-    pattern = re.compile(r"\{<\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*><\s*(\d+)\s*>\}")
+    _BBOX_ANGLE_RE = re.compile(
+        r"\{<\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*>\}"
+    )
     correct = 0
     for r, p in zip(references, predictions):
-        rm = pattern.search(str(r))
-        pm = pattern.search(str(p))
+        refs = r if isinstance(r, list) else [r]
+        rm = _BBOX_ANGLE_RE.search(str(refs[0])) if refs else None
+        pm = _BBOX_ANGLE_RE.search(str(p))
         if not rm or not pm:
             continue
-        rx = list(map(int, rm.groups()))
-        px = list(map(int, pm.groups()))
-        # IoU on 0-99 normalized coords
-        ix1, iy1 = max(rx[0], px[0]), max(rx[1], px[1])
-        ix2, iy2 = min(rx[2], px[2]), min(rx[3], px[3])
-        inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+        rx = tuple(map(float, rm.groups()))
+        px = tuple(map(float, pm.groups()))
+        x1, y1 = max(rx[0], px[0]), max(rx[1], px[1])
+        x2, y2 = min(rx[2], px[2]), min(rx[3], px[3])
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        a1 = abs(rx[2] - rx[0]) * abs(rx[3] - rx[1])
+        a2 = abs(px[2] - px[0]) * abs(px[3] - px[1])
         area_r = (rx[2] - rx[0]) * (rx[3] - rx[1])
         area_p = (px[2] - px[0]) * (px[3] - px[1])
-        union = area_r + area_p - inter
+        union = a1 + a2 - inter
         iou = inter / union if union > 0 else 0
         if iou >= threshold:
             correct += 1
@@ -310,7 +347,8 @@ def main():
                         help="Pruning method")
     parser.add_argument("--prune_r", type=float, default=0.5,
                         help="Pruning ratio (0.5 = keep 50%)")
-    parser.add_argument("--max_new_tokens", type=int, default=256)
+    parser.add_argument("--max_new_tokens", type=int, default=256,
+                        help="Max tokens to generate")
     parser.add_argument("--batch_size", type=int, default=4,
                         help="Batch size for inference")
     parser.add_argument("--device", type=str, default="cuda")
@@ -320,6 +358,8 @@ def main():
                         help="Use 4-bit quantization")
     parser.add_argument("--load_in_8bit", action="store_true",
                         help="Use 8-bit quantization")
+    parser.add_argument("--lora_path", type=str, default=None,
+                        help="Path to LoRA adapter weights")
     args = parser.parse_args()
 
     # Ad-hoc single image inference mode
@@ -357,8 +397,11 @@ def main():
     print(f"Dataset type: {ds_type}")
 
     # Load data — start_offset applies during loading, max_samples after
-    loaders = {"vrsbench": load_vrsbench, "mme": load_mcq, "xlrs": load_mcq, "levircc": load_levircc}
-    samples = loaders[ds_type](args.data_path, max_samples=0)  # load all
+    if ds_type in ("mme", "xlrs"):
+        samples = load_mcq(args.data_path, ds_type, max_samples=0)
+    else:
+        loader = {"vrsbench": load_vrsbench, "levircc": load_levircc}[ds_type]
+        samples = loader(args.data_path, max_samples=0)
     if args.start_offset > 0:
         samples = samples[args.start_offset:]
     if args.max_samples > 0:
@@ -374,6 +417,7 @@ def main():
         args.model_path, args.device,
         prune_method=args.prune_method, prune_r=args.prune_r,
         load_in_4bit=args.load_in_4bit, load_in_8bit=args.load_in_8bit,
+        lora_path=args.lora_path,
     )
     if args.device == "cuda":
         print(f"GPU memory: {torch.cuda.max_memory_allocated() / 1024**3:.1f} GiB")
@@ -399,11 +443,16 @@ def main():
             print(f"  [{done}/{len(samples)}] {elapsed/done:.2f}s/samp  ETA={eta/3600:.1f}h  img={n_img//len(batch)}  pred={preds[0][:60]}", flush=True)
         if bi % (batch_size * 50) == 0:
             torch.cuda.empty_cache()
+        # Save checkpoint every 100 samples (frequent for long runs)
+        if bi > 0 and done % 100 == 0:
+            torch.cuda.empty_cache()
             if args.output:
                 ckpt = args.output.replace(".json", ".ckpt.json")
                 results_snapshot = _compute_results(samples[:done], predictions, ds_type)
                 with open(ckpt, "w") as f:
                     json.dump(results_snapshot, f, indent=2)
+        elif done % 200 == 0:
+            torch.cuda.empty_cache()
 
     elapsed = time.time() - t0
     if len(samples) > 0:
