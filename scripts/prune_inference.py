@@ -77,7 +77,6 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
     texts = []
     all_images = []
     for s in samples_batch:
-        # 构建 chat template 文本（含 system prompt + 预填空 think）
         messages = []
         if s.get("system_prompt"):
             messages.append({"role": "system", "content": s["system_prompt"]})
@@ -85,10 +84,11 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             *[{"type": "image", "image": img} for img in s["images"]],
             {"type": "text", "text": s["prompt"]},
         ]})
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        text = text.rstrip() + "<think>\n\n</think>\n\n"
+        # 参考 inference.py 的 build_prompt 格式
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
         texts.append(text)
-        # 单独提取图像（只传 user 消息，不含 system prompt）
+        # 单独提取图像
         img_msg = [{"role": "user", "content": [{"type": "image", "image": img} for img in s["images"]]}]
         image_inputs, _ = process_vision_info(img_msg)
         all_images.append(image_inputs)
@@ -111,16 +111,8 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             generated_ids[i:i+1, input_len:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL)
-        idx = out.rfind("</think>")
-        if idx >= 0:
-            out = out[idx + len("</think>"):]
-        # Stop at next dialog turn (keep full caption, not just first line)
-        for stop in ["\nuser", "\nassistant", "<|im_start|>", "\n<think>"]:
-            si = out.find(stop)
-            if si >= 0:
-                out = out[:si]
-        out = out.strip()
+        # 和 inference.py 一致的提取：</think> 之后的内容
+        out = out.split("</think>", 1)[1].strip() if "</think>" in out else out.strip()
         outputs.append(out)
 
     img_tokens = (inputs.input_ids == model.config.image_token_id).sum().item()
@@ -192,9 +184,9 @@ def load_levircc(data_path, max_samples=0):
             user = d["messages"][0]["content"]
             prompt = user[-1]["text"]
             images = [c["image"] for c in user if c["type"] == "image"]
-            refs = d.get("references", [d["messages"][1]["content"][0]["text"]])
-            if isinstance(refs, str):
-                refs = [refs]
+            refs_raw = d.get("references", [d["messages"][1]["content"][0]["text"]])
+            # 提取 "raw" 字段（reference 可能是 dict 或 string）
+            refs = [r["raw"] if isinstance(r, dict) else r for r in refs_raw]
             samples.append({
                 "task": "caption", "images": images, "prompt": prompt,
                 "reference": refs,
