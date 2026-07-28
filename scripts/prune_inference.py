@@ -77,7 +77,6 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
     texts = []
     all_images = []
     for s in samples_batch:
-        # 构建 chat template 文本（含 system prompt + 预填空 think）
         messages = []
         if s.get("system_prompt"):
             messages.append({"role": "system", "content": s["system_prompt"]})
@@ -85,10 +84,11 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             *[{"type": "image", "image": img} for img in s["images"]],
             {"type": "text", "text": s["prompt"]},
         ]})
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        text = text.rstrip() + "<think>\n\n</think>\n\n"
+        # 参考 inference.py 的 build_prompt 格式
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
         texts.append(text)
-        # 单独提取图像（只传 user 消息，不含 system prompt）
+        # 单独提取图像
         img_msg = [{"role": "user", "content": [{"type": "image", "image": img} for img in s["images"]]}]
         image_inputs, _ = process_vision_info(img_msg)
         all_images.append(image_inputs)
@@ -111,16 +111,8 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             generated_ids[i:i+1, input_len:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL)
-        idx = out.rfind("</think>")
-        if idx >= 0:
-            out = out[idx + len("</think>"):]
-        # Stop at next dialog turn (keep full caption, not just first line)
-        for stop in ["\nuser", "\nassistant", "<|im_start|>", "\n<think>"]:
-            si = out.find(stop)
-            if si >= 0:
-                out = out[:si]
-        out = out.strip()
+        # 和 inference.py 一致的提取：</think> 之后的内容
+        out = out.split("</think>", 1)[1].strip() if "</think>" in out else out.strip()
         outputs.append(out)
 
     img_tokens = (inputs.input_ids == model.config.image_token_id).sum().item()
@@ -192,9 +184,9 @@ def load_levircc(data_path, max_samples=0):
             user = d["messages"][0]["content"]
             prompt = user[-1]["text"]
             images = [c["image"] for c in user if c["type"] == "image"]
-            refs = d.get("references", [d["messages"][1]["content"][0]["text"]])
-            if isinstance(refs, str):
-                refs = [refs]
+            refs_raw = d.get("references", [d["messages"][1]["content"][0]["text"]])
+            # 提取 "raw" 字段（reference 可能是 dict 或 string）
+            refs = [r["raw"] if isinstance(r, dict) else r for r in refs_raw]
             samples.append({
                 "task": "caption", "images": images, "prompt": prompt,
                 "reference": refs,
@@ -269,6 +261,65 @@ def compute_rouge_l(references, predictions):
         return 0.0
 
 
+def compute_cider(references, predictions):
+    """CIDEr 指标。"""
+    try:
+        from collections import defaultdict
+        from math import log, sqrt
+        all_ref_tokens = [[_tokenize(ref) for ref in (r if isinstance(r, list) else [r])] for r in references]
+        all_hyp_tokens = [_tokenize(hyp) for hyp in predictions]
+        N = len(references)
+        corpus_refs = [t for group in all_ref_tokens for t in group]
+        cider_scores = []
+
+        for ngram_n in range(1, 5):
+            df = defaultdict(int)
+            for tokens in corpus_refs:
+                seen = set()
+                for i in range(len(tokens) - ngram_n + 1):
+                    g = tuple(tokens[i:i + ngram_n])
+                    if g not in seen: df[g] += 1; seen.add(g)
+
+            n_scores = []
+            for hyp_tokens, ref_groups in zip(all_hyp_tokens, all_ref_tokens):
+                if not hyp_tokens: continue
+                hyp_ng = {}
+                for i in range(len(hyp_tokens) - ngram_n + 1):
+                    g = tuple(hyp_tokens[i:i + ngram_n])
+                    hyp_ng[g] = hyp_ng.get(g, 0) + 1
+                hyp_max = max(hyp_ng.values()) if hyp_ng else 1
+                hyp_vec = {g: (c / hyp_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1) for g, c in hyp_ng.items()}
+                ref_avg = []
+                for ref_tokens in ref_groups:
+                    if not ref_tokens: continue
+                    ref_ng = {}
+                    for i in range(len(ref_tokens) - ngram_n + 1):
+                        g = tuple(ref_tokens[i:i + ngram_n])
+                        ref_ng[g] = ref_ng.get(g, 0) + 1
+                    ref_max = max(ref_ng.values()) if ref_ng else 1
+                    ref_vec = {g: (c / ref_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1) for g, c in ref_ng.items()}
+                    dot = sum(hyp_vec.get(k, 0) * ref_vec.get(k, 0) for k in set(hyp_vec) | set(ref_vec))
+                    n1 = sqrt(sum(v ** 2 for v in hyp_vec.values()))
+                    n2 = sqrt(sum(v ** 2 for v in ref_vec.values()))
+                    ref_avg.append(dot / (n1 * n2) if n1 > 0 and n2 > 0 else 0.0)
+                n_scores.append(np.mean(ref_avg) if ref_avg else 0.0)
+            cider_scores.append(float(np.mean(n_scores)) if n_scores else 0.0)
+
+        weights = [0.25, 0.25, 0.25, 0.25]
+        cider = sum(w * s for w, s in zip(weights, cider_scores))
+        # Length penalty
+        ref_lens = [len(t) for group in all_ref_tokens for t in group]
+        hyp_lens = [len(t) for t in all_hyp_tokens]
+        avg_ref_len = float(np.mean(ref_lens)) if ref_lens else 1.0
+        avg_hyp_len = float(np.mean(hyp_lens)) if hyp_lens else 0.0
+        sigma_val = float(np.std(ref_lens)) if len(ref_lens) > 1 else avg_ref_len / 6.0
+        diff = abs(avg_ref_len - avg_hyp_len)
+        penalty = np.exp(-(diff ** 2) / (2 * sigma_val ** 2)) if sigma_val > 0 else 1.0
+        return float(max(cider * penalty * 10.0, 0.0))
+    except Exception:
+        return 0.0
+
+
 def compute_referring_acc(references, predictions, threshold=0.5):
     """Referring expression IoU accuracy。"""
     _BBOX_ANGLE_RE = re.compile(
@@ -320,6 +371,7 @@ def _compute_results(samples, predictions, ds_type):
             bleus = compute_bleu(refs, preds)
             task_result.update(bleus)
             task_result["ROUGE-L"] = compute_rouge_l(refs, preds)
+            task_result["CIDEr"] = compute_cider(refs, preds)
         else:
             for name, fn in metric_map.get(task, []):
                 task_result[name] = fn(refs, preds)
