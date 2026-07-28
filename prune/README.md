@@ -1,73 +1,71 @@
 # Token Pruning for Qwen VL
 
-三种免训练的视觉 token 剪枝方法，plug-and-play，通过 `--prune_method` 参数控制，不传则完全不启用。
+三种免训练的视觉 token 剪枝方法，直接作用于模型 forward，无需微调。
 
-## 用法
+## 快速开始
 
 ```bash
-# 不剪枝（默认，与原版行为完全一致）
-python -m evaluation.main_qwen35vl \
-    --model_path /path/to/Qwen3.5-4B --datasets all
+# 批量推理（推荐，速度更快）
+python scripts/prune_inference.py \
+    --model_path /path/to/Qwen3.5-4B \
+    --data_path datasets/shared_datasets/VRSBench/vrsbench_eval.jsonl \
+    --prune_method l2 --prune_r 0.5 \
+    --batch_size 4 \
+    --max_samples 100
 
-# L2-Norm 剪枝
-python -m evaluation.main_qwen35vl \
-    --model_path /path/to/Qwen3.5-4B --datasets all \
-    --prune_method l2 --prune_r 0.5
-
-# DivPrune 多样性剪枝
-python -m evaluation.main_qwen35vl \
-    --model_path /path/to/Qwen3.5-4B --datasets all \
-    --prune_method divprune --prune_r 0.5
-
-# FastV-K 剪枝（K=2）
-python -m evaluation.main_qwen35vl \
-    --model_path /path/to/Qwen3.5-4B --datasets all \
-    --prune_method k2 --prune_r 0.5
+# 单条推理风格（兼容 test_inference.py 格式）
+python scripts/prune_inference.py \
+    --model_path /path/to/Qwen3.5-4B \
+    --data_path datasets/shared_datasets/LEVIR-CC/levircc_test.jsonl \
+    --prune_method l2 --prune_r 0.5 \
+    --batch_size 1
 ```
 
 ## 参数
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
+| `--model_path` | str | 必填 | 模型路径 |
+| `--data_path` | str | 必填 | JSONL 数据集路径 |
 | `--prune_method` | str | `None` | `l2` / `k2` / `divprune` |
-| `--prune_r` | float | `0.5` | 剪枝比例，0.5 = 保留 50% |
+| `--prune_r` | float | `0.5` | 剪枝比例 |
+| `--batch_size` | int | `4` | 批量推理大小 |
+| `--max_samples` | int | `0` | 最大样本数（0=全部） |
+| `--start_offset` | int | `0` | 跳过前 N 条 |
+| `--max_new_tokens` | int | `256` | 最大生成长度 |
+| `--load_in_4bit` | flag | — | 4bit 量化（与剪枝兼容） |
+| `--load_in_8bit` | flag | — | 8bit 量化（与剪枝兼容） |
+| `--output` | str | `None` | 结果保存路径 |
 
 ## 三种方法
 
-| 方法 | 打分准则 | 剪枝位置 | 真实加速 |
+| 方法 | 打分准则 | 剪枝位置 | 量化兼容 |
 |------|------|------|------|
 | **l2** | L2 范数 top-k | 进入 LLM 前 | ✅ |
 | **divprune** | 余弦距离 max-min 贪心 | 进入 LLM 前 | ✅ |
-| **k2** | 第 1 层后 L2-norm，第 2 层起 mask | LLM 内部 | ❌ |
+| **k2** | 第 1 层后 L2-norm，第 2 层起 mask | LLM 内部 | ✅ |
 
-## 实现原理
-
-```
-Qwen3_5Model.forward (原版)
-├── 图像编码 → scatter → inputs_embeds   ← 原版
-├── 计算 position_ids                     ← 原版
-├── ★ 剪枝（新增，无 pruning 时完全跳过）  ← 仅此 hook
-│     └── visual_pos_masks 定位图像 token
-│     └── L2-norm / DivPrune 打分
-│     └── 低分 token 从 inputs_embeds/position_ids/attention_mask 删除
-└── self.language_model(...)              ← 收到的序列已缩短
-```
-
-底层 monkey-patch 自动检测模型类型，支持 Qwen3.5 / Qwen3-VL / Qwen2.5-VL。
-
-## 文件
+## 文件结构
 
 ```
-scripts/prune.py                    # 全部剪枝逻辑
-evaluation/adapters/qwen35vl.py     # 适配器（+13 行）
-evaluation/main_qwen35vl.py         # CLI（+9 行）
+scripts/
+├── prune.py              # 剪枝核心（自动检测 Qwen3.5/3-VL/2.5-VL）
+└── prune_inference.py    # 独立推理脚本（不依赖 evaluation 框架）
+
+evaluation/
+├── adapters/qwen35vl.py  # 适配器集成（+13 行）
+└── main_qwen35vl.py      # CLI 参数（+9 行）
 ```
 
-## 效果（pre-LLM l2, R=0.5, 保留 50% 图像 token）
+## 效果（R=0.5，保留 50% 图像 token）
 
-| 数据集 | 指标 | Baseline | pruned |
+| 数据集 | 指标 | Baseline | l2 (R=0.5) |
 |------|------|------|------|
 | VRSBench VQA | Acc | 52.31% | 52.18% |
 | MME | Acc | 35.73% | 38.22% |
 | XLRS | Acc | 35.55% | 36.10% |
 | LEVIR-CC | BLEU-4 | 1.72% | 1.79% |
+
+## 断点续跑
+
+脚本每 200 条自动保存 `.ckpt.json` 断点。超时后重新运行同一命令即可从断点续跑。
