@@ -321,31 +321,36 @@ def compute_cider(references, predictions):
 
 
 def compute_referring_acc(references, predictions, threshold=0.5):
-    """Referring expression IoU accuracy。"""
+    """Referring expression IoU accuracy，与 evaluation/metrics/referring.py 一致。"""
     _BBOX_ANGLE_RE = re.compile(
         r"\{<\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*>\}"
     )
-    correct = 0
+    _BBOX_COMMA_RE = re.compile(
+        r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"
+    )
+    def _parse_bbox(text):
+        text = _BBOX_COMMA_RE.sub(r"{<\1><\2><\3><\4>}", text)
+        m = _BBOX_ANGLE_RE.search(text)
+        return tuple(map(float, m.groups())) if m else None
+    def _iou(b1, b2):
+        x1 = max(min(b1[0], b1[2]), min(b2[0], b2[2]))
+        y1 = max(min(b1[1], b1[3]), min(b2[1], b2[3]))
+        x2 = min(max(b1[0], b1[2]), max(b2[0], b2[2]))
+        y2 = min(max(b1[1], b1[3]), max(b2[1], b2[3]))
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        a1 = abs(b1[2] - b1[0]) * abs(b1[3] - b1[1])
+        a2 = abs(b2[2] - b2[0]) * abs(b2[3] - b2[1])
+        union = a1 + a2 - inter
+        return inter / union if union > 0 else 0.0
+    ious = []
     for r, p in zip(references, predictions):
         refs = r if isinstance(r, list) else [r]
-        rm = _BBOX_ANGLE_RE.search(str(refs[0])) if refs else None
-        pm = _BBOX_ANGLE_RE.search(str(p))
-        if not rm or not pm:
-            continue
-        rx = tuple(map(float, rm.groups()))
-        px = tuple(map(float, pm.groups()))
-        x1, y1 = max(rx[0], px[0]), max(rx[1], px[1])
-        x2, y2 = min(rx[2], px[2]), min(rx[3], px[3])
-        inter = max(0, x2 - x1) * max(0, y2 - y1)
-        a1 = abs(rx[2] - rx[0]) * abs(rx[3] - rx[1])
-        a2 = abs(px[2] - px[0]) * abs(px[3] - px[1])
-        area_r = (rx[2] - rx[0]) * (rx[3] - rx[1])
-        area_p = (px[2] - px[0]) * (px[3] - px[1])
-        union = a1 + a2 - inter
-        iou = inter / union if union > 0 else 0
-        if iou >= threshold:
-            correct += 1
-    return correct / len(predictions) if predictions else 0
+        ref_box = _parse_bbox(refs[0]) if refs else None
+        pred_box = _parse_bbox(p)
+        ious.append(_iou(ref_box, pred_box) if ref_box and pred_box else 0.0)
+    if not ious:
+        return 0.0
+    return sum(1 for v in ious if v >= threshold) / len(ious)
 
 
 # ============================================================
