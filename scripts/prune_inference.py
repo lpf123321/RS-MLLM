@@ -211,7 +211,12 @@ def compute_accuracy(references, predictions):
 def compute_mcq_accuracy(references, predictions):
     """MCQ letter-only accuracy: extract answer letter from patterns like 'D.', '(D)', 'D)'."""
     def _extract_letter(text):
+        # A. (A) / D) / (D) / 或裸字母 A-D
         m = re.search(r'(?<!\w)([A-Da-d])\s*[.)]', str(text).strip())
+        if m:
+            return m.group(1).upper()
+        # fallback: standalone A-D letter
+        m = re.search(r'(?<!\w)([A-Da-d])(?!\w)', str(text).strip())
         return m.group(1).upper() if m else ""
     correct = 0
     for r, p in zip(references, predictions):
