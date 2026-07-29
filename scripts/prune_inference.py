@@ -235,7 +235,7 @@ def compute_bleu(references, predictions, max_n=4):
     hyps = [_tokenize(p) for p in predictions]
     bleus = {}
     for n in range(1, max_n + 1):
-        weights = [1.0 / n] * n
+        weights = tuple(1.0 / n if i < n else 0.0 for i in range(max_n))
         try:
             bleu = corpus_bleu(list_of_refs, hyps, weights=weights, smoothing_function=smooth)
             if bleu > 1.0:
