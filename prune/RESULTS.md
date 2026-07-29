@@ -51,7 +51,7 @@
 | Caption | BLEU-4 | 2.19% | **15.14%** |
 | Caption | ROUGE-L | 16.17% | **38.29%** |
 | Caption | CIDEr | ~0 | **1.38** |
-| Referring | Acc@0.5 | 1.0% | **73.90%** |
+| Referring | Acc@0.5 | 1.0% | **~62%** |
 
 ## 结论
 
