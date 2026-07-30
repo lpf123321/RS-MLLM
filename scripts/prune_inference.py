@@ -73,7 +73,7 @@ def load_model(model_path, device="cuda", prune_method=None, prune_r=0.5,
 
 
 def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
-    """批量推理。与 evaluation/adapters 一致的 generation 方式。"""
+    """批量推理。预填空 think 抑制 CoT + system prompt。"""
     texts = []
     all_images = []
     for s in samples_batch:
@@ -84,8 +84,8 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             *[{"type": "image", "image": img} for img in s["images"]],
             {"type": "text", "text": s["prompt"]},
         ]})
-        # 与 evaluation/adapters 一致：add_generation_prompt=True
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
         texts.append(text)
         img_msg = [{"role": "user", "content": [{"type": "image", "image": img} for img in s["images"]]}]
         image_inputs, _ = process_vision_info(img_msg)
@@ -109,7 +109,6 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             generated_ids[i:i+1, input_len:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        # 与 evaluation/adapters 的 _clean_text 一致
         out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL).strip()
         outputs.append(out)
 
