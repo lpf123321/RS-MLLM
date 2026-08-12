@@ -13,15 +13,25 @@ def _tokenize(text: str) -> List[str]:
     return text.split()
 
 
-def _ngrams(tokens: List[str], n: int):
-    ngs = {}
-    for i in range(len(tokens) - n + 1):
-        g = tuple(tokens[i:i + n])
-        ngs[g] = ngs.get(g, 0) + 1
-    return ngs
+def _precook(tokens: List[str], n: int):
+    """Build n-gram counts for all orders 1..n (mirrors pycocoevalcap precook)."""
+    counts = defaultdict(int)
+    for k in range(1, n + 1):
+        for i in range(len(tokens) - k + 1):
+            counts[tuple(tokens[i:i + k])] += 1
+    return counts
 
 
 class CIDEr(BaseMetric):
+    """CIDEr-D as implemented by pycocoevalcap/cider_scorer.py (tylin/coco-caption).
+
+    Mirrors the reference algorithm:
+      - TF-IDF weight = term_freq * (log(N) - log(df)), no count normalization
+      - similarity = sum(min(h,r)*r) / (||h|| * ||r||)   (asymmetric, min-clipped)
+      - per-sample Gaussian length penalty with sigma=6.0
+      - mean over n-grams, divided by #refs, multiplied by 10
+    """
+
     name = "cider"
 
     def __init__(self, n: int = 4, sigma: float = 6.0):
@@ -29,54 +39,55 @@ class CIDEr(BaseMetric):
         self.sigma = sigma
 
     def compute(self, references: List[List[str]], predictions: List[str]) -> Dict[str, float]:
-        all_ref_tokens = [[_tokenize(ref) for ref in group] for group in references]
-        all_hyp_tokens = [_tokenize(hyp) for hyp in predictions]
+        ref_tokens = [[_tokenize(ref) for ref in group] for group in references]
+        hyp_tokens = [_tokenize(hyp) for hyp in predictions]
         N = len(references)
-        corpus_refs = [t for group in all_ref_tokens for t in group]
+        if N == 0:
+            return {"CIDEr": 0.0}
 
-        cider_scores = []
-        for ngram_n in range(1, self.n + 1):
-            df = defaultdict(int)
-            for tokens in corpus_refs:
-                for gram in set(tuple(tokens[i:i + ngram_n]) for i in range(len(tokens) - ngram_n + 1)):
-                    df[gram] += 1
+        doc_freq = defaultdict(int)
+        for group in ref_tokens:
+            for ref in group:
+                for gram in set(_precook(ref, self.n)):
+                    doc_freq[gram] += 1
 
-            n_scores = []
-            for hyp_tokens, ref_groups in zip(all_hyp_tokens, all_ref_tokens):
-                if not hyp_tokens:
-                    continue
-                hyp_ng = _ngrams(hyp_tokens, ngram_n)
-                hyp_max = max(hyp_ng.values()) if hyp_ng else 1
-                hyp_vec = {g: (c / hyp_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1)
-                           for g, c in hyp_ng.items()}
+        ref_len = np.log(float(N))
 
-                ref_avg = []
-                for ref_tokens in ref_groups:
-                    if not ref_tokens:
-                        continue
-                    ref_ng = _ngrams(ref_tokens, ngram_n)
-                    ref_max = max(ref_ng.values()) if ref_ng else 1
-                    ref_vec = {g: (c / ref_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1)
-                               for g, c in ref_ng.items()}
+        def counts2vec(cnts):
+            vec = [defaultdict(float) for _ in range(self.n)]
+            length = 0
+            norm = [0.0 for _ in range(self.n)]
+            for (ngram, term_freq) in cnts.items():
+                df = np.log(max(1.0, doc_freq[ngram]))
+                n = len(ngram) - 1
+                vec[n][ngram] = float(term_freq) * (ref_len - df)
+                norm[n] += pow(vec[n][ngram], 2)
+                if n == 1:
+                    length += term_freq
+            norm = [np.sqrt(x) for x in norm]
+            return vec, norm, length
 
-                    dot = sum(hyp_vec.get(k, 0) * ref_vec.get(k, 0) for k in set(hyp_vec) | set(ref_vec))
-                    n1 = sqrt(sum(v ** 2 for v in hyp_vec.values()))
-                    n2 = sqrt(sum(v ** 2 for v in ref_vec.values()))
-                    ref_avg.append(dot / (n1 * n2) if n1 > 0 and n2 > 0 else 0.0)
+        def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, length_hyp, length_ref):
+            delta = float(length_hyp - length_ref)
+            val = np.array([0.0 for _ in range(self.n)])
+            for n in range(self.n):
+                for (ngram, count) in vec_hyp[n].items():
+                    val[n] += min(vec_hyp[n][ngram], vec_ref[n][ngram]) * vec_ref[n][ngram]
+                if (norm_hyp[n] != 0) and (norm_ref[n] != 0):
+                    val[n] /= (norm_hyp[n] * norm_ref[n])
+                val[n] *= np.e ** (-(delta ** 2) / (2 * self.sigma ** 2))
+            return val
 
-                n_scores.append(np.mean(ref_avg) if ref_avg else 0.0)
+        scores = []
+        for group_refs, hyp in zip(ref_tokens, hyp_tokens):
+            vec, norm, length = counts2vec(_precook(hyp, self.n))
+            score = np.array([0.0 for _ in range(self.n)])
+            for ref in group_refs:
+                vec_ref, norm_ref, length_ref = counts2vec(_precook(ref, self.n))
+                score += sim(vec, vec_ref, norm, norm_ref, length, length_ref)
+            score_avg = np.mean(score)
+            score_avg /= len(group_refs)
+            score_avg *= 10.0
+            scores.append(score_avg)
 
-            cider_scores.append(float(np.mean(n_scores)) if n_scores else 0.0)
-
-        weights = [1.0 / self.n] * self.n
-        cider = sum(w * s for w, s in zip(weights, cider_scores))
-
-        ref_lens = [len(t) for group in all_ref_tokens for t in group]
-        hyp_lens = [len(t) for t in all_hyp_tokens]
-        avg_ref_len = float(np.mean(ref_lens)) if ref_lens else 1.0
-        avg_hyp_len = float(np.mean(hyp_lens)) if hyp_lens else 0.0
-        sigma_val = float(np.std(ref_lens)) if len(ref_lens) > 1 else avg_ref_len / self.sigma
-        diff = abs(avg_ref_len - avg_hyp_len)
-        penalty = np.exp(-(diff ** 2) / (2 * sigma_val ** 2)) if sigma_val > 0 else 1.0
-
-        return {"CIDEr": float(max(cider * penalty * 10.0, 0.0))}
+        return {"CIDEr": float(np.mean(scores)) if scores else 0.0}
