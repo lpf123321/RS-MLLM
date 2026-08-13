@@ -15,7 +15,7 @@ def load_data(data_path: str):
             user_content = d["messages"][0]["content"]
             text = user_content[-1]["text"]
             image_paths = [c["image"] for c in user_content if c["type"] == "image"]
-            references = d.get("references", [d["messages"][1]["content"][0]["text"]])
+            references = [r["raw"] if isinstance(r, dict) else r for r in d.get("references", [d["messages"][1]["content"][0]["text"]])]
             samples.append({
                 "task": "caption",
                 "images": image_paths,

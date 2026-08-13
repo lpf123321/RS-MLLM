@@ -47,9 +47,8 @@ class CIDEr(BaseMetric):
 
         doc_freq = defaultdict(int)
         for group in ref_tokens:
-            for ref in group:
-                for gram in set(_precook(ref, self.n)):
-                    doc_freq[gram] += 1
+            for gram in set(gram for ref in group for gram in _precook(ref, self.n)):
+                doc_freq[gram] += 1
 
         ref_len = np.log(float(N))
 
