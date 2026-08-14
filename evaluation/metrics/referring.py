@@ -11,10 +11,14 @@ _BBOX_ANGLE_RE = re.compile(
 _BBOX_COMMA_RE = re.compile(
     r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"
 )
+_BBOX_BRACKET_RE = re.compile(
+    r"\[\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\]"
+)
 
 
 def _parse_bbox(text: str) -> Optional[Tuple[float, float, float, float]]:
     text = _BBOX_COMMA_RE.sub(r"{<\1><\2><\3><\4>}", text)
+    text = _BBOX_BRACKET_RE.sub(r"{<\1><\2><\3><\4>}", text)
     m = _BBOX_ANGLE_RE.search(text)
     return tuple(map(float, m.groups())) if m else None
 

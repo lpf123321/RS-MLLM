@@ -16,7 +16,7 @@ evaluation/
 │   ├── cider.py                   #   CIDEr — TF-IDF 加权余弦相似度
 │   └── referring.py               #   ReferringAcc — mean_iou / Acc@0.25~0.7
 ├── adapters/                      # 模型适配器（策略模式，支持不同模型）
-│   └── qwen3vl.py                 #   Qwen3VLAdapter — Qwen3-VL 推理适配器
+│   └── qwen3vl.py                 #   Qwen3VLAdapter — Qwen3.5 推理适配器
 ├── evalsets/                      # 数据集加载
 │   ├── vrsbench.py                #   VRSBench (VQA / Caption / Referring)
 │   ├── mme.py                     #   MME-RealWorld-RS (VQA)
@@ -89,7 +89,7 @@ sbatch evaluation/run_eval.slurm --model_path /path/to/model --output /path/to/r
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--model_path` | `models/Qwen3-VL-2B-Instruct` | 模型路径 |
+| `--model_path` | `models/Qwen3.5-4B` | 模型路径 |
 | `--datasets` | `all` | 评估数据集，可选 `vrsbench` `mme` `xlrs` `levircc` `all` |
 | `--max_samples` | `100` (交互) / `0` (SLURM) | 每数据集最大样本数，`0`=全部 |
 | `--device` | `cuda` | 推理设备 |
