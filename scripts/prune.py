@@ -56,7 +56,7 @@ _IMPORTED = "qwen3_5"
 # 剪枝方法注册表
 # ============================================================
 
-PRUNE_METHODS = ["l2", "k2", "divprune"]
+PRUNE_METHODS = ["l2", "k2", "divprune", "scope"]
 
 
 def enable_pruning(model, method: str = "l2", r: float = 0.5, k: int = 2):
@@ -64,7 +64,7 @@ def enable_pruning(model, method: str = "l2", r: float = 0.5, k: int = 2):
 
     Args:
         model: Qwen3_5ForConditionalGeneration 实例。
-        method: "l2" | "k2" | "divprune"
+        method: "l2" | "k2" | "divprune" | "scope"
         r: 图像 token 剪枝比例（0.5 = 保留 50%）
         k: FastV-K 的层数（仅 method="k2" 时生效）
     """
@@ -85,6 +85,11 @@ def enable_pruning(model, method: str = "l2", r: float = 0.5, k: int = 2):
         text_model.forward = _qwen35_text_k2_forward.__get__(text_model, Qwen3_5TextModel)
         if not hasattr(text_model, "_k2_original_forward"):
             text_model._k2_original_forward = _K2_ORIGINAL_FORWARD
+    elif method == "scope":
+        backbone._prune_method = method
+        backbone._prune_r = r
+        from prune.scope import enable_scope_hooks
+        enable_scope_hooks(backbone.visual)
     else:
         # l2 / divprune: pre-LLM 剪枝，设置 Qwen3_5Model 的标志位
         backbone._prune_method = method
@@ -98,6 +103,8 @@ def disable_pruning(model):
         backbone = getattr(model, "model", model)
     backbone._prune_method = None
     backbone._prune_r = 0
+    if hasattr(backbone, "visual"):
+        backbone.visual._scope_features = None
     # 如果 K2 的 forward 打过补丁，恢复
     if hasattr(backbone, "language_model"):
         text_model = backbone.language_model
@@ -280,6 +287,18 @@ def _qwen_patched_forward(
             inputs_embeds, attention_mask, position_ids = _prune_divprune(
                 inputs_embeds, attention_mask, position_ids, visual_pos_masks, r
             )
+        visual_pos_masks = None
+    elif prune_method == "scope":
+        from prune.scope import _prune_scope
+        r = self._prune_r
+        scope_feat = getattr(self.visual, "_scope_features", None)
+        if scope_feat is not None:
+            inputs_embeds, attention_mask, position_ids = _prune_scope(
+                inputs_embeds, attention_mask, position_ids, visual_pos_masks, r,
+                scope_features=scope_feat,
+                image_grid_thw=image_grid_thw,
+            )
+            self.visual._scope_features = None
         visual_pos_masks = None
 
     outputs = self.language_model(
