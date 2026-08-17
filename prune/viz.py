@@ -37,13 +37,17 @@ def prune_to_grid_mask(pruner, features, grid_h, grid_w, keep_ratio, seed=None):
     return mask.view(grid_h, grid_w)
 
 
-def overlay_prune_mask(image, keep_mask, block_px=16):
-    """Overlay the keep-mask on ``image``; pruned blocks are marked red/dim.
+def overlay_prune_mask(image, keep_mask, block_px=16, alpha=0.45, pruned_color=(0.85, 0.1, 0.1)):
+    """Overlay the keep-mask on ``image``; pruned blocks are marked with a
+    semi-transparent red tint so the underlying image stays visible.
 
     Args:
         image: ``PIL.Image.Image`` or numpy array (H, W, 3).
         keep_mask: bool array of shape ``[grid_h, grid_w]`` (or torch tensor).
         block_px: pixel size of each merged-token block in the overlay.
+        alpha: opacity of the pruned-region tint in ``[0, 1]`` (0 = fully
+            transparent, 1 = fully opaque).
+        pruned_color: RGB tuple in ``[0, 1]`` for the pruned-region tint.
 
     Returns:
         float numpy array in ``[0, 1]`` with shape ``(grid_h*block_px,
@@ -62,15 +66,45 @@ def overlay_prune_mask(image, keep_mask, block_px=16):
         .astype(float)
         / 255.0
     )
+    color = np.asarray(pruned_color, dtype=float)
     pruned = ~keep
     for hi in range(grid_h):
         for wi in range(grid_w):
             if pruned[hi, wi]:
                 r0, r1 = hi * block_px, (hi + 1) * block_px
                 c0, c1 = wi * block_px, (wi + 1) * block_px
-                overlay[r0:r1, c0:c1, 0] = 0.9  # red channel up
-                overlay[r0:r1, c0:c1, 1:] *= 0.25  # dim green/blue
+                block = overlay[r0:r1, c0:c1]
+                overlay[r0:r1, c0:c1] = (1.0 - alpha) * block + alpha * color
     return overlay
+
+
+def save_overlay_image(
+    image,
+    keep_mask,
+    save_path,
+    block_px=16,
+    alpha=0.45,
+    pruned_color=(0.85, 0.1, 0.1),
+):
+    """Save ONLY the pruned-token overlay as a plain image (no axes, no text).
+
+    Unlike :func:`visualize_pruning`, this writes a bare PNG containing just the
+    image with the semi-transparent prune mask — no matplotlib decorations.
+
+    Args:
+        image: ``PIL.Image.Image`` or numpy array.
+        keep_mask: bool array ``[grid_h, grid_w]``.
+        save_path: output PNG path.
+        block_px: overlay block pixel size.
+        alpha: opacity of the pruned-region tint in ``[0, 1]``.
+        pruned_color: RGB tuple in ``[0, 1]`` for the pruned-region tint.
+    """
+    overlay = overlay_prune_mask(
+        image, keep_mask, block_px=block_px, alpha=alpha, pruned_color=pruned_color
+    )
+    out_img = Image.fromarray((np.clip(overlay, 0, 1) * 255).astype(np.uint8))
+    out_img.save(save_path)
+    return out_img
 
 
 def visualize_pruning(
@@ -79,6 +113,8 @@ def visualize_pruning(
     title=None,
     save_path=None,
     block_px=16,
+    alpha=0.45,
+    pruned_color=(0.85, 0.1, 0.1),
     figsize=(12, 5.5),
 ):
     """Render a two-panel figure: pruned-token overlay + summary text.
@@ -89,6 +125,8 @@ def visualize_pruning(
         title: optional suptitle.
         save_path: if given, save the figure to this path (PNG).
         block_px: overlay block pixel size.
+        alpha: opacity of the pruned-region tint in ``[0, 1]``.
+        pruned_color: RGB tuple in ``[0, 1]`` for the pruned-region tint.
         figsize: matplotlib figure size.
 
     Returns:
@@ -106,7 +144,7 @@ def visualize_pruning(
 
     fig, axes = plt.subplots(1, 2, figsize=figsize)
 
-    overlay = overlay_prune_mask(image, keep, block_px=block_px)
+    overlay = overlay_prune_mask(image, keep, block_px=block_px, alpha=alpha, pruned_color=pruned_color)
     axes[0].imshow(overlay)
     axes[0].set_title(
         f"Pruned tokens: {n_keep}/{n_total} kept ({n_keep / n_total:.0%})", fontsize=10
