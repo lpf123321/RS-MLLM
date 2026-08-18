@@ -3,7 +3,10 @@ from typing import List, Tuple
 import torch
 from qwen_vl_utils import process_vision_info
 from tqdm import tqdm
-from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
+from transformers import AutoProcessor
+from transformers.models.qwen3_5.modeling_qwen3_5 import (
+    Qwen3_5ForConditionalGeneration,
+)
 
 from evaluation.base.adapter import BaseModelAdapter
 

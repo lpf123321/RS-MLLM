@@ -1,5 +1,5 @@
 #!/bin/bash
-# Measure peak CUDA memory on 1,000 XLRS samples in one SLURM job.
+# Measure peak CUDA memory on the fixed 1,000-sample XLRS subset in one SLURM job.
 # Submit one job only: sbatch evaluation/run_xlrs_memory.slurm
 # Optional overrides: MODEL_PATH, DATA_PATH, RESULTS_DIR, CONDA_ENV,
 #                     SAMPLE_SEED, PRUNER_SEED, COMPILE_MODEL.
@@ -19,8 +19,7 @@ export PYTHONUNBUFFERED=1
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 MODEL_PATH="${MODEL_PATH:-/home/u2025310307/models/Qwen3.5-4B}"
-DATA_ROOT_VALUE="${DATA_ROOT:-/users/u2024311136/shared/shared_datasets}"
-DATA_PATH="${DATA_PATH:-$DATA_ROOT_VALUE/XLRS-Bench-lite/xlrs.jsonl}"
+DATA_PATH="${DATA_PATH:-$REPO_ROOT/evaluation/data/xlrs_memory_1000.jsonl}"
 RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/evaluation/results/xlrs_memory_1000}"
 CONDA_ENV="${CONDA_ENV:-rs_mllm}"
 SAMPLE_SEED="${SAMPLE_SEED:-2026}"

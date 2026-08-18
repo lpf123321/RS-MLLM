@@ -281,14 +281,21 @@ python -m evaluation.main \
   --pruner l2norm \
   --keep_ratio 0.5 \
   --eval_batch_size 1 \
-  --random_samples 100 \
-  --sample_seed 2026 \
   --datasets mme
 ```
 
-`--random_samples` selects a reproducible random subset from each dataset;
-`--sample_seed` controls that selection. Omit `--random_samples` to retain the
-existing sequential sampling behavior.
+For consistent XLRS memory comparisons, use the committed fixed subset at
+`evaluation/data/xlrs_memory_1000.jsonl`. It contains the exact 1,000 records
+used for the existing memory measurements; its source checksum and selection
+indices are stored in `evaluation/data/xlrs_memory_1000.metadata.json`.
+
+```bash
+sbatch evaluation/run_xlrs_memory.slurm
+```
+
+The script uses this fixed subset by default. To regenerate it from the
+canonical XLRS JSONL, run `evaluation/tools/create_xlrs_memory_subset.py` with
+the paths in the metadata file.
 
 DivPrune and Fourier use dedicated adapters:
 

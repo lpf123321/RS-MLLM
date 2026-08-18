@@ -111,7 +111,9 @@ def select_samples(module, data_path, sample_count, sample_seed):
     samples = module.load_data(data_path)
     if not samples:
         raise RuntimeError(f"No samples loaded from {data_path}")
-    return random.Random(sample_seed).sample(samples, min(sample_count, len(samples)))
+    if sample_count >= len(samples):
+        return samples
+    return random.Random(sample_seed).sample(samples, sample_count)
 
 
 def mib(value):

@@ -79,6 +79,16 @@ sbatch evaluation/run_eval.slurm --datasets vrsbench mme --max_samples 500
 sbatch evaluation/run_eval.slurm --model_path /path/to/model --output /path/to/results.json
 ```
 
+### 固定 XLRS 小样本集
+
+`evaluation/data/xlrs_memory_1000.jsonl` 是已提交的固定 1,000 条 XLRS 小样本集，用于所有显存评测。它按原始 XLRS 文件的既定选择顺序保存，因此不同使用者不需要重新抽样即可使用同一批数据。
+
+```bash
+sbatch evaluation/run_xlrs_memory.slurm
+```
+
+脚本默认读取该固定文件。其来源文件 SHA-256、选择 seed 和全部原始行索引保存在 `evaluation/data/xlrs_memory_1000.metadata.json`；如需验证或重建，可运行 `evaluation/tools/create_xlrs_memory_subset.py`。
+
 ### 3. 查看结果
 
 - 终端输出结果表格
