@@ -181,7 +181,7 @@ def main():
         "sample_seed": args.sample_seed,
         "pruner": (
             "none" if args.method == "baseline" else
-            "divprune_l2" if args.method == "divprune" else
+            "divprune" if args.method == "divprune" else
             "fourier" if args.method == "fourier" else
             "scope_l2" if args.method == "scope" else args.method
         ),

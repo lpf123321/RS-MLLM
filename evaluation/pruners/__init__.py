@@ -1,4 +1,5 @@
 from .l2_norm import L2NormPruner
+from .divprune import DivPrunePruner
 from .mmtok import MMTokPruner
 from .random_pruner import RandomPruner
 from .scope_l2 import ScopeL2Pruner
@@ -9,6 +10,7 @@ PRUNER_REGISTRY = {
     "random": RandomPruner,
     "mmtok": MMTokPruner,
     "l2norm": L2NormPruner,
+    "divprune": DivPrunePruner,
     "scope_l2": ScopeL2Pruner,
 }
 

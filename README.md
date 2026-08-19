@@ -269,7 +269,7 @@ The Qwen3.5 evaluation path supports the following visual-token compression meth
 | `mmtok` | `qwen35_pruned` | Greedy cosine-similarity coverage selection. |
 | `l2norm` | `qwen35_pruned` | Retains tokens with the largest feature L2 norms. |
 | `scope_l2` | `qwen35_pruned` | Combines L2 saliency with cosine-similarity coverage. |
-| DivPrune | `qwen35_divprune` | Uses L2 centers and merges dropped tokens into their nearest retained center. |
+| DivPrune | `qwen35_divprune` | Greedily retains a max-min diverse subset by cosine distance. |
 | Fourier | `qwen35_fourier` | Retains low-frequency 2D DCT components of each visual feature grid. |
 
 For compressed inference, use `--eval_batch_size 1`. For example, run L2-norm pruning at a 50% token keep ratio with:
