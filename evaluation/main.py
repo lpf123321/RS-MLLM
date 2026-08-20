@@ -14,13 +14,24 @@ SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets"
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
+def _load_prompt(name: str) -> str:
+    path = os.path.join(_REPO_ROOT, "evaluation", "prompts", name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
+
+_XLRS_CAPTION_PROMPT = _load_prompt("xlrs_caption_en.txt")
+
 SYSTEM_PROMPTS = {
     "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.",
     "mme": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"D. (D) White\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "xlrs": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"A. (A) Some description\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
-    "xlrs_caption": "Obey the task prefix:\n- [CAP] Describe the image in detail.",
-    "xlrs_grounding": "Obey the task prefix:\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.",
+    "xlrs_caption": _XLRS_CAPTION_PROMPT or "Describe the image in detail.",
+    "xlrs_grounding": "Obey the task prefix:\n- [REF] Output the bounding box coordinates of the described object, directly without explanation.",
 }
 
 GEOEYES_PROMPTS = {

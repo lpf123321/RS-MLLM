@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Convert XLRS visual-grounding split_evals to VRSBench-style messages jsonl.
+"""Convert XLRS visual-grounding split_evals to messages format (official口径).
 
-Reads the classmate's flat jsonl (0-1 normalized bbox + image dims) and rewrites
-it into the VRSBench referring format: ``[REF]`` prefix + a 0-100 integer text
-bbox ``{<x1><y1><x2><y2>}``, so the existing ``ReferringAcc`` metric and the task
-router ([REF] -> grounding expert) work unchanged.
+Reads the classmate's flat jsonl and rewrites it into the ``messages`` format,
+keeping the OFFICIAL question and the 0-1 normalized bbox ``[xmin, ymin, xmax,
+ymax]`` (no rounding). A minimal ``[REF]`` prefix is prepended only for expert
+routing; the bbox stays 0-1 float and is scored by ``GroundingIoU`` (which
+normalizes pixel/0-100 predictions to 0-1).
 
 Usage:
     python scripts/preprocess_xlrs_grounding.py [--src ...] [--out ...]
@@ -19,12 +20,10 @@ DEFAULT_SRC = (
 DEFAULT_OUT = "evaluation/data/xlrs_grounding.jsonl"
 
 
-def bbox_to_angle(box):
-    """0-1 normalized [x1,y1,x2,y2] -> '{<x1><y1><x2><y2>}' with 0-100 ints."""
+def bbox_to_text(box):
+    """0-1 normalized [x1,y1,x2,y2] -> '[x1, y1, x2, y2]' (keep float precision)."""
     x1, y1, x2, y2 = box
-    return "{<%d><%d><%d><%d>}" % (
-        round(x1 * 100), round(y1 * 100), round(x2 * 100), round(y2 * 100)
-    )
+    return "[%s, %s, %s, %s]" % (x1, y1, x2, y2)
 
 
 def main():
@@ -42,14 +41,9 @@ def main():
                 continue
             d = json.loads(line)
             image = d["image"]
-            question = d["question"]
-            # 提取 "Description: ..." 作为任务描述，前面加 [REF] 前缀
-            if "Description: " in question:
-                desc = question.split("Description: ", 1)[1].strip()
-            else:
-                desc = question.strip()
-            prompt = "[REF] " + desc
-            answer = bbox_to_angle(d["bbox"])
+            question = d["question"].strip()
+            prompt = "[REF] " + question
+            answer = bbox_to_text(d["bbox"])
             record = {
                 "messages": [
                     {"role": "user", "content": [

@@ -1,11 +1,11 @@
 import json
 
-from evaluation.metrics import ReferringAcc
+from evaluation.metrics import GroundingIoU
 
 NAME = "XLRS-Bench visual grounding"
 
 TASK_METRICS = {
-    "referring": [ReferringAcc(thresholds=[0.25, 0.5, 0.7])],
+    "referring": [GroundingIoU(thresholds=[0.25, 0.5, 0.7])],
 }
 
 

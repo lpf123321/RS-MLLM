@@ -4,5 +4,6 @@ from evaluation.metrics.rouge import ROUGEL
 from evaluation.metrics.cider import CIDEr
 from evaluation.metrics.referring import ReferringAcc
 from evaluation.metrics.mcq_accuracy import MCQAccuracy
+from evaluation.metrics.grounding import GroundingIoU
 
-__all__ = ["Accuracy", "BLEU", "ROUGEL", "CIDEr", "ReferringAcc", "MCQAccuracy"]
+__all__ = ["Accuracy", "BLEU", "ROUGEL", "CIDEr", "ReferringAcc", "MCQAccuracy", "GroundingIoU"]

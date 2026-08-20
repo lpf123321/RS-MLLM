@@ -55,11 +55,13 @@ XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集�
   - caption: `xlrs_caption_en.jsonl`（934 条）
   - grounding: `xlrs_grounding_test_4096.jsonl`（6310 条，4096 高分辨率，test split）
 - 处理：`scripts/preprocess_xlrs_caption.py` / `preprocess_xlrs_grounding.py` → `evaluation/data/` 下 messages 格式 jsonl
-  - caption → `[CAP]` 前缀 + 文本 reference（BLEU/ROUGE/CIDEr）
-  - grounding → `[REF]` 前缀 + bbox(0-1)×100 取整 → `{<x1><y1><x2><y2>}`（ReferringAcc）
+  - caption → `[CAP]` 前缀 + 文本 reference（BLEU/ROUGE/CIDEr）；**三段式 prompt 作为 system prompt**（`evaluation/prompts/xlrs_caption_en.txt`，对齐官方 CAPTION_PROMPT_EN）
+  - grounding → `[REF]` 前缀（仅路由）+ **官方 question + 0-1 浮点 bbox `[xmin,ymin,xmax,ymax]`**（不 round，指标用 `GroundingIoU` 归一化到 0-1）
 - 新增 evalset：`evaluation/evalsets/xlrs_caption.py`、`xlrs_grounding.py`
+- 新增指标：`evaluation/metrics/grounding.py`（GroundingIoU）
 - 注册：`evaluation/main.py`、`run_prune_sweep.py`、`run_task_adaptive.py` 的 `DATASETS` + `SYSTEM_PROMPTS`
 - 路由自动复用：`[CAP]`→general 专家、`[REF]`→grounding 专家
+- 2048 版（`datasets_data/`）：`scripts/fix_xlrs_2048.py` 从 split_evals 重新生成（本地 2048 图 + 0-1 bbox + 官方 question）
 - 状态：脚本已写完、预处理 jsonl 已生成；**等同学确定最终多专家权重后再跑评测**
 
-数据规模/路径已核验：caption 934 张图、grounding 844 张图（6310 条，多物体共享图），图片路径全部存在。
+注：放弃"仿 VRSBench 0-100 整数 bbox"方案——它会 (a) 让 caption 短 prompt 与三段式 reference 的 n-gram 重叠趋近 0，(b) 给 grounding 小目标引入 8-16% 量化误差。改为对齐 XLRS 官方口径。
