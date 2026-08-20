@@ -23,17 +23,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from evaluation.evalsets import levircc, mme, vrsbench, xlrs
+from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
 from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),
     "mme": (mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),
     "xlrs": (xlrs, f"{SHARED}/XLRS-Bench-lite/xlrs.jsonl"),
     "levircc": (levircc, f"{SHARED}/LEVIR-CC/levircc_test.jsonl"),
+    "xlrs_caption": (xlrs_caption, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_caption.jsonl")),
+    "xlrs_grounding": (xlrs_grounding, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_grounding.jsonl")),
 }
 
 DEFAULT_RATIOS = [0.1, 0.25, 0.35, 0.5, 0.65, 0.75, 0.9, 1.0]

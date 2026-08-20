@@ -8,16 +8,19 @@ import re
 from PIL import Image
 from tqdm import tqdm
 
-from evaluation.evalsets import vrsbench, mme, xlrs, levircc
+from evaluation.evalsets import vrsbench, mme, xlrs, levircc, xlrs_caption, xlrs_grounding
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SYSTEM_PROMPTS = {
     "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.",
     "mme": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"D. (D) White\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "xlrs": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"A. (A) Some description\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
+    "xlrs_caption": "Obey the task prefix:\n- [CAP] Describe the image in detail.",
+    "xlrs_grounding": "Obey the task prefix:\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.",
 }
 
 GEOEYES_PROMPTS = {
@@ -32,6 +35,8 @@ DATASETS = {
     "mme": (mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),
     "xlrs": (xlrs, f"{SHARED}/XLRS-Bench-lite/xlrs.jsonl"),
     "levircc": (levircc, f"{SHARED}/LEVIR-CC/levircc_test.jsonl"),
+    "xlrs_caption": (xlrs_caption, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_caption.jsonl")),
+    "xlrs_grounding": (xlrs_grounding, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_grounding.jsonl")),
 }
 
 TASK_MAX_TOKENS = {

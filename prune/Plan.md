@@ -45,3 +45,21 @@ Smoke test 抽样分布（seed=2026）：
 - mme: 1000（全 vqa / general）
 - xlrs: 1000（全 vqa / general）
 - levircc: 1000（全 caption / change）
+
+### 7. 新 XLRS 任务接入（caption + visual grounding，仿 VRSBench 处理）
+
+XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集（8/13~8/15），仿照 VRSBench
+的「messages + 任务前缀 + 文本 bbox」方式接入，复用现有指标与路由。
+
+- 数据源：lora_expert 的 `split_evals`（同学已从 arrow 预处理好的扁平 jsonl）
+  - caption: `xlrs_caption_en.jsonl`（934 条）
+  - grounding: `xlrs_grounding_test_4096.jsonl`（6310 条，4096 高分辨率，test split）
+- 处理：`scripts/preprocess_xlrs_caption.py` / `preprocess_xlrs_grounding.py` → `evaluation/data/` 下 messages 格式 jsonl
+  - caption → `[CAP]` 前缀 + 文本 reference（BLEU/ROUGE/CIDEr）
+  - grounding → `[REF]` 前缀 + bbox(0-1)×100 取整 → `{<x1><y1><x2><y2>}`（ReferringAcc）
+- 新增 evalset：`evaluation/evalsets/xlrs_caption.py`、`xlrs_grounding.py`
+- 注册：`evaluation/main.py`、`run_prune_sweep.py`、`run_task_adaptive.py` 的 `DATASETS` + `SYSTEM_PROMPTS`
+- 路由自动复用：`[CAP]`→general 专家、`[REF]`→grounding 专家
+- 状态：脚本已写完、预处理 jsonl 已生成；**等同学确定最终多专家权重后再跑评测**
+
+数据规模/路径已核验：caption 934 张图、grounding 844 张图（6310 条，多物体共享图），图片路径全部存在。
