@@ -1,3 +1,4 @@
+from .divprune import DivPrunePruner
 from .l2_norm import L2NormPruner
 from .divprune import DivPrunePruner
 from .mmtok import MMTokPruner

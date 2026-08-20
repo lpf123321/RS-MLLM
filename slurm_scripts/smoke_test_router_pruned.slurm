@@ -1,0 +1,38 @@
+#!/bin/bash
+# GPU smoke test for the pruning x multi-expert router adapter (before the sweep).
+#   sbatch slurm_scripts/smoke_test_router_pruned.slurm
+#SBATCH --job-name=prune_smoke
+#SBATCH --output=logs/prune_smoke_%j.out
+#SBATCH --error=logs/prune_smoke_%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=01:00:00
+
+set -euo pipefail
+export PYTHONUNBUFFERED=1
+
+REPO_ROOT=/home/u2024311149/RS-MLLM
+cd "$REPO_ROOT"
+
+export DATA_ROOT=/users/u2024311136/shared/shared_datasets
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
+
+MODEL_PATH="${MODEL_PATH:-/users/u2024311136/shared/shared_models/lora_expert/base_model}"
+GENERAL="${GENERAL_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/general}"
+GROUNDING="${GROUNDING_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/grounding}"
+CHANGE="${CHANGE_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/change}"
+
+mkdir -p logs
+
+python scripts/smoke_test_router_pruned.py \
+    --model_path "$MODEL_PATH" \
+    --general_lora "$GENERAL" \
+    --grounding_lora "$GROUNDING" \
+    --change_lora "$CHANGE" \
+    --batch_size "${BATCH_SIZE:-4}"
+
+echo "=== DONE ==="

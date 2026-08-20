@@ -192,7 +192,7 @@ def main():
     parser.add_argument("--output", type=str, default="evaluation/results.json")
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--pruner", type=str,
-                        choices=["uniform", "random", "mmtok", "l2norm", "scope_l2"],
+                        choices=["uniform", "random", "mmtok", "l2norm", "divprune", "scope_l2"],
                         default="mmtok")
     parser.add_argument("--keep_ratio", type=float, default=0.5)
     parser.add_argument("--pruner_seed", type=int, default=2026)

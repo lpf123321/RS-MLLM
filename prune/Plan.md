@@ -1,0 +1,47 @@
+## 当前情况
+已经测试完几种剪枝方法在R=0.5和R=0.25的效果，确认目前L2 Norm剪枝方法最优；
+当前的脚本来自 czb 同学。为了保持统一，wh & czb 在后续的实验中将保持脚本统一。
+
+## 实验计划
+### 1. 补充实验
+补充对相对连续的R的测试，R=[0.1 0.25 0.35 0.5 0.65 0.75 0.9 1.0]，对L2 Norm、DivPrune进行重新测试；
+以此绘制折线图，增强视觉效果，丰富报告内容；
+
+### 2. Pre-LLM 和 In-LLM协同实验
+由于测试的很多方法都是Pre-LLM的剪枝方法，考虑可以和In-LLM进行结合。目前可以考虑的In-LLM方法：
+PDrop, CLSE, (仿制的)SA-GEM, Sparse-VLM, 简单的T2V, Clip（直接在第k层剪去所有Visual Token）
+
+### 3. 简单Router设计
+
+由于不同任务对于剪枝率的**敏感性*是不一样的，比如REF类型任务对于剪枝率非常敏感，因此我们可以设计简单Router对剪枝率进行调控。
+
+### 4. 最新的SA-GEM方法测试
+8/15 时，针对遥感的剪枝方法SA-GEM在Arxiv上发布。其剪枝方法有一定的参考价值，但是没有开源。因此我们可以
+根据他的思路进行“仿制”，观察其效果。其具体的方法见SAE.md。
+
+### 5. (TBD) 重测
+因为微调处新增了多专家微调等方法，原先的实验均基于二阶段LoRA进行，可能已经过时了；因此我们可能需要对剪枝方法进行重新测试！由于随机的数据集数量不大，我们可以很快跑完。
+
+###注：实验条件：
+权重采用二阶段LoRA，两个 stage2 high_merged 都是从 Qwen3.5-4B 继续二阶段 LoRA微调后、再合并得到的完整 mo用相同样本和 batch 设置。
+lel.safetensors 权重。跑分包含 baseline (不裁剪)、L2Norm 保留 50%、L2Norm 保留 25%:三组均使
+日志中可核验各集样本数与 batch: logs/ful1-base-mme-5197.out:4、logs/fu11-base-xlrs-5:
+98.out:4, logs/ful1-base-Vrsbench-5199.out:37424, logs/ful1-base-levircc-5200.out:4.
+
+### 6. R 折线重测 —— 实验条件（多专家模型，已定稿）
+
+- 模型：多专家 = `shared_models/lora_expert/base_model`（sft_stage1_clean merged）+ 3 expert LoRA（general/grounding/change，r=32/alpha=64）
+- 剪枝方法：L2Norm（`pruner l2norm`）+ DivPrune（官方 max-min 余弦多样性删除，新增 `evaluation/pruners/divprune.py`）
+- R（保留比例）：[0.1, 0.25, 0.35, 0.5, 0.65, 0.75, 0.9, 1.0]，R=1.0 为不剪枝 baseline
+- 数据：DATA_ROOT 全量 4 数据集（vrsbench / mme / xlrs / levircc），每集随机抽 1000 条（`--random_samples 1000 --sample_seed 2026`）
+  - 各 R 值用同 seed 抽样，保证样本一致，折线图对比公平
+  - vrsbench 全量混有 VQA/Caption/Referring，抽 1000 自然含 referring（路由到 grounding 专家）
+- batch_size = 32（剪枝逐样本 → 按专家分组 → 组内左 pad 批量生成）
+- 结果输出：prune/output/prune_sweep/
+- 脚本：evaluation/adapters/router_pruned.py（RouterPrunedAdapter）、evaluation/run_prune_sweep.py、slurm_scripts/run_prune_sweep_router.slurm、scripts/plot_prune_sweep.py
+
+Smoke test 抽样分布（seed=2026）：
+- vrsbench: 1000 = vqa 587 / caption 148 / referring 265（general 735 / grounding 265）
+- mme: 1000（全 vqa / general）
+- xlrs: 1000（全 vqa / general）
+- levircc: 1000（全 caption / change）

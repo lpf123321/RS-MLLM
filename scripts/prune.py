@@ -56,45 +56,61 @@ _IMPORTED = "qwen3_5"
 # 剪枝方法注册表
 # ============================================================
 
-PRUNE_METHODS = ["l2", "k2", "divprune", "scope"]
+PRUNE_METHODS = ["l2", "k2", "divprune", "scope", "none"]
+INLLM_METHODS = ["k2", "clip"]
 
 
-def enable_pruning(model, method: str = "l2", r: float = 0.5, k: int = 2):
-    """对已加载的模型启用指定剪枝方法。
+def enable_pruning(model, method: str = "l2", r: float = 0.5, k: int = 2,
+                   in_llm: str = None, in_llm_r: float = None):
+    """对已加载的模型启用剪枝（pre-LLM 删除 + 可选 in-LLM mask）。
 
     Args:
         model: Qwen3_5ForConditionalGeneration 实例。
-        method: "l2" | "k2" | "divprune" | "scope"
-        r: 图像 token 剪枝比例（0.5 = 保留 50%）
-        k: FastV-K 的层数（仅 method="k2" 时生效）
+        method: pre-LLM 方法 "l2"/"divprune"/"scope"，或 "none"（不做输入侧删除）。
+                兼容旧的 "k2"（等价 method="none", in_llm="k2"）。
+        r: pre-LLM 图像 token 剪枝比例（0.5 = 保留 50%）。
+        k: in-LLM 的层数（第 K-1 层打分，第 K 层起 mask）。
+        in_llm: in-LLM 方法 "k2"/"clip" 或 None。
+        in_llm_r: in-LLM 剪枝比例（默认等于 r）。
     """
     if method not in PRUNE_METHODS:
         raise ValueError(f"Unknown prune method: {method}. Choose from {PRUNE_METHODS}")
+    if in_llm not in (None, *INLLM_METHODS):
+        raise ValueError(f"Unknown in-LLM method: {in_llm}. Choose from {INLLM_METHODS}")
 
     backbone = model.model  # Qwen3_5Model
     if not hasattr(backbone, "language_model"):
         backbone = getattr(model, "model", model)
 
+    # 兼容旧的 method="k2"（in-LLM only）
     if method == "k2":
-        # K=2 需要 monkey-patch TextModel.forward
-        text_model = backbone.language_model
-        text_model._fastv_enabled = True
-        text_model._fastv_k = k
-        text_model._fastv_r = r
-        _K2_ORIGINAL_FORWARD = Qwen3_5TextModel.forward
-        text_model.forward = _qwen35_text_k2_forward.__get__(text_model, Qwen3_5TextModel)
-        if not hasattr(text_model, "_k2_original_forward"):
-            text_model._k2_original_forward = _K2_ORIGINAL_FORWARD
-    elif method == "scope":
-        backbone._prune_method = method
+        pre_method = None
+        in_method = "k2"
+        if in_llm_r is None:
+            in_llm_r = r
+    else:
+        pre_method = method
+        in_method = in_llm
+
+    # pre-LLM（输入侧删除）
+    if pre_method in ("l2", "divprune"):
+        backbone._prune_method = pre_method
+        backbone._prune_r = r
+    elif pre_method == "scope":
+        backbone._prune_method = "scope"
         backbone._prune_r = r
         from prune.scope import enable_scope_hooks
         enable_scope_hooks(backbone.visual)
-    else:
-        # l2 / divprune: pre-LLM 剪枝，设置 Qwen3_5Model 的标志位
-        backbone._prune_method = method
-        backbone._prune_r = r
-    print(f"Pruning enabled: method={method}, R={r} (keep {(1-r)*100:.0f}%)")
+
+    # in-LLM（LLM 内部 mask）
+    if in_method in INLLM_METHODS:
+        enable_inllm_on_text_model(
+            backbone.language_model, in_method, k,
+            in_llm_r if in_llm_r is not None else r,
+        )
+
+    print(f"Pruning enabled: method={method} r={r} in_llm={in_method} "
+          f"in_llm_r={in_llm_r} k={k}")
 
 
 def disable_pruning(model):
@@ -105,11 +121,11 @@ def disable_pruning(model):
     backbone._prune_r = 0
     if hasattr(backbone, "visual"):
         backbone.visual._scope_features = None
-    # 如果 K2 的 forward 打过补丁，恢复
+    # 恢复 in-LLM 打过补丁的 TextModel.forward
     if hasattr(backbone, "language_model"):
         text_model = backbone.language_model
-        if hasattr(text_model, "_k2_original_forward"):
-            text_model.forward = text_model._k2_original_forward.__get__(
+        if hasattr(text_model, "_inllm_original_forward"):
+            text_model.forward = text_model._inllm_original_forward.__get__(
                 text_model, Qwen3_5TextModel
             )
 
@@ -280,14 +296,14 @@ def _qwen_patched_forward(
     if prune_method in ("l2", "divprune"):
         r = self._prune_r
         if prune_method == "l2":
-            inputs_embeds, attention_mask, position_ids = _prune_l2norm(
+            inputs_embeds, attention_mask, position_ids, visual_pos_masks = _prune_l2norm(
                 inputs_embeds, attention_mask, position_ids, visual_pos_masks, r
             )
         else:
-            inputs_embeds, attention_mask, position_ids = _prune_divprune(
+            inputs_embeds, attention_mask, position_ids, visual_pos_masks = _prune_divprune(
                 inputs_embeds, attention_mask, position_ids, visual_pos_masks, r
             )
-        visual_pos_masks = None
+        # visual_pos_masks 已随删除同步更新，保留给 in-LLM（FastV-K / Clip）在剩余 token 上 mask
     elif prune_method == "scope":
         from prune.scope import _prune_scope
         r = self._prune_r
@@ -324,7 +340,7 @@ def _qwen_patched_forward(
 def _prune_l2norm(inputs_embeds, attention_mask, position_ids, visual_pos_masks, r):
     """L2 范数剪枝：保留 L2-norm 最高的 top-(1-r)% 图像 token。"""
     if visual_pos_masks is None:
-        return inputs_embeds, attention_mask, position_ids
+        return inputs_embeds, attention_mask, position_ids, None
 
     batch_size, seq_len, hidden_dim = inputs_embeds.shape
     device = inputs_embeds.device
@@ -346,13 +362,14 @@ def _prune_l2norm(inputs_embeds, attention_mask, position_ids, visual_pos_masks,
         keep_mask[keep_global] = True
         keep_masks.append(keep_mask)
 
-    return _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks)
+    return _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks,
+                             visual_pos_masks)
 
 
 def _prune_divprune(inputs_embeds, attention_mask, position_ids, visual_pos_masks, r):
     """DivPrune 多样性剪枝：贪心 max-min 选择。"""
     if visual_pos_masks is None:
-        return inputs_embeds, attention_mask, position_ids
+        return inputs_embeds, attention_mask, position_ids, None
 
     batch_size, seq_len, hidden_dim = inputs_embeds.shape
     device = inputs_embeds.device
@@ -373,7 +390,8 @@ def _prune_divprune(inputs_embeds, attention_mask, position_ids, visual_pos_mask
         keep_mask[keep_global] = True
         keep_masks.append(keep_mask)
 
-    return _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks)
+    return _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks,
+                             visual_pos_masks)
 
 
 def _divprune_greedy_select(features, num_keep):
@@ -396,13 +414,18 @@ def _divprune_greedy_select(features, num_keep):
     return selected
 
 
-def _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks):
-    """根据 keep_masks 从序列中删除 token，并 padding 对齐 batch。"""
+def _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks,
+                      visual_pos_masks=None):
+    """根据 keep_masks 从序列中删除 token，并 padding 对齐 batch。
+
+    若传入 ``visual_pos_masks``，则同步删除对应位置并返回裁剪后的视觉位置 mask，
+    供 in-LLM（FastV-K / Clip）在剩余 token 上继续 mask。
+    """
     batch_size, _, hidden_dim = inputs_embeds.shape
     device = inputs_embeds.device
     max_len = max(m.sum().item() for m in keep_masks)
 
-    new_embeds, new_masks, new_pos = [], [], []
+    new_embeds, new_masks, new_pos, new_visual = [], [], [], []
     for b in range(batch_size):
         km = keep_masks[b]
         cur_len = km.sum().item()
@@ -420,18 +443,24 @@ def _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks):
             position_ids[:, b, km],
             torch.zeros(4, pad_len, dtype=position_ids.dtype, device=device),
         ], dim=-1))
+        if visual_pos_masks is not None:
+            new_visual.append(torch.cat([
+                visual_pos_masks[b, km],
+                torch.zeros(pad_len, dtype=torch.bool, device=device),
+            ]))
 
     inputs_embeds = torch.stack(new_embeds, dim=0)
     attention_mask = torch.stack(new_masks, dim=0) if attention_mask is not None else None
     position_ids = torch.stack(new_pos, dim=1)
-    return inputs_embeds, attention_mask, position_ids
+    visual_pos_masks = torch.stack(new_visual, dim=0) if visual_pos_masks is not None else None
+    return inputs_embeds, attention_mask, position_ids, visual_pos_masks
 
 
 # ============================================================
-# FastV-K（LLM 内部 mask 模式）
+# In-LLM（LLM 内部 mask 模式）：FastV-K / Clip
 # ============================================================
 
-def _qwen35_text_k2_forward(
+def _qwen35_text_inllm_forward(
     self,
     input_ids=None,
     attention_mask=None,
@@ -441,9 +470,15 @@ def _qwen35_text_k2_forward(
     use_cache=None,
     **kwargs,
 ):
-    """FastV-K 版本的 Qwen3_5TextModel.forward。"""
-    K = getattr(self, "_fastv_k", 2)
-    R = getattr(self, "_fastv_r", 0.5)
+    """FastV-K / Clip 版本的 Qwen3_5TextModel.forward。
+
+    - k2: 前 K 层全量计算，第 K-1 层输出后用 L2-norm 选 token，
+      第 K 层起 mask 掉未选中的图像 token（不删除，只屏蔽注意力）。
+    - clip: 第 K 层起 mask 掉全部图像 token。
+    """
+    K = getattr(self, "_inllm_k", 2)
+    mode = getattr(self, "_inllm_mode", "k2")
+    R = getattr(self, "_inllm_r", 0.5)
     visual_pos_masks = kwargs.get("visual_pos_masks", None)
 
     if (input_ids is None) ^ (inputs_embeds is not None):
@@ -469,9 +504,9 @@ def _qwen35_text_k2_forward(
     # Decode step: fallback
     if past_key_values is not None and hasattr(past_key_values, "get_seq_length"):
         if past_key_values.get_seq_length() > 0:
-            return _K2_ORIGINAL_FORWARD(self, input_ids=input_ids, attention_mask=attention_mask,
-                                         position_ids=position_ids, past_key_values=past_key_values,
-                                         inputs_embeds=inputs_embeds, use_cache=use_cache, **kwargs)
+            return _INLLM_ORIGINAL_FORWARD(self, input_ids=input_ids, attention_mask=attention_mask,
+                                           position_ids=position_ids, past_key_values=past_key_values,
+                                           inputs_embeds=inputs_embeds, use_cache=use_cache, **kwargs)
 
     causal_mask = create_causal_mask(config=self.config, inputs_embeds=inputs_embeds,
                                      attention_mask=attention_mask, past_key_values=past_key_values,
@@ -506,12 +541,16 @@ def _qwen35_text_k2_forward(
             hidden_states = dec(hidden_states, position_embeddings=position_embeddings, attention_mask=lm,
                                 position_ids=text_position_ids, past_key_values=past_key_values,
                                 use_cache=use_cache, **kwargs)
-            # L2-norm pruning decision
-            pruned_attn_mask_2d = torch.ones((batch_size, seq_length), dtype=torch.bool, device=inputs_embeds.device)
+            # 剪枝决策：clip 全 mask；k2 按 L2-norm 选 top-(1-R)
+            pruned_attn_mask_2d = torch.ones((batch_size, seq_length), dtype=torch.bool,
+                                             device=inputs_embeds.device)
             for b in range(batch_size):
                 bim = img_mask[b]
                 num_img = bim.sum().item()
                 if num_img == 0:
+                    continue
+                if mode == "clip":
+                    pruned_attn_mask_2d[b, bim] = False
                     continue
                 num_keep = max(1, int(num_img * (1.0 - R)))
                 ih = hidden_states[b, bim, :]
@@ -541,4 +580,21 @@ def _qwen35_text_k2_forward(
     return _QWEN_OUTPUT_CLS(last_hidden_state=hidden_states, past_key_values=past_key_values)
 
 
-_K2_ORIGINAL_FORWARD = Qwen3_5TextModel.forward
+_INLLM_ORIGINAL_FORWARD = Qwen3_5TextModel.forward
+
+
+def enable_inllm_on_text_model(text_model, in_llm: str, k: int, in_llm_r: float):
+    """在 TextModel 上启用 in-LLM mask（供 enable_pruning 和 RouterPrunedAdapter 复用）。"""
+    if in_llm not in INLLM_METHODS:
+        raise ValueError(f"Unknown in-LLM method: {in_llm}. Choose from {INLLM_METHODS}")
+    text_model._inllm_mode = in_llm
+    text_model._inllm_k = k
+    text_model._inllm_r = in_llm_r
+    if not hasattr(text_model, "_inllm_original_forward"):
+        text_model._inllm_original_forward = Qwen3_5TextModel.forward
+    text_model.forward = _qwen35_text_inllm_forward.__get__(text_model, Qwen3_5TextModel)
+
+
+def set_inllm_ratio(text_model, in_llm_r: float):
+    """运行时调整 in-LLM 剪枝比例（无需重新 patch）。"""
+    text_model._inllm_r = in_llm_r
