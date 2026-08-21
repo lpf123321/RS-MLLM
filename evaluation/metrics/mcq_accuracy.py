@@ -9,7 +9,7 @@ class MCQAccuracy(BaseMetric):
 
     @staticmethod
     def _extract_letter(text: str) -> str:
-        m = re.search(r'(?<!\w)([A-Da-d])\s*[.)]', text.strip())
+        m = re.search(r'(?<!\w)([A-Ea-e])\s*[.)]', text.strip())
         return m.group(1).upper() if m else ""
 
     def compute(self, references: List[List[str]], predictions: List[str]) -> Dict[str, float]:
