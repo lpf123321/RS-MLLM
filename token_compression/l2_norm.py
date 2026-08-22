@@ -8,6 +8,8 @@ from typing import Optional
 
 import torch
 
+from .base import TokenPruner, validate_selection_inputs
+
 
 def select_l2_tokens(features: torch.Tensor, keep_count: int) -> torch.LongTensor:
     """Return sorted indices of the ``keep_count`` strongest token features.
@@ -20,17 +22,7 @@ def select_l2_tokens(features: torch.Tensor, keep_count: int) -> torch.LongTenso
         A one-dimensional ``torch.LongTensor`` of sorted token indices on the
         same device as ``features``.
     """
-    if features.ndim != 2:
-        raise ValueError(
-            "features must have shape [num_tokens, hidden_size], "
-            f"got {tuple(features.shape)}."
-        )
-
-    token_count = features.shape[0]
-    if not 1 <= keep_count <= token_count:
-        raise ValueError(
-            f"keep_count must be in [1, {token_count}], got {keep_count}."
-        )
+    token_count = validate_selection_inputs(features, keep_count)
 
     if keep_count == token_count:
         return torch.arange(token_count, device=features.device)
@@ -40,7 +32,7 @@ def select_l2_tokens(features: torch.Tensor, keep_count: int) -> torch.LongTenso
     return torch.sort(indices).values
 
 
-class L2NormTokenPruner:
+class L2NormTokenPruner(TokenPruner):
     """Select visual tokens by descending feature L2 norm.
 
     The ``seed`` parameter is accepted to match common token-pruner interfaces;
