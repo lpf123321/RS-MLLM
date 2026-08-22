@@ -73,5 +73,6 @@ XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集�
 `general/grounding/change` 各自提供完整 Delta。Delta 路由冒烟测试已通过。
 
 - 旧 `prune_ablation.tex` 的所有方法结果均不能直接复用，需在新版专家权重上重新测试：Baseline、Uniform、Random、MMTok、L2Norm、SCOPE、DivPrune、FourierCompressor。
+- 当前重测暂不包含 VRSBench/XLRS Caption；Caption expert 尚可能拆分，待专家权重确定后单独补测 Caption。
 - 评测必须统一使用新版 Delta 加载、system prompt、输出清理和相同抽样/batch 条件。
 - 先重新验证 Baseline 与 Router，再按原 R=0.5/0.25 补齐所有方法，最后重做完整 R 序列与 task-adaptive Router。

@@ -47,6 +47,9 @@ TASK_SAMPLE_MAP = {
     "change": [("levircc", "caption")],
 }
 
+# 当前专家仍可能拆分 Caption，暂不将 Caption 纳入 Delta 重测。
+DEFAULT_DATASETS = ["vrsbench", "mme", "xlrs", "levircc", "xlrs_grounding"]
+
 
 def main():
     parser = argparse.ArgumentParser(description="Task-adaptive pruning evaluation")
@@ -58,6 +61,7 @@ def main():
     parser.add_argument("--random_samples", type=int, default=1000)
     parser.add_argument("--sample_seed", type=int, default=2026)
     parser.add_argument("--eval_batch_size", type=int, default=32)
+    parser.add_argument("--datasets", nargs="+", choices=list(DATASETS), default=DEFAULT_DATASETS)
     parser.add_argument("--output_dir", default="prune/output/prune_sweep")
     args = parser.parse_args()
 
@@ -74,7 +78,7 @@ def main():
     )
 
     all_results = {}
-    for ds_name in DATASETS:
+    for ds_name in args.datasets:
         module, data_path = DATASETS[ds_name]
         if not os.path.exists(data_path):
             print(f"[WARN] data not found, skip {ds_name}: {data_path}", flush=True)
