@@ -1,13 +1,19 @@
 """Task Router：把 prompt 路由到对应 Expert LoRA。
 
-单 Qwen3.5-4B 基座 + 3 个 LoRA Adapter，动态切换（AdapterManager）。
+单 Qwen3.5-4B 基座 + 多 expert LoRA，按 prompt 路由并动态切换 Adapter。
 """
+import re
+
 import torch
 from peft import PeftModel
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
 from evaluation.base.adapter import BaseModelAdapter
 from evaluation.router import rules
+
+# 与 qwen35vl/qwen3vl 一致的 think 剥离；额外兼容 <thinking>（模型可能把 <think> 特殊 token 后接 "ing" 文本）
+THINKING_PATTERN = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>\s*", re.DOTALL)
+_STRAY_THINK_TAG = re.compile(r"</?think(?:ing)?>")
 
 
 class RouterAdapter(BaseModelAdapter):
@@ -23,7 +29,7 @@ class RouterAdapter(BaseModelAdapter):
                  expert_lora: dict = None, device: str = "cuda",
                  max_new_tokens: int = 256, system_prompt: str = "",
                  image_min_pixels: int = None, image_max_pixels: int = None,
-                 force_think: bool = True):
+                 force_think: bool = False):
         self.max_new_tokens = max_new_tokens
         self.device = device if device == "cuda" and torch.cuda.is_available() else "cpu"
         self.system_prompt = system_prompt
@@ -45,6 +51,7 @@ class RouterAdapter(BaseModelAdapter):
             )
         self.expert_lora = expert_lora
         self._task_to_expert = dict(rules.TASK_TO_EXPERT)
+        self._delta_mode = all(str(path).endswith(".pt") for path in expert_lora.values())
 
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         if image_min_pixels is not None:
@@ -59,12 +66,18 @@ class RouterAdapter(BaseModelAdapter):
             model_path, torch_dtype=torch.bfloat16, trust_remote_code=True,
         )
         names = list(self.expert_lora)
-        self.model = PeftModel.from_pretrained(
-            base, self.expert_lora[names[0]], adapter_name=names[0]
-        )
-        for name in names[1:]:
-            self.model.load_adapter(self.expert_lora[name], adapter_name=name)
-        self.model = self.model.to(self.device)
+        if self._delta_mode:
+            # Delta files contain full-rank W_expert - W0 state dictionaries.
+            self.model = base.to(self.device)
+            self._delta_cache = {}
+            self._active_delta = None
+        else:
+            self.model = PeftModel.from_pretrained(
+                base, self.expert_lora[names[0]], adapter_name=names[0]
+            )
+            for name in names[1:]:
+                self.model.load_adapter(self.expert_lora[name], adapter_name=name)
+            self.model = self.model.to(self.device)
         self.model.eval()
 
         self._adapter_map = {name: name for name in names}
@@ -75,12 +88,41 @@ class RouterAdapter(BaseModelAdapter):
     def _switch(self, expert: str):
         name = self._adapter_map.get(expert, expert)
         if self.active_adapter != name:
-            self.model.set_adapter(name)
+            if self._delta_mode:
+                if self._active_delta is not None:
+                    self._apply_delta(self._load_delta(self._active_delta), sign=-1)
+                self._apply_delta(self._load_delta(name), sign=1)
+                self._active_delta = name
+            else:
+                self.model.set_adapter(name)
             self.active_adapter = name
 
+    def _load_delta(self, expert: str):
+        if expert not in self._delta_cache:
+            self._delta_cache[expert] = torch.load(
+                self.expert_lora[expert], map_location="cpu", weights_only=True
+            )
+        return self._delta_cache[expert]
+
+    def _apply_delta(self, delta: dict, sign: int = 1):
+        state = self.model.state_dict()
+        with torch.no_grad():
+            for name, value in delta.items():
+                if name in state:
+                    state[name].add_((sign * value).to(device=state[name].device, dtype=state[name].dtype))
+
     def _extract_answer(self, text: str) -> str:
-        if "</think>" in text:
-            return text.split("</think>", 1)[1].strip()
+        if not text:
+            return text
+        if self._delta_mode and " response" in text:
+            text = text.split(" response", 1)[1]
+        # 与 qwen35vl/qwen3vl 一致：去掉 <think>/<thinking> 块
+        text = THINKING_PATTERN.sub("", text)
+        # 去掉残留的孤立 think 标签（如模型仅输出闭合标签 </thinking>）
+        text = _STRAY_THINK_TAG.sub("", text)
+        # 截断角色标记重复（answer\nuser\nuser... 或 <|im_start|>...）
+        text = re.split(r"<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>", text)[0]
+        text = re.split(r"\n(?:user|assistant|system)\b", text)[0]
         return text.strip()
 
     def _group_key(self, prompt: str) -> str:
@@ -117,7 +159,12 @@ class RouterAdapter(BaseModelAdapter):
                         + [{"type": "text", "text": prompt}]
                     ),
                 })
-                if self.force_think:
+                if self._delta_mode:
+                    text = self.processor.apply_chat_template(
+                        messages, tokenize=False, add_generation_prompt=False
+                    )
+                    text += "<|im_start|>assistant\n thinking\n\n response\n\n"
+                elif self.force_think:
                     text = self.processor.apply_chat_template(
                         messages, tokenize=False, add_generation_prompt=False)
                     text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"

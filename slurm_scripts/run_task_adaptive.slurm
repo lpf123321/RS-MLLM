@@ -22,9 +22,9 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 
 MODEL_PATH="${MODEL_PATH:-/users/u2024311136/shared/shared_models/lora_expert/base_model}"
-GENERAL="${GENERAL_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/general}"
-GROUNDING="${GROUNDING_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/grounding}"
-CHANGE="${CHANGE_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/change}"
+GENERAL="${GENERAL_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/general/delta_model.pt}"
+GROUNDING="${GROUNDING_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/grounding/delta_model.pt}"
+CHANGE="${CHANGE_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt}"
 
 mkdir -p logs prune/output/prune_sweep
 

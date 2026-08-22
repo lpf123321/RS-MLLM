@@ -46,10 +46,10 @@ Smoke test 抽样分布（seed=2026）：
 - xlrs: 1000（全 vqa / general）
 - levircc: 1000（全 caption / change）
 
-### 7. 新 XLRS 任务接入（caption + visual grounding，仿 VRSBench 处理）
+### 7. 新 XLRS 任务接入（caption + visual grounding，官方口径）
 
 XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集（8/13~8/15），仿照 VRSBench
-的「messages + 任务前缀 + 文本 bbox」方式接入，复用现有指标与路由。
+的官方 prompt/reference 口径接入，保留最小任务前缀用于路由。
 
 - 数据源：lora_expert 的 `split_evals`（同学已从 arrow 预处理好的扁平 jsonl）
   - caption: `xlrs_caption_en.jsonl`（934 条）
@@ -65,3 +65,13 @@ XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集�
 - 状态：脚本已写完、预处理 jsonl 已生成；**等同学确定最终多专家权重后再跑评测**
 
 注：放弃"仿 VRSBench 0-100 整数 bbox"方案——它会 (a) 让 caption 短 prompt 与三段式 reference 的 n-gram 重叠趋近 0，(b) 给 grounding 小目标引入 8-16% 量化误差。改为对齐 XLRS 官方口径。
+
+### 8. Delta 专家模型切换后的全方法重测
+
+共享目录中的多专家模型已从旧版 `base_model + adapter_model.safetensors` LoRA
+切换为新版 `W_expert = W0 + delta_model.pt`：基座为原始 Qwen3.5-4B，
+`general/grounding/change` 各自提供完整 Delta。Delta 路由冒烟测试已通过。
+
+- 旧 `prune_ablation.tex` 的所有方法结果均不能直接复用，需在新版专家权重上重新测试：Baseline、Uniform、Random、MMTok、L2Norm、SCOPE、DivPrune、FourierCompressor。
+- 评测必须统一使用新版 Delta 加载、system prompt、输出清理和相同抽样/batch 条件。
+- 先重新验证 Baseline 与 Router，再按原 R=0.5/0.25 补齐所有方法，最后重做完整 R 序列与 task-adaptive Router。

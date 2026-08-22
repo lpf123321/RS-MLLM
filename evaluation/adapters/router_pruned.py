@@ -43,7 +43,7 @@ class RouterPrunedAdapter(RouterAdapter):
         in_llm: str = None,
         in_llm_k: int = 2,
         in_llm_keep_ratio: float = None,
-        force_think: bool = True,
+        force_think: bool = False,
     ):
         if prune_method not in ("l2", "divprune", "none"):
             raise ValueError(f"prune_method must be 'l2'/'divprune'/'none', got {prune_method!r}")
