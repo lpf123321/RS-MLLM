@@ -13,6 +13,8 @@ Token 剪枝集成模块 —— 通过参数切换不同剪枝方法。
   model = AutoModelForImageTextToText.from_pretrained(model_path, ...)
   enable_pruning(model, method="l2", r=0.5)   # 启用剪枝
 """
+import math
+
 import torch
 from transformers import AutoConfig
 from transformers.cache_utils import DynamicCache
@@ -304,6 +306,16 @@ def _qwen_patched_forward(
                 inputs_embeds, attention_mask, position_ids, visual_pos_masks, r
             )
         # visual_pos_masks 已随删除同步更新，保留给 in-LLM（FastV-K / Clip）在剩余 token 上 mask
+    elif prune_method == "token_compression":
+        inputs_embeds, attention_mask, position_ids, visual_pos_masks = _prune_token_compression(
+            inputs_embeds,
+            attention_mask,
+            position_ids,
+            visual_pos_masks,
+            self._prune_r,
+            self._token_pruner,
+            getattr(self, "_token_pruner_seed", 2026),
+        )
     elif prune_method == "scope":
         from prune.scope import _prune_scope
         r = self._prune_r
@@ -392,6 +404,45 @@ def _prune_divprune(inputs_embeds, attention_mask, position_ids, visual_pos_mask
 
     return _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks,
                              visual_pos_masks)
+
+
+def _prune_token_compression(
+    inputs_embeds,
+    attention_mask,
+    position_ids,
+    visual_pos_masks,
+    r,
+    pruner,
+    seed,
+):
+    """Apply a standalone ``token_compression`` selector in the batched forward."""
+    if visual_pos_masks is None:
+        return inputs_embeds, attention_mask, position_ids, None
+    if pruner is None:
+        raise RuntimeError("token_compression pruning requested without a selector")
+
+    batch_size, seq_len, _ = inputs_embeds.shape
+    device = inputs_embeds.device
+    keep_masks = []
+    for b in range(batch_size):
+        image_mask = visual_pos_masks[b]
+        num_image = int(image_mask.sum().item())
+        if num_image == 0:
+            keep_masks.append(torch.ones(seq_len, dtype=torch.bool, device=device))
+            continue
+        keep_count = max(1, math.ceil(num_image * (1.0 - r)))
+        local = pruner.select(
+            inputs_embeds[b, image_mask, :], keep_count, seed=seed + b
+        )
+        image_positions = torch.where(image_mask)[0]
+        keep_global = image_positions.index_select(0, local)
+        keep_mask = ~image_mask.clone()
+        keep_mask[keep_global] = True
+        keep_masks.append(keep_mask)
+
+    return _apply_keep_masks(
+        inputs_embeds, attention_mask, position_ids, keep_masks, visual_pos_masks
+    )
 
 
 def _divprune_greedy_select(features, num_keep):

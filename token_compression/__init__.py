@@ -16,6 +16,26 @@ __all__ = [
     "RandomTokenPruner",
     "ScopeL2TokenPruner",
     "UniformTokenPruner",
+    "TOKEN_PRUNER_REGISTRY",
+    "build_token_pruner",
     "compress_fourier_tokens",
     "select_l2_tokens",
 ]
+
+
+TOKEN_PRUNER_REGISTRY = {
+    "uniform": UniformTokenPruner,
+    "random": RandomTokenPruner,
+    "mmtok": MMTokTokenPruner,
+    "l2norm": L2NormTokenPruner,
+    "divprune": DivPruneTokenPruner,
+    "scope_l2": ScopeL2TokenPruner,
+}
+
+
+def build_token_pruner(name: str):
+    try:
+        return TOKEN_PRUNER_REGISTRY[name]()
+    except KeyError as error:
+        choices = ", ".join(sorted(TOKEN_PRUNER_REGISTRY))
+        raise ValueError(f"Unknown token pruner '{name}'. Available: {choices}") from error
