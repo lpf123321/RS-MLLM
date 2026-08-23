@@ -10,6 +10,12 @@
 import argparse, json, os, re, sys
 from collections import defaultdict
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from evaluation.metrics import BLEU, CIDEr, ROUGEL
+
 
 # ── Fixed answer extraction ──
 
@@ -102,135 +108,31 @@ def compute_mcq_accuracy(predictions: list) -> dict:
 
 
 def compute_levircc_metrics(predictions: list) -> dict:
-    """计算 LEVIR-CC 的 BLEU/ROUGE/CIDEr 指标。"""
-    try:
-        from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-    except ImportError:
-        print("  [WARN] nltk not installed, BLEU will be 0")
-        return {'BLEU-1': 0, 'BLEU-2': 0, 'BLEU-3': 0, 'BLEU-4': 0, 'ROUGE-L': 0, 'CIDEr': 0}
-
-    import numpy as np
-    smoothie = SmoothingFunction().method1
-
-    bleu_scores = {1: [], 2: [], 3: [], 4: []}
-    rouge_scores = []
-    cider_refs = []  # for CIDEr computation
-    cider_preds = []
-
-    for r in predictions:
-        pred = (r.get('prediction') or '').strip()
-        raw_refs = r.get('references', [])
+    """计算 LEVIR-CC 指标，复用 evaluation/metrics 的标准实现。"""
+    references = []
+    predictions_text = []
+    for record in predictions:
         refs = []
-        for ref in raw_refs:
+        for ref in record.get("references", []):
             if isinstance(ref, str):
-                refs.append(ref.strip())
+                text = ref.strip()
             elif isinstance(ref, dict):
-                txt = ref.get('raw', ' '.join(ref.get('tokens', [])) if isinstance(ref.get('tokens', []), list) else '')
-                refs.append(txt.strip())
+                tokens = ref.get("tokens", [])
+                text = ref.get("raw", " ".join(tokens) if isinstance(tokens, list) else "")
+                text = str(text).strip()
             else:
-                refs.append(str(ref).strip())
-        refs = [r for r in refs if r]
-        if not pred or not refs:
-            continue
-
-        cider_refs.append(refs)
-        cider_preds.append(pred)
-
-        ref_tokens = [ref.split() for ref in refs]
-        pred_tokens = pred.split()
-
-        if not pred_tokens:
-            continue
-
-        for n in [1, 2, 3, 4]:
-            try:
-                b = sentence_bleu(ref_tokens, pred_tokens, weights=tuple([1.0/n]*n),
-                                  smoothing_function=smoothie)
-            except Exception:
-                b = 0.0
-            bleu_scores[n].append(b)
-
-        # ROUGE-L
-        pred_set = set(pred_tokens)
-        rl = []
-        for rt in ref_tokens:
-            ref_set = set(rt)
-            if not ref_set:
-                rl.append(0)
-                continue
-            overlap = len(pred_set & ref_set)
-            rl.append(overlap / len(ref_set) if ref_set else 0)
-        rouge_scores.append(max(rl) if rl else 0)
+                text = str(ref).strip()
+            if text:
+                refs.append(text)
+        if not refs:
+            refs = [""]
+        references.append(refs)
+        predictions_text.append((record.get("prediction") or "").strip())
 
     result = {}
-    for n, scores in bleu_scores.items():
-        result[f'BLEU-{n}'] = float(np.mean(scores)) if scores else 0.0
-    result['ROUGE-L'] = float(np.mean(rouge_scores)) if rouge_scores else 0.0
-    result['CIDEr'] = _compute_cider(cider_refs, cider_preds)
+    for metric in (BLEU(max_n=4), ROUGEL(), CIDEr()):
+        result.update(metric.compute(references, predictions_text))
     return result
-
-
-def _compute_cider(refs_list, preds_list):
-    """CIDEr metric for image caption evaluation."""
-    from math import log, sqrt
-    from collections import Counter
-    import numpy as np
-
-    all_refs = []
-    all_preds = []
-    for refs, pred in zip(refs_list, preds_list):
-        if not pred or not refs:
-            continue
-        all_preds.append(pred.split())
-        all_refs.append([r.split() for r in refs])
-
-    if not all_preds:
-        return 0.0
-
-    N = len(all_preds)
-    cider_scores = []
-
-    for n in range(1, 5):
-        df = Counter()
-        for ref_group in all_refs:
-            seen = set()
-            for tokens in ref_group:
-                for i in range(len(tokens) - n + 1):
-                    g = tuple(tokens[i:i + n])
-                    if g not in seen:
-                        df[g] += 1
-                        seen.add(g)
-
-        n_scores = []
-        for pred_tokens, ref_group in zip(all_preds, all_refs):
-            if not pred_tokens:
-                continue
-            hyp_ng = Counter(tuple(pred_tokens[i:i + n]) for i in range(len(pred_tokens) - n + 1))
-            hyp_max = max(hyp_ng.values()) if hyp_ng else 1
-            hyp_vec = {g: c / hyp_max * (log((N + 1) / (df.get(g, 0) + 1)) + 1)
-                       for g, c in hyp_ng.items()}
-
-            ref_scores = []
-            for ref_tokens in ref_group:
-                if not ref_tokens:
-                    continue
-                ref_ng = Counter(tuple(ref_tokens[i:i + n]) for i in range(len(ref_tokens) - n + 1))
-                ref_max = max(ref_ng.values()) if ref_ng else 1
-                ref_vec = {g: c / ref_max * (log((N + 1) / (df.get(g, 0) + 1)) + 1)
-                           for g, c in ref_ng.items()}
-
-                dot = sum(hyp_vec.get(k, 0) * ref_vec.get(k, 0) for k in set(hyp_vec) | set(ref_vec))
-                n1 = sqrt(sum(v**2 for v in hyp_vec.values()))
-                n2 = sqrt(sum(v**2 for v in ref_vec.values()))
-                ref_scores.append(dot / (n1 * n2) if n1 > 0 and n2 > 0 else 0.0)
-
-            n_scores.append(np.mean(ref_scores) if ref_scores else 0.0)
-
-        cider_scores.append(float(np.mean(n_scores)) if n_scores else 0.0)
-
-    weights = [0.25, 0.25, 0.25, 0.25]
-    cider = sum(w * s for w, s in zip(weights, cider_scores))
-    return float(max(cider * 10.0, 0.0))
 
 
 # ── Main ──
