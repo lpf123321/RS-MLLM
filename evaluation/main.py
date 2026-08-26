@@ -66,6 +66,7 @@ def evaluate(
     start_offset=0,
     random_samples=0,
     sample_seed=2026,
+    task_max_tokens=None,
 ):
     samples = module.load_data(data_path)
     if start_offset > 0:
@@ -90,7 +91,8 @@ def evaluate(
     predictions = [None] * len(samples)
     for task, indices in task_indices.items():
         batch = [(samples[idx]["images"], samples[idx]["prompt"]) for idx in indices]
-        max_tok = TASK_MAX_TOKENS.get(task, adapter.max_new_tokens)
+        token_limits = task_max_tokens or TASK_MAX_TOKENS
+        max_tok = token_limits.get(task, adapter.max_new_tokens)
         print(f"  [{task}] max_new_tokens={max_tok}, samples={len(batch)}", flush=True)
         previous_max_new_tokens = adapter.max_new_tokens
         adapter.max_new_tokens = max_tok

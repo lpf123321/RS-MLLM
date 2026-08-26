@@ -18,10 +18,12 @@ class DeltaPrunedAdapter(RouterAdapter):
         general_lora: str = None,
         grounding_lora: str = None,
         change_lora: str = None,
+        caption_lora: str = None,
         expert_lora: dict = None,
         prune_method: str = "l2norm",
         keep_ratio: float = 1.0,
         task_keep_ratio: dict = None,
+        task_prune_config: dict = None,
         pruner_seed: int = 2026,
         **kwargs,
     ):
@@ -38,16 +40,28 @@ class DeltaPrunedAdapter(RouterAdapter):
             general_lora=general_lora,
             grounding_lora=grounding_lora,
             change_lora=change_lora,
+            caption_lora=caption_lora,
             expert_lora=expert_lora,
             **kwargs,
         )
         self.prune_method = prune_method
         self.keep_ratio = keep_ratio
         self.task_keep_ratio = dict(task_keep_ratio) if task_keep_ratio else None
+        self.task_prune_config = dict(task_prune_config) if task_prune_config else None
         self.pruner_seed = pruner_seed
-        self._token_pruner = (
-            None if prune_method in ("none", "fourier") else build_token_pruner(prune_method)
-        )
+        methods = {prune_method}
+        if self.task_prune_config:
+            methods.update(config["method"] for config in self.task_prune_config.values())
+        valid_methods = {"none", "fourier", "uniform", "random", "mmtok",
+                         "l2norm", "divprune", "scope_l2"}
+        unknown = methods - valid_methods
+        if unknown:
+            raise ValueError(f"Unknown compression method(s): {sorted(unknown)}")
+        self._token_pruners = {
+            method: (None if method in ("none", "fourier") else build_token_pruner(method))
+            for method in methods
+        }
+        self._token_pruner = self._token_pruners[prune_method]
         self._set_uniform_keep_ratio(keep_ratio)
 
     def _backbone(self):
@@ -67,27 +81,34 @@ class DeltaPrunedAdapter(RouterAdapter):
         self.keep_ratio = keep_ratio
         self._apply_group_ratio(keep_ratio)
 
-    def _apply_group_ratio(self, keep_ratio: float):
+    def _apply_group_ratio(self, keep_ratio: float, prune_method: str = None):
         backbone = self._backbone()
-        if self.prune_method in ("none", "fourier") or keep_ratio >= 1.0:
+        prune_method = prune_method or self.prune_method
+        token_pruner = self._token_pruners[prune_method]
+        if prune_method in ("none", "fourier") or keep_ratio >= 1.0:
             backbone._prune_method = None
             backbone._prune_r = 0.0
             return
         backbone._prune_method = "token_compression"
         backbone._prune_r = 1.0 - keep_ratio
-        backbone._token_pruner = self._token_pruner
+        backbone._token_pruner = token_pruner
         backbone._token_pruner_seed = self.pruner_seed
 
     def _group_key(self, prompt: str) -> str:
-        if self.task_keep_ratio is not None:
+        if self.task_keep_ratio is not None or self.task_prune_config is not None:
             return rules.route_task(prompt)
         return rules.route(prompt)
 
     def _prepare_group(self, key: str):
-        if self.task_keep_ratio is None:
+        if self.task_keep_ratio is None and self.task_prune_config is None:
             self._switch(key)
             self._apply_group_ratio(self.keep_ratio)
             return
         task = key
         self._switch(self._task_to_expert.get(task, rules.GENERAL))
-        self._apply_group_ratio(self.task_keep_ratio.get(task, self.keep_ratio))
+        config = self.task_prune_config.get(task) if self.task_prune_config else None
+        if config:
+            self._apply_group_ratio(config["keep_ratio"], config["method"])
+        else:
+            keep_ratio = (self.task_keep_ratio or {}).get(task, self.keep_ratio)
+            self._apply_group_ratio(keep_ratio)

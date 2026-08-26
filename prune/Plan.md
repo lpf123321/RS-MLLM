@@ -76,3 +76,7 @@ XLRS 数据集新增了 caption（en/zh）与 visual grounding（en/zh）子集�
 - 当前重测暂不包含 VRSBench/XLRS Caption；Caption expert 尚可能拆分，待专家权重确定后单独补测 Caption。
 - 评测必须统一使用新版 Delta 加载、system prompt、输出清理和相同抽样/batch 条件。
 - 先重新验证 Baseline 与 Router，再按原 R=0.5/0.25 补齐所有方法，最后重做完整 R 序列与 task-adaptive Router。
+
+当前 Delta 重测使用 `batch_size=32`。初版右 padding 会导致高分辨率 MME/XLRS 输出退化；改为与 processor 一致的 left padding 后，同一批 32 条 MME 在 batch=4/32 下逐条输出完全一致且正常。
+
+集群约束：申请 `gpu:2` 或更多 GPU 可能被 QOS/调度器错误拒绝；实验统一使用单 GPU（`--gres=gpu:1`），如需并行只能拆成多个单卡任务。

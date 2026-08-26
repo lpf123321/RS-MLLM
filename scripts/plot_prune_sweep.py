@@ -19,11 +19,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 RESULTS_DIR = os.environ.get("SWEEP_DIR", "prune/output/prune_sweep")
 RATIOS = [0.1, 0.25, 0.35, 0.5, 0.65, 0.75, 0.9, 1.0]
-METHODS = ["l2", "divprune"]
+METHODS = [m.strip() for m in os.environ.get("SWEEP_METHODS", "l2,divprune").split(",") if m.strip()]
 
-METHOD_LABEL = {"l2": "L2Norm", "divprune": "DivPrune"}
-METHOD_COLOR = {"l2": "#1f77b4", "divprune": "#d62728"}
-METHOD_MARKER = {"l2": "o", "divprune": "s"}
+METHOD_LABEL = {
+    "l2": "L2Norm", "l2norm": "L2Norm", "divprune": "DivPrune",
+    "uniform": "Uniform", "random": "Random", "mmtok": "MMTok",
+    "scope_l2": "ScopeL2",
+}
+METHOD_COLOR = {
+    "l2": "#1f77b4", "l2norm": "#1f77b4", "divprune": "#d62728",
+    "uniform": "#2ca02c", "random": "#9467bd", "mmtok": "#ff7f0e",
+    "scope_l2": "#8c564b",
+}
+METHOD_MARKER = {
+    "l2": "o", "l2norm": "o", "divprune": "s", "uniform": "^",
+    "random": "x", "mmtok": "D", "scope_l2": "P",
+}
 
 # (task, metric, display label) per dataset.
 DATASET_METRICS = {
@@ -99,8 +110,9 @@ def plot_dataset(data, dataset):
         for method in METHODS:
             xs, ys = series(data, method, dataset, task, metric)
             if xs:
-                ax.plot(xs, ys, marker=METHOD_MARKER[method], color=METHOD_COLOR[method],
-                        label=METHOD_LABEL[method], linewidth=1.5, markersize=4)
+                ax.plot(xs, ys, marker=METHOD_MARKER.get(method, "o"),
+                        color=METHOD_COLOR.get(method),
+                        label=METHOD_LABEL.get(method, method), linewidth=1.5, markersize=4)
         ax.set_title(f"{dataset} — {label}", fontsize=10)
         ax.set_xlabel("keep_ratio")
         ax.set_ylabel(metric)
@@ -114,8 +126,9 @@ def plot_dataset(data, dataset):
     print(f"saved {out}")
 
 
-def plot_task_sensitivity(data, method="l2"):
+def plot_task_sensitivity(data, method=None):
     """One line per task, metric normalized to its own baseline (keep_ratio=1.0)."""
+    method = method or os.environ.get("SWEEP_PRIMARY_METHOD", METHODS[0])
     fig, ax = plt.subplots(figsize=(7.5, 4.8))
     for name, dataset, task, metric in TASKS:
         xs, ys = series(data, method, dataset, task, metric)
@@ -139,7 +152,8 @@ def plot_task_sensitivity(data, method="l2"):
     ax.set_ylim(0, 1.08)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9, ncol=2)
-    ax.set_title("Task pruning sensitivity (L2Norm, normalized to baseline)", fontsize=11)
+    ax.set_title(f"Task pruning sensitivity ({METHOD_LABEL.get(method, method)}, normalized to baseline)",
+                 fontsize=11)
     fig.tight_layout()
     out = os.path.join(RESULTS_DIR, "task_sensitivity.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")
@@ -155,15 +169,17 @@ def plot_combined(data):
         for method in METHODS:
             xs, ys = series(data, method, dataset, task, metric)
             if xs:
-                ax.plot(xs, ys, marker=METHOD_MARKER[method], color=METHOD_COLOR[method],
-                        label=METHOD_LABEL[method], linewidth=1.5, markersize=4)
+                ax.plot(xs, ys, marker=METHOD_MARKER.get(method, "o"),
+                        color=METHOD_COLOR.get(method), label=METHOD_LABEL.get(method, method),
+                        linewidth=1.5, markersize=4)
         ax.set_title(f"{dataset} — {label}", fontsize=10)
         ax.set_xlabel("keep_ratio")
         ax.set_ylabel(metric)
         ax.set_xticks(RATIOS)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=8)
-    fig.suptitle("L2Norm vs DivPrune (multi-expert, random 1000, seed 2026)", fontsize=12)
+    labels = ", ".join(METHOD_LABEL.get(m, m) for m in METHODS)
+    fig.suptitle(f"{labels} (multi-expert, random 1000, seed 2026)", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     out = os.path.join(RESULTS_DIR, "curve_combined.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")

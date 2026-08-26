@@ -26,6 +26,7 @@ class RouterAdapter(BaseModelAdapter):
 
     def __init__(self, model_path: str, general_lora: str = None,
                  grounding_lora: str = None, change_lora: str = None,
+                 caption_lora: str = None,
                  expert_lora: dict = None, device: str = "cuda",
                  max_new_tokens: int = 256, system_prompt: str = "",
                  image_min_pixels: int = None, image_max_pixels: int = None,
@@ -41,6 +42,7 @@ class RouterAdapter(BaseModelAdapter):
             (rules.GENERAL, general_lora),
             (rules.GROUNDING, grounding_lora),
             (rules.CHANGE, change_lora),
+            (rules.CAPTION_EXPERT, caption_lora),
         ):
             if path is not None:
                 expert_lora[name] = path
@@ -159,11 +161,12 @@ class RouterAdapter(BaseModelAdapter):
                         + [{"type": "text", "text": prompt}]
                     ),
                 })
-                if self._delta_mode:
+                if self._delta_mode and self.force_think:
                     text = self.processor.apply_chat_template(
                         messages, tokenize=False, add_generation_prompt=False
                     )
-                    text += "<|im_start|>assistant\n thinking\n\n response\n\n"
+                    # Match the shared Delta inference script's empty think block.
+                    text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
                 elif self.force_think:
                     text = self.processor.apply_chat_template(
                         messages, tokenize=False, add_generation_prompt=False)

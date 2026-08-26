@@ -17,11 +17,17 @@ CHANGE_KEYWORDS = (
 GROUNDING_KEYWORDS = (
     "where", "location", "position", "find", "locate", "region"
 )
+CAPTION_KEYWORDS = (
+    "describe", "description", "caption", "captioning", "detailed description",
+    "overall description", "partitioned description", "comprehensive inference",
+    "describe the image", "generate a caption", "image caption",
+)
 
 # expert 名
 GENERAL = "general"
 GROUNDING = "grounding"
 CHANGE = "change"
+CAPTION_EXPERT = "caption"
 
 # task 名（比 expert 更细）
 VQA = "vqa"
@@ -33,7 +39,7 @@ CHANGE_TASK = "change"
 # task -> expert 映射（将来 general 拆成 vqa/caption 两个 expert，只改这里）
 TASK_TO_EXPERT = {
     VQA: GENERAL,
-    CAPTION: GENERAL,
+    CAPTION: CAPTION_EXPERT,
     MCQ: GENERAL,
     REFERRING: GROUNDING,
     CHANGE_TASK: CHANGE,
@@ -45,7 +51,9 @@ def _has_prefix(text: str):
     t = text.strip()
     if t.startswith("[REF]"):
         return GROUNDING
-    if t.startswith("[CAP]") or t.startswith("[VQA]"):
+    if t.startswith("[CAP]"):
+        return CAPTION_EXPERT
+    if t.startswith("[VQA]"):
         return GENERAL
     return None
 
@@ -86,6 +94,8 @@ def route_task(prompt: str) -> str:
         return CHANGE_TASK
     if any(kw in low for kw in GROUNDING_KEYWORDS):
         return REFERRING
+    if any(kw in low for kw in CAPTION_KEYWORDS):
+        return CAPTION
     return VQA
 
 

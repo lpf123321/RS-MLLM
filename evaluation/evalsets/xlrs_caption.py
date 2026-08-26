@@ -1,11 +1,11 @@
 import json
 
-from evaluation.metrics import BLEU, CIDEr, ROUGEL
+from evaluation.metrics import BLEU, METEOR, ROUGEL
 
 NAME = "XLRS-Bench caption"
 
 TASK_METRICS = {
-    "caption": [BLEU(max_n=4), ROUGEL(), CIDEr()],
+    "caption": [BLEU(max_n=4), METEOR(), ROUGEL()],
 }
 
 
