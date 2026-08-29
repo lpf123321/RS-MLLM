@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
 from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
+from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,9 +35,6 @@ DATASETS = {
     "xlrs_caption": (xlrs_caption, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_caption.jsonl")),
     "xlrs_grounding": (xlrs_grounding, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_grounding.jsonl")),
 }
-
-# 临界剪枝率（L2, eps=5%，见 scripts/analyze_task_sensitivity.py）
-TASK_KEEP = {"vqa": 0.1, "caption": 0.9, "referring": 0.75, "mcq": 1.0, "change": 0.5}
 
 # task -> (dataset, task) 用于统计各 task 样本数与平均 keep
 TASK_SAMPLE_MAP = {
@@ -57,6 +55,7 @@ def main():
     parser.add_argument("--general_lora", required=True)
     parser.add_argument("--grounding_lora", required=True)
     parser.add_argument("--change_lora", required=True)
+    parser.add_argument("--caption_lora", default=None)
     parser.add_argument("--prune_method", default="l2", choices=["l2", "divprune"])
     parser.add_argument("--random_samples", type=int, default=1000)
     parser.add_argument("--sample_seed", type=int, default=2026)
@@ -73,8 +72,9 @@ def main():
         general_lora=args.general_lora,
         grounding_lora=args.grounding_lora,
         change_lora=args.change_lora,
+        caption_lora=args.caption_lora,
         prune_method=args.prune_method,
-        task_keep_ratio=TASK_KEEP,
+        task_prune_config=THRESHOLD_TASK_PRUNE_CONFIG,
     )
 
     all_results = {}
@@ -95,7 +95,7 @@ def main():
 
     all_results["_config"] = {
         "prune_method": args.prune_method,
-        "task_keep_ratio": TASK_KEEP,
+        "task_prune_config": THRESHOLD_TASK_PRUNE_CONFIG,
         "random_samples": args.random_samples,
         "sample_seed": args.sample_seed,
     }

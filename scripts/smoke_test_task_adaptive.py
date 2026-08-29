@@ -21,10 +21,9 @@ from evaluation.evalsets import levircc, mme, vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 from evaluation.router import rules
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
+from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
-
-TASK_KEEP = {"vqa": 0.1, "caption": 0.9, "referring": 0.75, "mcq": 1.0, "change": 0.5}
 
 
 def main():
@@ -33,6 +32,7 @@ def main():
     ap.add_argument("--general_lora", required=True)
     ap.add_argument("--grounding_lora", required=True)
     ap.add_argument("--change_lora", required=True)
+    ap.add_argument("--caption_lora", default=None)
     args = ap.parse_args()
 
     adapter = RouterPrunedAdapter(
@@ -40,8 +40,9 @@ def main():
         general_lora=args.general_lora,
         grounding_lora=args.grounding_lora,
         change_lora=args.change_lora,
+        caption_lora=args.caption_lora,
         prune_method="l2",
-        task_keep_ratio=TASK_KEEP,
+        task_prune_config=THRESHOLD_TASK_PRUNE_CONFIG,
     )
 
     grouped = {}
@@ -60,10 +61,12 @@ def main():
             continue
         ds_name, s = grouped[task]
         adapter.system_prompt = SYSTEM_PROMPTS.get(ds_name, "")
-        keep = (adapter.task_keep_ratio or {}).get(task, adapter.keep_ratio)
+        config = THRESHOLD_TASK_PRUNE_CONFIG.get(task, {})
+        method = config.get("method", adapter.prune_method)
+        keep = config.get("keep_ratio", adapter.keep_ratio)
         expert = rules.TASK_TO_EXPERT.get(task, rules.GENERAL)
         pred = adapter.generate(s["images"], s["prompt"])
-        print(f"\n[task={task} -> expert={expert} keep={keep}]", flush=True)
+        print(f"\n[task={task} -> expert={expert} method={method} keep={keep}]", flush=True)
         print(f"  Q: {s['prompt'][:80]!r}", flush=True)
         print(f"  A: {pred[:200]!r}", flush=True)
 

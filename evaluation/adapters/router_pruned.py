@@ -31,6 +31,7 @@ class RouterPrunedAdapter(RouterAdapter):
         general_lora: str = None,
         grounding_lora: str = None,
         change_lora: str = None,
+        caption_lora: str = None,
         expert_lora: dict = None,
         device: str = "cuda",
         max_new_tokens: int = 256,
@@ -40,13 +41,13 @@ class RouterPrunedAdapter(RouterAdapter):
         prune_method: str = "l2",
         keep_ratio: float = 1.0,
         task_keep_ratio: dict = None,
+        task_prune_config: dict = None,
+        pruner_seed: int = 2026,
         in_llm: str = None,
         in_llm_k: int = 2,
         in_llm_keep_ratio: float = None,
         force_think: bool = False,
     ):
-        if prune_method not in ("l2", "divprune", "none"):
-            raise ValueError(f"prune_method must be 'l2'/'divprune'/'none', got {prune_method!r}")
         if in_llm not in (None, "k2", "clip"):
             raise ValueError(f"in_llm must be None/'k2'/'clip', got {in_llm!r}")
 
@@ -60,6 +61,7 @@ class RouterPrunedAdapter(RouterAdapter):
             general_lora=general_lora,
             grounding_lora=grounding_lora,
             change_lora=change_lora,
+            caption_lora=caption_lora,
             expert_lora=expert_lora,
             device=device,
             max_new_tokens=max_new_tokens,
@@ -72,11 +74,31 @@ class RouterPrunedAdapter(RouterAdapter):
         self.prune_method = prune_method
         self.keep_ratio = keep_ratio
         self.task_keep_ratio = dict(task_keep_ratio) if task_keep_ratio else None
+        self.task_prune_config = dict(task_prune_config) if task_prune_config else None
+        self.pruner_seed = pruner_seed
         self.in_llm = in_llm
         self.in_llm_k = in_llm_k
         self.in_llm_keep_ratio = (
             in_llm_keep_ratio if in_llm_keep_ratio is not None else keep_ratio
         )
+
+        # Build the selector registry for token_compression methods (scope_l2 etc).
+        from token_compression import build_token_pruner
+
+        methods = {prune_method}
+        if self.task_prune_config:
+            methods.update(config["method"] for config in self.task_prune_config.values())
+        valid_methods = {"l2", "divprune", "none", "uniform", "random", "mmtok",
+                         "l2norm", "scope_l2"}
+        unknown = methods - valid_methods
+        if unknown:
+            raise ValueError(f"Unknown prune method(s): {sorted(unknown)}")
+        self._token_pruners = {
+            method: (None if method in ("l2", "divprune", "none")
+                     else build_token_pruner(method))
+            for method in methods
+        }
+
         self.set_keep_ratio(keep_ratio)
         if in_llm is not None:
             self._enable_in_llm()
@@ -113,14 +135,21 @@ class RouterPrunedAdapter(RouterAdapter):
 
         set_inllm_ratio(self._text_model(), 1.0 - keep_ratio)
 
-    def _apply_prune_ratio(self, keep_ratio: float):
+    def _apply_prune_ratio(self, keep_ratio: float, prune_method: str = None):
         backbone = self._backbone()
-        if self.prune_method == "none" or keep_ratio >= 1.0:
+        prune_method = prune_method or self.prune_method
+        if prune_method == "none" or keep_ratio >= 1.0:
             backbone._prune_method = None
             backbone._prune_r = 0.0
-        else:
-            backbone._prune_method = self.prune_method
+        elif prune_method in ("l2", "divprune"):
+            backbone._prune_method = prune_method
             backbone._prune_r = 1.0 - keep_ratio
+        else:
+            # token_compression selectors (uniform/random/mmtok/l2norm/scope_l2)
+            backbone._prune_method = "token_compression"
+            backbone._prune_r = 1.0 - keep_ratio
+            backbone._token_pruner = self._token_pruners[prune_method]
+            backbone._token_pruner_seed = self.pruner_seed
 
     def set_keep_ratio(self, keep_ratio: float):
         """Set the retention ratio for uniform mode; ``keep_ratio=1.0`` disables pruning."""
@@ -136,18 +165,25 @@ class RouterPrunedAdapter(RouterAdapter):
 
     def _group_key(self, prompt: str) -> str:
         """Task-adaptive 模式按 task 分组；否则按 expert 分组。"""
-        if self.task_keep_ratio is not None:
+        if self.task_keep_ratio is not None or self.task_prune_config is not None:
             return rules.route_task(prompt)
         return rules.route(prompt)
 
     def _prepare_group(self, key: str):
-        """每组生成前：切到对应 expert 并设置该组的 keep_ratio。"""
-        if self.task_keep_ratio is not None:
-            # key 是 task
-            task = key
-            expert = self._task_to_expert.get(task, rules.GENERAL)
-            self._switch(expert)
-            self._apply_prune_ratio(self._keep_ratio_for(task))
-        else:
+        """每组生成前：切到对应 expert 并设置该组的剪枝方法/keep_ratio。"""
+        if self.task_keep_ratio is None and self.task_prune_config is None:
             # key 是 expert
             self._switch(key)
+            return
+        # key 是 task
+        task = key
+        expert = self._task_to_expert.get(task, rules.GENERAL)
+        self._switch(expert)
+        if self.task_prune_config is not None:
+            config = self.task_prune_config.get(task)
+            if config:
+                self._apply_prune_ratio(config["keep_ratio"], config["method"])
+            else:
+                self._apply_prune_ratio(self.keep_ratio)
+        else:
+            self._apply_prune_ratio(self._keep_ratio_for(task))
