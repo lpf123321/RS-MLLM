@@ -56,6 +56,21 @@ class VRSBenchNoCaption:
 DATASETS["vrsbench"] = (VRSBenchNoCaption, DATASETS["vrsbench"][1])
 
 
+class VRSBenchReferring:
+    """VRSBench loader restricted to Referring samples."""
+
+    NAME = vrsbench.NAME
+    TASK_METRICS = {"referring": vrsbench.TASK_METRICS["referring"]}
+
+    @staticmethod
+    def load_data(path):
+        return [sample for sample in vrsbench.load_data(path)
+                if sample["task"] == "referring"]
+
+
+DATASETS["vrsbench_referring"] = (VRSBenchReferring, DATASETS["vrsbench"][1])
+
+
 class VRSBenchCaption:
     """VRSBench loader restricted to Caption samples."""
 

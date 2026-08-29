@@ -37,7 +37,7 @@ def prune_to_grid_mask(pruner, features, grid_h, grid_w, keep_ratio, seed=None):
     return mask.view(grid_h, grid_w)
 
 
-def overlay_prune_mask(image, keep_mask, block_px=16, alpha=0.45, pruned_color=(0.85, 0.1, 0.1)):
+def overlay_prune_mask(image, keep_mask, block_px=16, alpha=0.45, pruned_color=(0.08, 0.12, 0.45)):
     """Overlay the keep-mask on ``image``; pruned blocks are marked with a
     semi-transparent red tint so the underlying image stays visible.
 
@@ -84,7 +84,7 @@ def save_overlay_image(
     save_path,
     block_px=16,
     alpha=0.45,
-    pruned_color=(0.85, 0.1, 0.1),
+    pruned_color=(0.08, 0.12, 0.45),
 ):
     """Save ONLY the pruned-token overlay as a plain image (no axes, no text).
 
@@ -114,7 +114,7 @@ def visualize_pruning(
     save_path=None,
     block_px=16,
     alpha=0.45,
-    pruned_color=(0.85, 0.1, 0.1),
+    pruned_color=(0.08, 0.12, 0.45),
     figsize=(12, 5.5),
 ):
     """Render a two-panel figure: pruned-token overlay + summary text.

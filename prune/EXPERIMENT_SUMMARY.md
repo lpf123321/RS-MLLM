@@ -115,6 +115,11 @@ slurm_scripts/run_delta_caption_r_sweep.slurm
 }
 ```
 
+按 $\epsilon=0.05$ 的严格保留率阈值，默认配置为：VQA/MCQ 使用
+$L_2$ Norm、$R=0.25$；Change 使用 $L_2$ Norm、$R=0.50$；Referring
+使用 ScopeL2、$R=0.75$。若需进一步压缩而允许 Referring 性能下降，
+可将 Referring 降至 ScopeL2、$R=0.50$。
+
 ScopeL2 的 XLRS MCQ R 曲线：
 
 | R | MCQ Accuracy |
@@ -131,6 +136,8 @@ ScopeL2 的 XLRS MCQ R 曲线：
 ScopeL2 在 XLRS 上没有表现出相对 L2Norm 的稳定优势；R=0.25/0.50 时 L2Norm 分别为 `0.377/0.372`，因此 XLRS 仍优先采用 L2Norm。
 
 ## 4. Caption 固定比例结果
+
+> 以下是旧 prompt/指标口径的阶段性结果，仅保留作历史对照。新版 Caption 结果应使用官方 user-instruction，并只报告 BLEU-1/2/3/4、METEOR、ROUGE-L。
 
 主要指标格式：`BLEU-4 / ROUGE-L / CIDEr`。
 
@@ -156,6 +163,61 @@ ScopeL2 在 XLRS 上没有表现出相对 L2Norm 的稳定优势；R=0.25/0.50 �
 - XLRS Caption 的 CIDEr 全部为 0，需要在报告中单独核查官方 reference/prompt 与 CIDEr 评测口径，暂不据此比较方法优劣。
 
 ## 6. Router 实现状态
+
+## 7. General + exp7 最新 R 消融
+
+新版 General Expert 已按以下顺序生成：
+
+```text
+raw Qwen3.5-4B + General Delta + exp7 PEFT LoRA
+```
+
+转换后的 Delta：
+
+```text
+prune/output/new_experts/general_exp7_delta.pt
+```
+
+新版 R sweep 已完成 `192/192`，结果目录：
+
+```text
+prune/output/delta_exp7_r_sweep/
+```
+
+总结：`prune/output/delta_exp7_r_sweep/SUMMARY.md`
+
+关键变化：exp7 使 MME baseline 从旧版约 `0.566` 提升到 `0.702`，XLRS 从约 `0.361` 提升到 `0.477`；VQA、Referring、LEVIR-CC 基本保持稳定。
+
+完整实验条件、权重路径、抽样、prompt、batch、剪枝和复现命令记录在：
+
+```text
+prune/output/delta_exp7_r_sweep/SUMMARY.md
+```
+
+## 8. Task Router Smoke
+
+候选任务路由配置：
+
+```python
+{
+    "vqa": {"method": "l2norm", "keep_ratio": 0.50},
+    "mcq": {"method": "l2norm", "keep_ratio": 0.50},
+    "change": {"method": "l2norm", "keep_ratio": 0.50},
+    "referring": {"method": "scope_l2", "keep_ratio": 0.75},
+    "caption": {"method": "l2norm", "keep_ratio": 0.50},
+}
+```
+
+Smoke Job `7122` 已通过，覆盖 VQA、Caption、Referring、MCQ、Change 和 XLRS Grounding：
+
+- General + exp7 正常加载；
+- Caption 正确路由到 Caption expert；
+- Referring 正确路由到 Grounding expert；
+- Change 正确路由到 Change expert；
+- bbox 输出可解析；
+- 无 OOM、Traceback 或 CUDA 错误。
+
+Smoke 脚本：`scripts/smoke_test_delta_task_router.py`
 
 ## 5.1 R=1 完整集口径复核
 

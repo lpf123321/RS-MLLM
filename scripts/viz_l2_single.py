@@ -128,6 +128,12 @@ def main():
     save_overlay_image(image, grid_mask, pure_path, alpha=0.45)
     print(f"[+] pure image saved -> {pure_path}")
 
+    # 额外：更深蓝色版本（对比用，加深剪枝掩码颜色）
+    deep_blue = (0.02, 0.03, 0.2)
+    deep_path = os.path.join(args.out_dir, f"l2_pure_deep_r{int(args.r*100):02d}.png")
+    save_overlay_image(image, grid_mask, deep_path, alpha=0.45, pruned_color=deep_blue)
+    print(f"[+] deep-blue pure image saved -> {deep_path}")
+
     # 额外保存：只有掩码的纯热力图（不叠加原图，便于观察剪枝空间分布）
     import matplotlib
     matplotlib.use("Agg")

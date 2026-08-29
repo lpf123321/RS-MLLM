@@ -48,7 +48,7 @@ def main():
     parser.add_argument("--no_resume", action="store_true", default=False,
                         help="Ignore checkpoint and start from scratch")
     parser.add_argument("--prune_method", type=str, default=None,
-                        choices=["l2", "k2", "divprune"],
+                        choices=["l2", "k2", "divprune", "scope"],
                         help="Token pruning method (default: no pruning)")
     parser.add_argument("--prune_r", type=float, default=0.5,
                         help="Pruning ratio (0.5 = keep 50%% of image tokens)")

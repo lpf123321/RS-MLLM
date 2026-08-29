@@ -481,23 +481,27 @@ def _apply_keep_masks(inputs_embeds, attention_mask, position_ids, keep_masks,
         km = keep_masks[b]
         cur_len = km.sum().item()
         pad_len = max_len - cur_len
+        # The processor uses left padding. Keep the same convention after
+        # variable-length token deletion; right-padding here corrupts the
+        # effective M-RoPE/text positions for mixed-size image batches.
+        pad_embeds = torch.zeros(pad_len, hidden_dim, dtype=inputs_embeds.dtype, device=device)
         new_embeds.append(torch.cat([
+            pad_embeds,
             inputs_embeds[b, km, :],
-            torch.zeros(pad_len, hidden_dim, dtype=inputs_embeds.dtype, device=device),
         ]))
         if attention_mask is not None:
             new_masks.append(torch.cat([
-                attention_mask[b, km],
                 torch.zeros(pad_len, dtype=attention_mask.dtype, device=device),
+                attention_mask[b, km],
             ]))
         new_pos.append(torch.cat([
-            position_ids[:, b, km],
             torch.zeros(4, pad_len, dtype=position_ids.dtype, device=device),
+            position_ids[:, b, km],
         ], dim=-1))
         if visual_pos_masks is not None:
             new_visual.append(torch.cat([
-                visual_pos_masks[b, km],
                 torch.zeros(pad_len, dtype=torch.bool, device=device),
+                visual_pos_masks[b, km],
             ]))
 
     inputs_embeds = torch.stack(new_embeds, dim=0)

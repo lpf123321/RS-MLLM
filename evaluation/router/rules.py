@@ -22,6 +22,12 @@ CAPTION_KEYWORDS = (
     "overall description", "partitioned description", "comprehensive inference",
     "describe the image", "generate a caption", "image caption",
 )
+CAPTION_INSTRUCTION_MARKERS = (
+    "description is divided into three parts",
+    "partitioned description",
+    "comprehensive inference",
+    "generating a detailed description",
+)
 
 # expert 名
 GENERAL = "general"
@@ -88,6 +94,10 @@ def route_task(prompt: str) -> str:
         return pref
 
     low = t.lower()
+    # The official XLRS Caption instruction contains words such as "after";
+    # identify its explicit caption structure before change keyword matching.
+    if any(marker in low for marker in CAPTION_INSTRUCTION_MARKERS):
+        return CAPTION
     if _has_mcq(t):
         return MCQ
     if any(kw in low for kw in CHANGE_KEYWORDS):

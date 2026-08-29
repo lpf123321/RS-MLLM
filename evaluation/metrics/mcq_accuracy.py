@@ -9,7 +9,12 @@ class MCQAccuracy(BaseMetric):
 
     @staticmethod
     def _extract_letter(text: str) -> str:
+        # 优先匹配 "C." / "C)" / "(C)" 等格式
         m = re.search(r'(?<!\w)([A-Ea-e])\s*[.)]', text.strip())
+        if m:
+            return m.group(1).upper()
+        # 回退：裸字母（如 "C" / "A"），用于输出仅为字母的模型
+        m = re.search(r'(?<!\w)([A-Ea-e])(?!\w)', text.strip())
         return m.group(1).upper() if m else ""
 
     def compute(self, references: List[List[str]], predictions: List[str]) -> Dict[str, float]:
