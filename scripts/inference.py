@@ -235,11 +235,12 @@ def main():
     parser = argparse.ArgumentParser(description="RS-MLLM Inference")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--lora_path", default=None)
-    parser.add_argument("--prune_method", default=None, choices=["l2", "k2", "divprune", "none"])
+    parser.add_argument("--prune_method", default=None, choices=["l2", "k2", "divprune", "scope", "none"])
     parser.add_argument("--prune_r", type=float, default=0.5)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--max_samples", type=int, default=0)
+    parser.add_argument("--start_offset", type=int, default=0)
     parser.add_argument("--output_dir", default="outputs/inference_results")
     parser.add_argument("--datasets", nargs="+", choices=list(BENCHMARKS.keys()) + ["all"], default=["all"])
     parser.add_argument("--image", nargs="*", help="Image path(s) for single inference")
@@ -268,7 +269,20 @@ def main():
         print(f"  {ds_name} ({bench.name})")
         print(f"{'='*60}")
 
-        samples = bench.load(data_path, args.max_samples)
+        samples = bench.load(data_path, max_samples=0)
+        if args.start_offset > 0:
+            samples = samples[args.start_offset:]
+        if args.max_samples > 0:
+            samples = samples[:args.max_samples]
+
+        # Sort samples by image size to keep uniform grid_thw within each batch
+        # (required by SCOPE pruning: mixed image sizes in one batch cause garbage)
+        from PIL import Image
+        try:
+            samples.sort(key=lambda s: Image.open(s["images"][0]).size if s["images"] else (0, 0))
+            print(f"  Sorted {len(samples)} samples by image size for uniform batching")
+        except Exception:
+            pass
         groups = bench.group_by_task(samples) if hasattr(bench, "group_by_task") else {"default": samples}
 
         predictions = [None] * len(samples)

@@ -2,21 +2,36 @@
 import argparse
 import json
 import os
+import random
 import re
 
 from PIL import Image
 from tqdm import tqdm
 
-from evaluation.evalsets import vrsbench, mme, xlrs, levircc
+from evaluation.evalsets import vrsbench, mme, xlrs, levircc, xlrs_caption, xlrs_grounding
 
 SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_prompt(name: str) -> str:
+    path = os.path.join(_REPO_ROOT, "evaluation", "prompts", name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
+
+_XLRS_CAPTION_PROMPT = _load_prompt("xlrs_caption_en.txt")
 
 SYSTEM_PROMPTS = {
     "vrsbench": "Obey the task prefix:\n- [VQA] Answer with a single word or short phrase only. No extra text.\n- [CAP] Describe the image in detail.\n- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.",
     "mme": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"D. (D) White\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "xlrs": "Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated in parentheses. Example: \"A. (A) Some description\". You MUST include the parenthesized letter - never omit it. Output ONLY that line.",
     "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
+    "xlrs_caption": _XLRS_CAPTION_PROMPT or "Describe the image in detail.",
+    "xlrs_grounding": "Obey the task prefix:\n- [REF] Output the bounding box coordinates of the described object, directly without explanation.",
 }
 
 GEOEYES_PROMPTS = {
@@ -31,6 +46,8 @@ DATASETS = {
     "mme": (mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),
     "xlrs": (xlrs, f"{SHARED}/XLRS-Bench-lite/xlrs.jsonl"),
     "levircc": (levircc, f"{SHARED}/LEVIR-CC/levircc_test.jsonl"),
+    "xlrs_caption": (xlrs_caption, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_caption.jsonl")),
+    "xlrs_grounding": (xlrs_grounding, os.path.join(_REPO_ROOT, "evaluation/data/xlrs_grounding.jsonl")),
 }
 
 TASK_MAX_TOKENS = {
@@ -40,11 +57,25 @@ TASK_MAX_TOKENS = {
 }
 
 
-def evaluate(adapter, module, data_path, max_samples, eval_batch_size, start_offset=0):
+def evaluate(
+    adapter,
+    module,
+    data_path,
+    max_samples,
+    eval_batch_size,
+    start_offset=0,
+    random_samples=0,
+    sample_seed=2026,
+    task_max_tokens=None,
+):
     samples = module.load_data(data_path)
     if start_offset > 0:
         samples = samples[start_offset:]
-    if 0 < max_samples < len(samples):
+    if random_samples > 0:
+        samples = random.Random(sample_seed).sample(
+            samples, min(random_samples, len(samples))
+        )
+    elif 0 < max_samples < len(samples):
         samples = samples[:max_samples]
 
     # Rewrite image paths for cross-server compatibility
@@ -60,9 +91,15 @@ def evaluate(adapter, module, data_path, max_samples, eval_batch_size, start_off
     predictions = [None] * len(samples)
     for task, indices in task_indices.items():
         batch = [(samples[idx]["images"], samples[idx]["prompt"]) for idx in indices]
-        max_tok = TASK_MAX_TOKENS.get(task, adapter.max_new_tokens)
+        token_limits = task_max_tokens or TASK_MAX_TOKENS
+        max_tok = token_limits.get(task, adapter.max_new_tokens)
         print(f"  [{task}] max_new_tokens={max_tok}, samples={len(batch)}", flush=True)
-        preds = adapter.batch_generate(batch, batch_size=eval_batch_size, max_new_tokens=max_tok)
+        previous_max_new_tokens = adapter.max_new_tokens
+        adapter.max_new_tokens = max_tok
+        try:
+            preds = adapter.batch_generate(batch, batch_size=eval_batch_size)
+        finally:
+            adapter.max_new_tokens = previous_max_new_tokens
         for idx, pred in zip(indices, preds):
             predictions[idx] = pred
 
@@ -158,14 +195,25 @@ def main():
     parser = argparse.ArgumentParser(description="RS-MLLM Evaluation")
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--adapter", type=str, default="qwen3vl",
-                        choices=["qwen3vl", "qwen35vl", "qwen35_2b", "geoeyes", "router"])
+                        choices=["qwen3vl", "qwen35vl", "qwen35_2b", "qwen35_pruned",
+                                 "qwen35_mmtok", "qwen35_divprune", "qwen35_fourier",
+                                 "geoeyes", "router"])
     parser.add_argument("--datasets", type=str, nargs="+",
                         choices=list(DATASETS.keys()) + ["all"], default=["all"])
     parser.add_argument("--data_root", type=str, default="output")
     parser.add_argument("--max_samples", type=int, default=0)
+    parser.add_argument("--random_samples", type=int, default=0,
+                        help="Randomly select this many samples per dataset")
+    parser.add_argument("--sample_seed", type=int, default=2026,
+                        help="Seed for --random_samples")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--output", type=str, default="evaluation/results.json")
     parser.add_argument("--eval_batch_size", type=int, default=4)
+    parser.add_argument("--pruner", type=str,
+                        choices=["uniform", "random", "mmtok", "l2norm", "divprune", "scope_l2"],
+                        default="mmtok")
+    parser.add_argument("--keep_ratio", type=float, default=0.5)
+    parser.add_argument("--pruner_seed", type=int, default=2026)
     parser.add_argument("--compile_model", action="store_true", default=False)
     parser.add_argument("--lora_path", type=str, default=None,
                         help="Path to LoRA checkpoint (qwen3vl adapter only)")
@@ -215,6 +263,35 @@ def main():
             max_model_len=args.vllm_max_model_len,
         )
         prompt_map = GEOEYES_PROMPTS
+    elif args.adapter == "qwen35_divprune":
+        from evaluation.adapters.qwen35_divprune import Qwen35DivPruneAdapter
+        adapter = Qwen35DivPruneAdapter(
+            args.model_path, device=args.device, compile_model=args.compile_model,
+            keep_ratio=args.keep_ratio, pruner_seed=args.pruner_seed,
+        )
+        prompt_map = SYSTEM_PROMPTS
+    elif args.adapter == "qwen35_fourier":
+        from evaluation.adapters.qwen35_fourier import Qwen35FourierAdapter
+        adapter = Qwen35FourierAdapter(
+            args.model_path, device=args.device, compile_model=args.compile_model,
+            keep_ratio=args.keep_ratio, pruner_seed=args.pruner_seed,
+        )
+        prompt_map = SYSTEM_PROMPTS
+    elif args.adapter == "qwen35_pruned":
+        from evaluation.adapters.qwen35_pruned import Qwen35PrunedAdapter
+        adapter = Qwen35PrunedAdapter(
+            args.model_path, device=args.device, compile_model=args.compile_model,
+            keep_ratio=args.keep_ratio, pruner=args.pruner,
+            pruner_seed=args.pruner_seed,
+        )
+        prompt_map = SYSTEM_PROMPTS
+    elif args.adapter == "qwen35_mmtok":
+        from evaluation.adapters.qwen35_mmtok import Qwen35MMTokAdapter
+        adapter = Qwen35MMTokAdapter(
+            args.model_path, device=args.device, compile_model=args.compile_model,
+            keep_ratio=args.keep_ratio,
+        )
+        prompt_map = SYSTEM_PROMPTS
     elif args.adapter == "qwen35_2b":
         from evaluation.adapters.qwen35_2b import Qwen35_2BAdapter
         adapter = Qwen35_2BAdapter(args.model_path, device=args.device,
@@ -251,6 +328,10 @@ def main():
         print(f"  Model loaded on {adapter.device}", flush=True)
     print(f"  Adapter: {args.adapter}", flush=True)
     print(f"  Eval batch size: {args.eval_batch_size}", flush=True)
+    if args.random_samples:
+        print(f"  Random samples: {args.random_samples}, seed={args.sample_seed}", flush=True)
+    if args.adapter == "qwen35_pruned":
+        print(f"  Pruner: {args.pruner}, keep_ratio={args.keep_ratio}, seed={args.pruner_seed}", flush=True)
 
     all_results = {}
     try:
@@ -267,7 +348,10 @@ def main():
             print(f"  System: {adapter.system_prompt}")
             print(f"{'=' * 60}")
 
-            ds_results, ds_preds = evaluate(adapter, module, data_path, args.max_samples, args.eval_batch_size)
+            ds_results, ds_preds = evaluate(
+                adapter, module, data_path, args.max_samples, args.eval_batch_size,
+                random_samples=args.random_samples, sample_seed=args.sample_seed,
+            )
             all_results[ds_name] = ds_results
             if args.save_predictions:
                 os.makedirs(os.path.dirname(args.save_predictions) or ".", exist_ok=True)

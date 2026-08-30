@@ -258,6 +258,67 @@ bash finetune_framework/recipes/levir_cc/merge_lora.sh
 
 目录职责、完整路径、数据规模、GRPO reward 行为、旧路径映射及验证方式见 [`finetune_framework/README.md`](finetune_framework/README.md)。任务细节分别见 [`recipes/vrsbench/README.md`](finetune_framework/recipes/vrsbench/README.md) 和 [`recipes/levir_cc/README.md`](finetune_framework/recipes/levir_cc/README.md)。
 
+## Visual Token Pruning
+
+The Qwen3.5 evaluation path supports the following visual-token compression methods:
+
+| Method | Adapter | Description |
+|--------|---------|-------------|
+| `uniform` | `qwen35_pruned` | Retains evenly spaced visual tokens. |
+| `random` | `qwen35_pruned` | Retains a deterministic random subset controlled by `--pruner_seed`. |
+| `mmtok` | `qwen35_pruned` | Greedy cosine-similarity coverage selection. |
+| `l2norm` | `qwen35_pruned` | Retains tokens with the largest feature L2 norms. |
+| `scope_l2` | `qwen35_pruned` | Combines L2 saliency with cosine-similarity coverage. |
+| DivPrune | `qwen35_divprune` | Greedily retains a max-min diverse subset by cosine distance. |
+| Fourier | `qwen35_fourier` | Retains low-frequency 2D DCT components of each visual feature grid. |
+
+For compressed inference, use `--eval_batch_size 1`. For example, run L2-norm pruning at a 50% token keep ratio with:
+
+```bash
+python -m evaluation.main \
+  --model_path /path/to/Qwen3.5-checkpoint \
+  --adapter qwen35_pruned \
+  --pruner l2norm \
+  --keep_ratio 0.5 \
+  --eval_batch_size 1 \
+  --datasets mme
+```
+
+For consistent XLRS memory comparisons, use the committed fixed subset at
+`evaluation/data/xlrs_memory_1000.jsonl`. It contains the exact 1,000 records
+used for the existing memory measurements; its source checksum and selection
+indices are stored in `evaluation/data/xlrs_memory_1000.metadata.json`.
+
+```bash
+sbatch evaluation/run_xlrs_memory.slurm
+```
+
+The script uses this fixed subset by default. To regenerate it from the
+canonical XLRS JSONL, run `evaluation/tools/create_xlrs_memory_subset.py` with
+the paths in the metadata file.
+
+DivPrune and Fourier use dedicated adapters:
+
+```bash
+python -m evaluation.main --model_path /path/to/Qwen3.5-checkpoint \
+  --adapter qwen35_divprune --keep_ratio 0.5 --eval_batch_size 1 --datasets mme
+python -m evaluation.main --model_path /path/to/Qwen3.5-checkpoint \
+  --adapter qwen35_fourier --keep_ratio 0.5 --eval_batch_size 1 --datasets mme
+```
+
+To measure GPU memory for a method in a fresh process, use `evaluation.benchmark_memory`:
+
+```bash
+python -m evaluation.benchmark_memory \
+  --model_path /path/to/Qwen3.5-checkpoint \
+  --dataset mme \
+  --data_path /path/to/mme_rs.jsonl \
+  --method scope \
+  --keep_ratio 0.5 \
+  --sample_count 20 \
+  --output evaluation/results/memory_scope_r50.json
+```
+
 ## 提交代码
 
 ```bash

@@ -73,7 +73,7 @@ def load_model(model_path, device="cuda", prune_method=None, prune_r=0.5,
 
 
 def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
-    """批量推理。预填空 think 块抑制 CoT，system prompt 控制输出格式。"""
+    """批量推理。预填空 think 抑制 CoT + system prompt。"""
     texts = []
     all_images = []
     for s in samples_batch:
@@ -84,11 +84,9 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             *[{"type": "image", "image": img} for img in s["images"]],
             {"type": "text", "text": s["prompt"]},
         ]})
-        # 参考 inference.py 的 build_prompt 格式
         text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
         text += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
         texts.append(text)
-        # 单独提取图像
         img_msg = [{"role": "user", "content": [{"type": "image", "image": img} for img in s["images"]]}]
         image_inputs, _ = process_vision_info(img_msg)
         all_images.append(image_inputs)
@@ -111,8 +109,7 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
             generated_ids[i:i+1, input_len:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        # 和 inference.py 一致的提取：</think> 之后的内容
-        out = out.split("</think>", 1)[1].strip() if "</think>" in out else out.strip()
+        out = re.sub(r"<think>.*?</think>\s*", "", out, flags=re.DOTALL).strip()
         outputs.append(out)
 
     img_tokens = (inputs.input_ids == model.config.image_token_id).sum().item()
@@ -128,6 +125,11 @@ def run_batch_inference(model, processor, samples_batch, max_new_tokens=256):
 def load_vrsbench(data_path, max_samples=0):
     """VRSBench: VQA / Caption / Referring，单图。"""
     prefix_map = {"[VQA]": "vqa", "[CAP]": "caption", "[REF]": "referring"}
+    SP = ("Obey the task prefix:\n"
+          "- [VQA] Answer with a single word or short phrase only. No extra text.\n"
+          "- [CAP] Describe the image in detail.\n"
+          "- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} with "
+          "integer coordinates 0-99, e.g. {<25><40><33><60>}. No other text.")
     samples = []
     with open(data_path) as f:
         for line in f:
@@ -144,7 +146,7 @@ def load_vrsbench(data_path, max_samples=0):
                     task = t; break
             samples.append({
                 "task": task, "images": images, "prompt": prompt,
-                "reference": assistant,
+                "reference": assistant, "system_prompt": SP,
             })
     return samples
 
@@ -175,6 +177,7 @@ def load_mcq(data_path, dataset_type, max_samples=0):
 
 def load_levircc(data_path, max_samples=0):
     """LEVIR-CC: 双图变化描述。"""
+    SP = "Describe the changes between the two images concisely in 1-2 sentences."
     samples = []
     with open(data_path) as f:
         for line in f:
@@ -189,7 +192,7 @@ def load_levircc(data_path, max_samples=0):
             refs = [r["raw"] if isinstance(r, dict) else r for r in refs_raw]
             samples.append({
                 "task": "caption", "images": images, "prompt": prompt,
-                "reference": refs,
+                "reference": refs, "system_prompt": SP,
             })
     return samples
 
@@ -209,10 +212,22 @@ def compute_accuracy(references, predictions):
 
 
 def compute_mcq_accuracy(references, predictions):
-    """MCQ letter-only accuracy: extract answer letter from patterns like 'D.', '(D)', 'D)'."""
+    """MCQ letter-only accuracy: extract answer letter from (X), X., X), or standalone X (A-E)."""
     def _extract_letter(text):
-        m = re.search(r'(?<!\w)([A-Da-d])\s*[.)]', str(text).strip())
-        return m.group(1).upper() if m else ""
+        text = str(text).strip()
+        # 1. (X) 括号格式
+        m = re.search(r'\(([A-Ea-e])\)', text)
+        if m:
+            return m.group(1).upper()
+        # 2. X. 或 X) 前导
+        m = re.search(r'(?<!\w)([A-Ea-e])\s*[.)]', text)
+        if m:
+            return m.group(1).upper()
+        # 3. 独立字母
+        m = re.search(r'(?:^|\n)\s*([A-Ea-e])\s*(?:\n|$)', text)
+        if m:
+            return m.group(1).upper()
+        return ""
     correct = 0
     for r, p in zip(references, predictions):
         rl = _extract_letter(r)
@@ -235,7 +250,7 @@ def compute_bleu(references, predictions, max_n=4):
     hyps = [_tokenize(p) for p in predictions]
     bleus = {}
     for n in range(1, max_n + 1):
-        weights = [1.0 / n] * n
+        weights = tuple(1.0 / n if i < n else 0.0 for i in range(max_n))
         try:
             bleu = corpus_bleu(list_of_refs, hyps, weights=weights, smoothing_function=smooth)
             if bleu > 1.0:
@@ -261,32 +276,96 @@ def compute_rouge_l(references, predictions):
         return 0.0
 
 
+def compute_cider(references, predictions):
+    """CIDEr 指标。"""
+    try:
+        from collections import defaultdict
+        from math import log, sqrt
+        all_ref_tokens = [[_tokenize(ref) for ref in (r if isinstance(r, list) else [r])] for r in references]
+        all_hyp_tokens = [_tokenize(hyp) for hyp in predictions]
+        N = len(references)
+        corpus_refs = [t for group in all_ref_tokens for t in group]
+        cider_scores = []
+
+        for ngram_n in range(1, 5):
+            df = defaultdict(int)
+            for tokens in corpus_refs:
+                seen = set()
+                for i in range(len(tokens) - ngram_n + 1):
+                    g = tuple(tokens[i:i + ngram_n])
+                    if g not in seen: df[g] += 1; seen.add(g)
+
+            n_scores = []
+            for hyp_tokens, ref_groups in zip(all_hyp_tokens, all_ref_tokens):
+                if not hyp_tokens: continue
+                hyp_ng = {}
+                for i in range(len(hyp_tokens) - ngram_n + 1):
+                    g = tuple(hyp_tokens[i:i + ngram_n])
+                    hyp_ng[g] = hyp_ng.get(g, 0) + 1
+                hyp_max = max(hyp_ng.values()) if hyp_ng else 1
+                hyp_vec = {g: (c / hyp_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1) for g, c in hyp_ng.items()}
+                ref_avg = []
+                for ref_tokens in ref_groups:
+                    if not ref_tokens: continue
+                    ref_ng = {}
+                    for i in range(len(ref_tokens) - ngram_n + 1):
+                        g = tuple(ref_tokens[i:i + ngram_n])
+                        ref_ng[g] = ref_ng.get(g, 0) + 1
+                    ref_max = max(ref_ng.values()) if ref_ng else 1
+                    ref_vec = {g: (c / ref_max) * (log((N + 1) / (df.get(g, 0) + 1)) + 1) for g, c in ref_ng.items()}
+                    dot = sum(hyp_vec.get(k, 0) * ref_vec.get(k, 0) for k in set(hyp_vec) | set(ref_vec))
+                    n1 = sqrt(sum(v ** 2 for v in hyp_vec.values()))
+                    n2 = sqrt(sum(v ** 2 for v in ref_vec.values()))
+                    ref_avg.append(dot / (n1 * n2) if n1 > 0 and n2 > 0 else 0.0)
+                n_scores.append(np.mean(ref_avg) if ref_avg else 0.0)
+            cider_scores.append(float(np.mean(n_scores)) if n_scores else 0.0)
+
+        weights = [0.25, 0.25, 0.25, 0.25]
+        cider = sum(w * s for w, s in zip(weights, cider_scores))
+        # Length penalty
+        ref_lens = [len(t) for group in all_ref_tokens for t in group]
+        hyp_lens = [len(t) for t in all_hyp_tokens]
+        avg_ref_len = float(np.mean(ref_lens)) if ref_lens else 1.0
+        avg_hyp_len = float(np.mean(hyp_lens)) if hyp_lens else 0.0
+        sigma_val = float(np.std(ref_lens)) if len(ref_lens) > 1 else avg_ref_len / 6.0
+        diff = abs(avg_ref_len - avg_hyp_len)
+        penalty = np.exp(-(diff ** 2) / (2 * sigma_val ** 2)) if sigma_val > 0 else 1.0
+        return float(max(cider * penalty * 10.0, 0.0))
+    except Exception:
+        return 0.0
+
+
 def compute_referring_acc(references, predictions, threshold=0.5):
-    """Referring expression IoU accuracy。"""
+    """Referring expression IoU accuracy，与 evaluation/metrics/referring.py 一致。"""
     _BBOX_ANGLE_RE = re.compile(
         r"\{<\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*>\}"
     )
-    correct = 0
+    _BBOX_COMMA_RE = re.compile(
+        r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"
+    )
+    def _parse_bbox(text):
+        text = _BBOX_COMMA_RE.sub(r"{<\1><\2><\3><\4>}", text)
+        m = _BBOX_ANGLE_RE.search(text)
+        return tuple(map(float, m.groups())) if m else None
+    def _iou(b1, b2):
+        x1 = max(min(b1[0], b1[2]), min(b2[0], b2[2]))
+        y1 = max(min(b1[1], b1[3]), min(b2[1], b2[3]))
+        x2 = min(max(b1[0], b1[2]), max(b2[0], b2[2]))
+        y2 = min(max(b1[1], b1[3]), max(b2[1], b2[3]))
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        a1 = abs(b1[2] - b1[0]) * abs(b1[3] - b1[1])
+        a2 = abs(b2[2] - b2[0]) * abs(b2[3] - b2[1])
+        union = a1 + a2 - inter
+        return inter / union if union > 0 else 0.0
+    ious = []
     for r, p in zip(references, predictions):
         refs = r if isinstance(r, list) else [r]
-        rm = _BBOX_ANGLE_RE.search(str(refs[0])) if refs else None
-        pm = _BBOX_ANGLE_RE.search(str(p))
-        if not rm or not pm:
-            continue
-        rx = tuple(map(float, rm.groups()))
-        px = tuple(map(float, pm.groups()))
-        x1, y1 = max(rx[0], px[0]), max(rx[1], px[1])
-        x2, y2 = min(rx[2], px[2]), min(rx[3], px[3])
-        inter = max(0, x2 - x1) * max(0, y2 - y1)
-        a1 = abs(rx[2] - rx[0]) * abs(rx[3] - rx[1])
-        a2 = abs(px[2] - px[0]) * abs(px[3] - px[1])
-        area_r = (rx[2] - rx[0]) * (rx[3] - rx[1])
-        area_p = (px[2] - px[0]) * (px[3] - px[1])
-        union = a1 + a2 - inter
-        iou = inter / union if union > 0 else 0
-        if iou >= threshold:
-            correct += 1
-    return correct / len(predictions) if predictions else 0
+        ref_box = _parse_bbox(refs[0]) if refs else None
+        pred_box = _parse_bbox(p)
+        ious.append(_iou(ref_box, pred_box) if ref_box and pred_box else 0.0)
+    if not ious:
+        return 0.0
+    return sum(1 for v in ious if v >= threshold) / len(ious)
 
 
 # ============================================================
@@ -299,8 +378,14 @@ def _compute_results(samples, predictions, ds_type):
     for s, p in zip(samples, predictions):
         grouped[s["task"]]["references"].append(s["reference"])
         grouped[s["task"]]["predictions"].append(p)
+
+    # VRSBench VQA is open-ended, not MCQ; only MME/XLRS are MCQ
+    vqa_metrics = [("Accuracy", compute_accuracy)]
+    if ds_type in ("mme", "xlrs"):
+        vqa_metrics.append(("MCQ_Accuracy", compute_mcq_accuracy))
+
     metric_map = {
-        "vqa": [("Accuracy", compute_accuracy), ("MCQ_Accuracy", compute_mcq_accuracy)],
+        "vqa": vqa_metrics,
         "caption": [],
         "referring": [("Acc@0.5", lambda r, p: compute_referring_acc(r, p, 0.5))],
     }
@@ -312,6 +397,7 @@ def _compute_results(samples, predictions, ds_type):
             bleus = compute_bleu(refs, preds)
             task_result.update(bleus)
             task_result["ROUGE-L"] = compute_rouge_l(refs, preds)
+            task_result["CIDEr"] = compute_cider(refs, preds)
         else:
             for name, fn in metric_map.get(task, []):
                 task_result[name] = fn(refs, preds)
@@ -335,7 +421,7 @@ def main():
     parser.add_argument("--start_offset", type=int, default=0,
                         help="Skip first N samples")
     parser.add_argument("--prune_method", type=str, default=None,
-                        choices=["l2", "k2", "divprune", "none"],
+                        choices=["l2", "k2", "divprune", "scope", "none"],
                         help="Pruning method")
     parser.add_argument("--prune_r", type=float, default=0.5,
                         help="Pruning ratio (0.5 = keep 50%)")

@@ -43,16 +43,40 @@ class ReferringAcc(BaseMetric):
 
     def compute(self, references: List[List[str]], predictions: List[str]) -> Dict[str, float]:
         ious = []
+        valid_predictions = 0
+        valid_references = 0
+
         for refs, pred in zip(references, predictions):
             ref_box = _parse_bbox(refs[0]) if refs else None
             pred_box = _parse_bbox(pred)
+
+            if ref_box is not None:
+                valid_references += 1
+            if pred_box is not None:
+                valid_predictions += 1
+
             ious.append(_iou(ref_box, pred_box) if ref_box and pred_box else 0.0)
 
         if not ious:
-            return {"mean_iou": 0.0, **{f"Acc@{t}": 0.0 for t in self.thresholds}}
+            return {
+                "mean_iou": 0.0,
+                **{f"Acc@{t}": 0.0 for t in self.thresholds},
+                "valid_predictions": 0,
+                "invalid_predictions": 0,
+                "valid_references": 0,
+                "total_samples": 0,
+            }
 
         total = len(ious)
-        result = {"mean_iou": float(np.mean(ious))}
+        result = {
+            "mean_iou": float(np.mean(ious)),
+            "valid_predictions": valid_predictions,
+            "invalid_predictions": total - valid_predictions,
+            "valid_references": valid_references,
+            "total_samples": total,
+        }
+
         for t in self.thresholds:
-            result[f"Acc@{t}"] = sum(1 for v in ious if v >= t) / total
+            result[f"Acc@{t}"] = sum(1 for value in ious if value >= t) / total
+
         return result
