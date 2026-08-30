@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvsearch-self-evolve"
+version = "0.1.0"
+description = "Isolated CVSearch, SAM3-LoRA and Vision-OPD evolution orchestrator"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6", "Pillow>=10", "numpy>=1.26"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,90 @@
+"""Student 自回归 rollout：基于 model.generate() 的可靠实现.
+
+使用 HuggingFace 原生 generate()，自动处理 GQA KV-cache、
+attention_mask 扩展、position_ids 等所有模型架构差异。
+兼容 DataParallel / DistributedDataParallel / FSDP / DeepSpeed 包装。
+"""
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+from transformers import GenerationConfig
+
+
+def _unwrap_model(model: nn.Module) -> nn.Module:
+    """解除 DataParallel / DDP / DeepSpeed 等包装，拿到原始模型."""
+    while hasattr(model, "module"):
+        model = model.module
+    return model
+
+
+@torch.no_grad()
+def student_rollout(
+    model,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor | None = None,
+    max_new_tokens: int = 512,
+    top_k: int = 0,
+    top_p: float = 1.0,
+    temperature: float = 1.0,
+    eos_token_id: int | None = None,
+    pad_token_id: int | None = None,
+    model_kwargs: dict | None = None,
+) -> torch.Tensor:
+    """Student 模型 on-policy rollout，返回生成的 token IDs.
+
+    内部使用 model.generate()，天然兼容所有 HuggingFace 模型架构
+    （MHA / GQA / MQA），无需手动管理 KV cache。
+    自动 unwrap DataParallel / DDP / DeepSpeed 包装。
+
+    Args:
+        model: HuggingFace CausalLM（支持 DP/DDP/PEFT 包装）
+        input_ids: (B, prompt_len) prompt token ids
+        attention_mask: (B, prompt_len)
+        max_new_tokens: 最大生成长度
+        top_k / top_p / temperature: 采样参数（全 0/1.0 = greedy）
+        eos_token_id: 遇到则停止
+        pad_token_id: padding token id
+
+    Returns:
+        generated_ids: (B, gen_len) 仅包含生成部分，不含 prompt
+    """
+    raw_model = _unwrap_model(model)
+    is_training = raw_model.training
+    raw_model.eval()
+
+    do_sample = not (top_k == 0 and top_p >= 1.0)
+
+    gen_config_kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": do_sample,
+    }
+    if do_sample:
+        gen_config_kwargs["temperature"] = temperature
+        if top_k > 0:
+            gen_config_kwargs["top_k"] = top_k
+        if top_p < 1.0:
+            gen_config_kwargs["top_p"] = top_p
+    if eos_token_id is not None:
+        gen_config_kwargs["eos_token_id"] = eos_token_id
+    if pad_token_id is not None:
+        gen_config_kwargs["pad_token_id"] = pad_token_id
+
+    gen_config = GenerationConfig(**gen_config_kwargs)
+
+    gen_kwargs = {
+        "input_ids": input_ids,
+        "generation_config": gen_config,
+        "use_cache": True,
+        **(model_kwargs or {}),
+    }
+    if attention_mask is not None:
+        gen_kwargs["attention_mask"] = attention_mask
+
+    outputs = raw_model.generate(**gen_kwargs)
+
+    if is_training:
+        raw_model.train()
+
+    prompt_len = input_ids.shape[1]
+    return outputs[:, prompt_len:]

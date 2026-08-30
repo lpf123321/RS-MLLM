@@ -1,11 +1,38 @@
-# distillation/ —— 在线策略自蒸馏（报告 5.2）
+# Distillation: OPD / OPSD（报告 5.2）
 
-对应报告 5.2「SFT 与在线策略自蒸馏」。
+本目录提交可复现的在线策略蒸馏与区域–全局在线自蒸馏代码，不包含模型权重、
+训练数据、checkpoint、rollout 或日志。
 
-上传内容：
-- `opd/` 或 `*.py`：在线策略蒸馏 OPD（在线大模型教师，region–global 逐 token 蒸馏）
-- `opsd/` 或 `*.py`：在线自蒸馏改进 OPSD
-- 数据构造脚本：基于在线大模型的 SFT 与 OPSD 数据构建
-- 训练入口与配置（`*.slurm` / `*.sh`）
+## 目录
 
-教师模型：Vision-OPD-9B（参见报告「模型参数量与权重存储实测」表）。
+| 目录 | 内容 |
+|---|---|
+| `flashopd_mm/` | 轻量多模态 OPD：student rollout、local/API teacher、逐 token KL/JSD、LoRA 与分布式入口 |
+| `opsd/vision_opd/` | Region–Global OPSD 的关键 VERL 实现、配置、数据准备和训练/合并入口 |
+| `pipeline/` | 正式数据构建、固定 Vision-OPD-9B 教师 on-policy/off-policy 实验及审计脚本 |
+
+两条实现互补：`flashopd_mm` 便于阅读和独立验证 teacher–student OPD；
+`opsd/vision_opd` 是正式 Region–Global OPSD 实验所使用的实现切片。
+
+## 快速检查
+
+```bash
+python -m compileall -q training/distillation
+
+cd training/distillation/flashopd_mm
+pip install -e .
+STUDENT_MODEL=/path/to/student \
+TEACHER_MODEL=/path/to/teacher \
+VRSBENCH_TRAIN_JSONL=/path/to/vrsbench_train.jsonl \
+VRSBENCH_IMAGE_ROOT=/path/to/Images_train \
+bash scripts/run_vrsbench.sh configs/vrsbench_smoke_200.yaml
+```
+
+正式 OPSD 需要完整 Vision-OPD/VERL 环境。入口、所需环境变量和数据 schema 见
+[`opsd/README.md`](opsd/README.md) 与 [`pipeline/README.md`](pipeline/README.md)。
+
+## 来源快照
+
+- FlashOPD 基线：`china10s/flash-opd@f2485a646dbddac997396cd36e36ee2e41d3e52e`，包含本项目的多模态扩展。
+- Vision-OPD 基线：`VisionOPD/Vision-OPD@c8a8fdd1f88eef1b5ef4fe6a8d64eb0272917471`，包含本项目固定教师和显存修复。
+- 本项目流水线来自本机 `OPD-pipeline` 的已完成正式实验源码；产物未提交。

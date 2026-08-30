@@ -1,0 +1,132 @@
+seed: 42
+workspace: /home/cpy/workspace/self_evolve_cvsearch_weights/qwen3vl_2b_fine_sam_trace_one_fifth
+# GPU 3 and GPUs 4-7 are occupied by unrelated jobs at launch time. Restrict
+# this isolated run to the currently free GPUs 0-2.
+trajectory_workers: 3
+
+repositories:
+  cvsearch: /home/cpy/ICML26-CVSearch
+  sam3_lora: /home/cpy/sam3_lora
+  vision_opd: /home/cpy/Vision-OPD-training-clean
+
+validated_sam_method:
+  root: /home/cpy/sam3_lora_test
+  split_manifest: /home/cpy/sam3_lora_test/manifests/splits.json
+  reference_adapter: /home/cpy/sam3_lora_test/outputs/negative_repair/full_candidates/generic_random_p5_r1_rank2/epoch_03_lora_weights.pt
+  reference_merged_checkpoint: /home/cpy/sam3_lora_test/outputs/negative_repair/merged/generic_random_e3/sam3.pt
+
+data:
+  root: /home/cpy/workspace/dataset/vopd_dataset
+  source_jsonl: /home/cpy/workspace/dataset/vopd_dataset/train.jsonl
+  train_size: 999
+  train_limit: 999
+  valid_size: 624
+  test_size: 624
+  smoke_train_size: 64
+  smoke_valid_size: 16
+  # Deterministic plumbing anchors previously observed to recover only after
+  # a tree-derived local SAM retry. They remain inside their frozen splits.
+  smoke_anchor_ids:
+    train:
+      - 0168b1fd1282914bc3de
+      - e54f7c574b948def0449
+      - 4546a89e9007f54da08c
+      - 117b6f5bc83934e922f3
+    valid:
+      - 4c9830587d185c252709
+      - 326afa9320071c4b3ebc
+  experiment_train_fraction: 0.2
+  experiment_train_records: 999
+
+models:
+  sam_t0: /home/cpy/workspace/model/sam3/sam3.pt
+  mllm_t0: /home/cpy/workspace/model/student/Qwen3-VL-2B-Instruct
+  spacy: /data1/liliupeng/models/en_core_web_sm-3.8.0
+
+cvsearch:
+  ic_examples: /home/cpy/ICML26-CVSearch/cvsearch/ic_examples/vstar.json
+  answering_confidence_threshold_lower: 0.0
+  answering_confidence_threshold_upper: 0.9
+  fast_threshold: 1.1
+  force_visual_search: true
+  # Probe every successful Fine node with SAM, save its masks, but preserve
+  # the original Fine node as the final Qwen visual input.
+  fine_sam_policy: trace_only
+  threshold_descrease: [0.05, 0.1, 0.2]
+  pop_multiplier: 3
+  patch_scale: 1.2
+  max_pixels: 12845056
+  min_pixels: 3136
+
+filter:
+  min_area_ratio: 0.001
+  max_area_ratio: 0.85
+
+sam_pseudo_supervision:
+  source: local_sam_recovery_mask
+  require_initial_failure: true
+  # Ordered by actual CVSearch execution. Each initially failed target uses
+  # only its first successful post-initial SAM event.
+  recovery_stages: [fine_probe_1, local_retry_1, fine_probe_2, local_retry_2, fine_probe_3]
+  multi_instance: true
+  use_mask_loss: false
+  # Tight mask-derived boxes are materially smaller than the former tree
+  # windows. 1e-4 keeps validated small-object recoveries while rejecting
+  # near-degenerate masks; the legacy tree-node filter remains 1e-3 above.
+  min_area_ratio: 0.0001
+  max_area_ratio: 0.85
+
+negative_generation:
+  verifier_model: /data1/shared/Qwen3-VL-8B-Instruct
+  absent_probability_threshold: 0.9
+  seed: 42
+  batch_size: 8
+
+sam_training:
+  gpus: 1
+  num_workers: 0
+  rank: 16
+  alpha: 32
+  dropout: 0.1
+  epochs_per_round: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  batch_size_per_gpu: 1
+  presence_weight: 5.0
+  negative_ratio: 1.0
+  ranking_weight: 2.0
+  ranking_margin: 0.2
+  distill_weight: 0.0
+
+opd_training:
+  epochs_per_round: 1
+  learning_rate: 0.000002
+  rollout_n: 8
+  smoke_rollout_n: 2
+  train_batch_size: 96
+  smoke_train_batch_size: 4
+  distillation_topk: 100
+  alpha: 0.5
+  is_clip: 2.0
+  max_prompt_length: 8192
+  max_response_length: 256
+  # Full round runs as a detached user service on the currently reserved
+  # GPU 0-3 set.  The global batch stays unchanged; four workers only reduce
+  # the wall-clock time of rollout/training.
+  gpus: 4
+  sequence_parallel_size: 2
+  rollout_tensor_parallel_size: 1
+  rollout_gpu_memory_utilization: 0.6
+  # A full batch can take tens of minutes.  Save every optimizer step so an
+  # external session termination loses at most the in-flight step.
+  checkpoint_save_freq: 1
+  max_actor_ckpt_to_keep: 1
+  # trace_only preserves the exact Fine nodes and teacher image. Reuse the
+  # already-trained strict-run Qwen so this experiment isolates SAM data.
+  reuse_models:
+    smoke: /data2/cpy/self_evolve_cvsearch_weights/qwen3vl_2b_sam_recovered_multi_one_fifth/models/smoke/round_00/mllm_candidate
+    full: /data2/cpy/self_evolve_cvsearch_weights/qwen3vl_2b_sam_recovered_multi_one_fifth/models/full/round_00/mllm_candidate
+
+promotion:
+  max_direct_accuracy_drop: 0.01
+  max_rounds: 1

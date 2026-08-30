@@ -1,0 +1,81 @@
+# VRSBench 多模态 OPD：Qwen3.5-4B
+# 当前采用单训练进程、双 GPU 分工：
+#   逻辑 cuda:0 = Student，逻辑 cuda:1 = Teacher
+# 启动时需要 CUDA_VISIBLE_DEVICES=0,1 且 NUM_GPUS=1。
+student_model: "${STUDENT_MODEL}"
+teacher_model: "${TEACHER_MODEL}"
+
+# ========== 多模态数据 ==========
+multimodal: true
+data_path: "${VRSBENCH_TRAIN_JSONL}"
+image_root: "${VRSBENCH_IMAGE_ROOT}"
+max_seq_length: 2048  # 文本+视觉占位 token 的最大序列长度；越大越耗显存
+# false 会预先闭合空的 <think></think>，让 rollout 直接生成最终答案，
+# 避免思考过程占满 max_new_tokens 后截断答案。
+enable_thinking: false
+# 限制视觉 token 数可显著降低显存和 prefill 时间；按需打开：
+# min_pixels: 200704   # 256 * 28 * 28
+# max_pixels: 802816   # 1024 * 28 * 28
+
+# ========== Loss / 蒸馏 ==========
+# false 会彻底跳过 Ground Truth CE forward，而不只是把 CE 乘以 0。
+# 注意：当前 Student 和 Teacher 基础模型相同，纯 KL 可能接近 0。
+enable_ce_loss: false
+ce_coef: 0.0             # CE loss 权重；enable_ce_loss=false 时不生效
+kl_coef: 1.0             # KL loss 权重；纯 KL 训练建议使用 1.0
+loss_balance: "fixed"    # fixed=固定权重；dynamic=EMA 动态平衡 CE/KL
+kl_type: "forward"       # Top-K 蒸馏推荐 forward；reverse 需要更完整的分布
+temperature: 1.0         # 蒸馏温度；越高概率分布越平滑
+kl_clip_min: 0.0         # KL 下界；0 表示不设置下界
+kl_clip_max: 2.0         # KL 上界，防止异常大 KL；0 表示不设置上界
+kl_top_k: 16             # 只在 Teacher 概率最高的 16 个 token 上计算近似 KL
+
+# ========== Student On-policy Rollout ==========
+max_new_tokens: 64       # Student 每次 rollout 最多生成 token 数；主要速度瓶颈
+rollout_top_k: 0        # 采样仅保留概率最高的 K 个 token；0 表示 greedy
+rollout_top_p: 1.0       # nucleus sampling；1.0 表示不做 top-p 截断
+rollout_temperature: 1.0 # rollout 采样温度
+disable_after_ratio: 1.0 # 训练进度达到该比例后关闭 OPD；1.0 表示全程启用
+
+# ========== OPD 正确性诊断 ==========
+# diagnostics_steps 是总开关：
+#   0  = 完全关闭诊断
+#   10 = 每 10 个 optimizer step 打印一次并写入 TensorBoard
+diagnostics_steps: 10
+# true 会额外让 Teacher 独立 generate，以检查 Teacher 是否输出正常答案。
+# 会增加诊断 step 的耗时；只想看 KL/梯度时可设为 false。
+diagnostics_teacher_generate: true
+diagnostics_max_new_tokens: 32  # Teacher 诊断生成的最大 token 数
+
+# ========== Teacher ==========
+teacher_backend: "local"  # local=本进程本地模型；api=远程服务（多模态暂不支持）
+teacher_device: "cuda:1"  # Teacher 放第二张可见 GPU；Student 使用 cuda:0
+
+# ========== 训练 ==========
+learning_rate: 5.0e-6
+num_epochs: 1
+# 单次放入 Student GPU 的 micro-batch；它直接决定峰值显存。
+per_device_batch_size: 4
+# 累积多少个 micro-batch 后更新一次 LoRA；增加它不会增加单步峰值显存。
+gradient_accumulation_steps: 4
+# 单进程有效 batch = per_device_batch_size * gradient_accumulation_steps = 16。
+warmup_ratio: 0.05       # 前 5% optimizer step 用于学习率 warmup
+lr_scheduler: "cosine"
+weight_decay: 0.05
+bf16: true               # 使用 BF16，降低显存并提高支持 BF16 GPU 的吞吐
+gradient_checkpointing: true  # 用重复计算换显存；会降低训练速度
+
+# ========== LoRA ==========
+use_lora: true
+lora_r: 64               # LoRA rank；越大可训练参数和显存占用越高
+lora_alpha: 32           # LoRA 缩放系数
+lora_dropout: 0.05
+lora_target_modules: "q_proj,v_proj,k_proj,o_proj,gate_proj,up_proj,down_proj"
+
+# ========== 保存与日志 ==========
+output_dir: "./output/vrsbench_qwen35_4b"
+save_steps: 500          # 每 500 个 optimizer step 保存 checkpoint
+logging_steps: 10        # 每 10 个 optimizer step 写训练指标
+save_total_limit: 3      # 最多保留 3 个 checkpoint
+eval_strategy: "no"     # 当前不运行独立验证集评估
+eval_split_ratio: 0.0
