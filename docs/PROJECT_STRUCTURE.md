@@ -17,7 +17,7 @@
 | `scripts/` | 全部 | 预处理、推理、剪枝推理、delta 生成、工具脚本（与 prune.py 的 `import` 依赖强相关，保留原位） |
 | `slurm_scripts/` | — | SLURM 提交脚本：训练 / 评测 / delta 转换 / 冒烟测试 |
 | `training/` | 第 5 章 模型训练方法（蒸馏/自进化） | `distillation/`（5.2 OPD/OPSD）、`self_evolution/`（5.3 CVSearch）——**待上传** |
-| `compression/` | 第 6 章 视觉 Token 压缩与轻量化 | 导航层：`quantization/`（6.2 模型量化，**待上传**）；6.1 剪枝实现见顶层 `prune/`、`token_compression/` |
+| `quantization/` | 第 6 章 视觉 Token 压缩与轻量化 | 6.2 模型量化（INT8 / GPTQ W4A16，**待上传**）；6.1 剪枝实现见顶层 `prune/`、`token_compression/` |
 | `tolerance/` | 容错与故障恢复 | 星载容错、完整性校验、运行时安全状态机——**待上传** |
 | `docs/` | — | 本文档等导航说明 |
 | `_archive/` | — | 一次性产物 / 探索文档（不参与运行，不入最终交付） |
@@ -42,10 +42,10 @@
 - 冒烟类：`smoke_test_*.slurm`、`smoke_delta_*.slurm`
 - 可视化类：`run_viz_l2*.sh`
 
-### training/ compression/ tolerance/（待上传占位）
+### training/ quantization/ tolerance/（待上传占位）
 - `training/distillation/`：5.2 在线策略蒸馏 OPD / 在线自蒸馏 OPSD
 - `training/self_evolution/`：5.3 CVSearch 驱动的自进化训练框架
-- `compression/quantization/`：6.2 模型量化（INT8 / GPTQ W4A16）
+- `quantization/`：6.2 模型量化（INT8 / GPTQ W4A16）
 - `tolerance/`：星载容错与故障恢复设计
 以上目录当前仅有 README 占位说明，对应代码待上传。
 

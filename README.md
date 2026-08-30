@@ -2,7 +2,7 @@
 
 > 项目结构与技术报告章节对照说明见 [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md)。
 > 顶层保留 `evaluation` / `prune` / `token_compression` / `scripts` 等 Python 包路径以维持内部 import，运行入口集中在 `slurm_scripts/` 与 `evaluation/main.py`。
-> 训练蒸馏/自进化（`training/`）、模型量化（`compression/quantization/`）、星载容错（`tolerance/`）为待上传模块占位。
+> 训练蒸馏/自进化（`training/`）、模型量化（`quantization/`）、星载容错（`tolerance/`）为待上传模块占位。
 
 ## 环境配置
 
