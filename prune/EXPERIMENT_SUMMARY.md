@@ -264,3 +264,53 @@ evaluation/router/rules.py
 - Caption R 消融
 - 非 Caption + Caption 的统一 Router 正式评测
 - Router 与统一 baseline 的最终对照表
+
+## 9. Referring 重测（新 Grounding Expert Update）
+
+新 Grounding Expert Update 权重：
+
+```text
+/users/u2024311164/shared/ground_expert_update_lora/
+```
+
+组合方式：`W0 + grounding delta + ground_expert_update_lora(PEFT)`，转换为：
+
+```text
+prune/output/new_experts/ground_expert_update_delta.pt
+```
+
+Referring R sweep 已完成 `96/96`，结果目录：
+
+```text
+prune/output/delta_ground_update_r_sweep/
+```
+
+总结：`prune/output/delta_ground_update_r_sweep/SUMMARY.md`
+
+关键变化：
+
+- VRSBench Referring baseline 从旧 grounding 的 0.673 提升到 0.764；
+- 经验阈值（ε=0.05）下 L2Norm 是唯一在 R=0.75 达标的方法（drop 0.046）；
+- ScopeL2 在 R=0.50 有优势（0.501 vs L2Norm 0.457），但 R=0.75 时 L2Norm 更高（0.718 vs 0.702）；
+- XLRS grounding 整体偏低（baseline Acc@0.5=0.185，1024 降采样削弱 bbox 精度），L2Norm 低 R 下最稳健。
+
+## 10. 最终 Token 剪枝 Router 配置
+
+```python
+# evaluation/router/task_prune_config.py
+THRESHOLD_TASK_PRUNE_CONFIG = {
+    "vqa":       {"method": "l2norm",   "keep_ratio": 0.25},
+    "mcq":       {"method": "l2norm",   "keep_ratio": 0.25},
+    "change":    {"method": "l2norm",   "keep_ratio": 0.50},
+    "referring": {"method": "SCOPEL2",   "keep_ratio": 0.75},
+    "caption":   {"method": "l2norm",   "keep_ratio": 0.50},
+}
+```
+
+压缩优先替代（Referring）：
+
+```python
+"referring": {"method": "scope_l2", "keep_ratio": 0.50}
+```
+
+Caption 保留率仍为 provisional，待 VRSBench Caption 完整 R 曲线后最终确定。

@@ -156,6 +156,8 @@ def main():
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--caption_max_new_tokens", type=int, default=768)
     parser.add_argument("--grounding_max_new_tokens", type=int, default=64)
+    parser.add_argument("--image_min_pixels", type=int, default=None)
+    parser.add_argument("--image_max_pixels", type=int, default=None)
     parser.add_argument("--force_think", action="store_true")
     parser.add_argument("--output_dir", default="prune/output/delta_prune_ablation")
     args = parser.parse_args()
@@ -173,6 +175,8 @@ def main():
             pruner_seed=args.sample_seed,
             max_new_tokens=256,
             force_think=args.force_think,
+            image_min_pixels=args.image_min_pixels,
+            image_max_pixels=args.image_max_pixels,
         )
         for keep_ratio in args.keep_ratios:
             adapter._set_uniform_keep_ratio(keep_ratio)

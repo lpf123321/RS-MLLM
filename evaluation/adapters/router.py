@@ -56,10 +56,12 @@ class RouterAdapter(BaseModelAdapter):
         self._delta_mode = all(str(path).endswith(".pt") for path in expert_lora.values())
 
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-        if image_min_pixels is not None:
-            self.processor.image_min_pixels = image_min_pixels
-        if image_max_pixels is not None:
-            self.processor.image_max_pixels = image_max_pixels
+        if image_min_pixels is not None or image_max_pixels is not None:
+            size = self.processor.image_processor.size
+            if image_min_pixels is not None:
+                size["shortest_edge"] = image_min_pixels
+            if image_max_pixels is not None:
+                size["longest_edge"] = image_max_pixels
         self.processor.tokenizer.padding_side = "left"
 
         torch.cuda.reset_peak_memory_stats()

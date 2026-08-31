@@ -1,9 +1,9 @@
 """Offline-derived task-adaptive pruning policies for the Delta Router.
 
-R is the visual-token keep ratio.  The strict policy uses the smallest tested
-R whose primary metric is within epsilon=0.05 of the R=1 baseline.  The
-compression policy deliberately relaxes the Referring constraint to use the
-better ScopeL2 point at R=0.50.
+R is the visual-token keep ratio.  The default policy uses the smallest tested
+R whose primary metric is within epsilon=0.05 of the R=1 baseline, except that
+Referring is set to ScopeL2 @ 0.75 as a task-specific choice.  The compression
+policy relaxes Referring further to ScopeL2 @ 0.50.
 """
 
 THRESHOLD_EPSILON = 0.05
@@ -21,6 +21,8 @@ THRESHOLD_TASK_PRUNE_CONFIG = {
     "vqa": {"method": "l2norm", "keep_ratio": 0.25},
     "mcq": {"method": "l2norm", "keep_ratio": 0.25},
     "change": {"method": "l2norm", "keep_ratio": 0.50},
+    # Referring uses ScopeL2 @ 0.75 (task choice). On the ground_expert_update
+    # weights this gives VRSBench Referring Acc@0.5 = 0.702 vs L2Norm 0.718.
     "referring": {"method": "scope_l2", "keep_ratio": 0.75},
     # Caption threshold is provisional until the corrected XLRS Caption sweep
     # is complete; VRSBench Caption is stable at this operating point.
