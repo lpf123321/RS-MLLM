@@ -21,3 +21,9 @@ log/
 
 # 一次性产物/探索文档（保留本地，不入库）
 _archive/
+
+# 训练数据（大文件，运行时生成/共享，不入库）
+finetune_framework/VRSbench/*.json
+finetune_framework/VRSbench/*.jsonl
+finetune_framework/VRSbench/expert_data/
+finetune_framework/VRSbench/expert_data_v2/

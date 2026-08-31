@@ -128,6 +128,52 @@ source .venv/bin/activate
 
 ### 2.4 模型训练
 
+模型训练采用 **统一 SFT 主干 + 多专家（四专家）LoRA 微调** 的流程，全部训练脚本位于
+`scripts/training/`，并可通过 `scripts/train.sh` 一键启动。
+
+**训练流程一览**：
+
+| step | 内容 | 脚本 | 说明 |
+|------|------|------|------|
+| 1 | 统一 SFT 主干 | `scripts/train.sh stage1_clean` | Qwen3.5-4B 起步（clean 数据），得到统一主干 |
+| 2 | General 专家 | `scripts/train.sh expert_general` | from-base 微调 VQA/Caption/MCQ，得到 v2 |
+| 3 | Grounding 专家续训 | `scripts/train.sh a1_grounding` | 统一主干续训 + XLRS 域对齐（2048） |
+| 4 | Change 专家续训 | `scripts/train.sh a2b_change` | 统一主干续训 + 防遗忘 |
+| 5 | Caption 专家 | `scripts/train.sh caption` | GA2 起点 + 双域（VRS 短/XLRS 长）数据 |
+| 6 | 生成 Delta 权重 | `python scripts/gen_expert_deltas.py --verify` | 输出各专家相对基座的 `delta_model.pt` |
+
+**一键启动示例**：
+
+```bash
+cd RS-MLLM
+
+# 1) 查看某步将要提交的命令（不实际提交）
+bash scripts/train.sh dry expert_general
+
+# 2) 提交单个训练步骤（SLURM 集群）
+bash scripts/train.sh stage1_clean      # 统一 SFT 主干
+bash scripts/train.sh ga2_general       # General 续训（防遗忘）
+bash scripts/train.sh a1_grounding      # Grounding 域对齐续训
+bash scripts/train.sh a2b_change        # Change 防遗忘续训
+bash scripts/train.sh caption           # Caption 双域训练
+
+# 3) 提交完整流水线（顺序: stage1_clean → ga2 → a1 → a2b → caption）
+bash scripts/train.sh all
+
+# 4) 数据构建与 delta 生成
+python scripts/build_caption_expert_data.py      # 构建 Caption 双域数据
+python scripts/generate_mcq_data.py              # 合成 MCQ 样本
+python scripts/gen_expert_deltas.py --verify     # 生成四专家 delta 并验证 W0+Δ==merged
+```
+
+**训练配置要点**：所有专家统一采用全参冻结的 LoRA（rank 32 / alpha 64 / dropout 0.05）、
+lr=1e-4、1 epoch、bf16、DeepSpeed ZeRO-2；图像分辨率 262,144 ~ 1,048,576 像素
+（Grounding 域对齐为 2048 分辨率）。训练数据的构建脚本（`split_expert_data.py`、
+`build_caption_expert_data.py`）也在 `scripts/` 下。
+
+> 注：训练数据 json/jsonl 体积较大，不随仓库分发（已 gitignore），
+> 运行训练前请确保数据位于 `finetune_framework/VRSbench/`（可参照 `scripts/` 下构建脚本生成）。
+
 ---
 
 ## 四、测试结果
