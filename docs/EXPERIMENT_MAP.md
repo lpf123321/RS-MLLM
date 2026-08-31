@@ -66,7 +66,7 @@
 
 | 报告位置 | 实验 | 仓库脚本 | 命令 |
 |---|---|---|---|
-| §3 最终方案性能 | 四专家路由全量评测（71,631） | `evaluation/main.py`（适配器 `router`）——评测入口；vLLM 版评测器见 slurm `vision_opd_vllm_eval.py` | 报告 §3 数字（VRS-VQA 0.775 / CIDEr 0.284 / MME 0.541 / XLRS 0.359 / LEVIR 1.344） |
+| §3 最终方案性能 | 四专家路由全量评测（71,631） | `evaluation/main.py`（适配器 `router`）——评测入口；**vLLM 评测器见 `evaluation/vllm_eval/`**（拆包目录脚本，可直跑） | 报告 §3 数字（VRS-VQA 0.775 / CIDEr 0.284 / MME 0.541 / XLRS 0.359 / LEVIR 1.344） |
 
 ## 链上一览（复现顺序）
 

@@ -20,17 +20,19 @@ MODEL="${1:?用法: quant_eval_950.slurm <model_dir> <profile> <outdir>}"
 PROFILE="${2:?profile: mmerestore_bf16|mmerestore_w8a8|mmerestore_gptq}"
 OUTDIR="${3:?outdir}"
 
-"${UV}" run --project "${ENV}" --offline python -m rs_mllm_dataset_fixes.vision_opd_vllm_eval \
+# 评测器：仓库内拆包目录脚本（evaluation/vllm_eval/），标准直跑
+export PYTHONPATH="${PROJECT}/evaluation/vllm_eval${PYTHONPATH:+:$PYTHONPATH}"
+"${UV}" run --project "${ENV}" --offline python "${PROJECT}/evaluation/vllm_eval/vision_opd_vllm_eval.py" \
   --manifest ${RSMLLM_TILED:-REPO}/tiled_rag/e0_pair/e2_manifest.jsonl \
   --model "$MODEL" --model-profile "$PROFILE" --output-dir "$OUTDIR" \
   --batch-size 64 --max-num-seqs 64 --max-model-len 16384
 
-# 评分（clean_correct 官方口径）
+# 评分（clean_correct 官方口径，同样用仓库内 schema/scoring）
 "${UV}" run --project "${ENV}" --offline python - << 'PYEOF'
 import json, sys
-sys.path.insert(0, "REPOaset-fixes/src")
-from rs_mllm_dataset_fixes.schema import Sample
-from rs_mllm_dataset_fixes.scoring import score_prediction
+sys.path.insert(0, "${PROJECT}/evaluation/vllm_eval")
+from schema import Sample
+from scoring import score_prediction
 outdir, = sys.argv[1:]
 corr = tot = 0
 for line in open(f"{outdir}/prediction_attempts.jsonl"):
