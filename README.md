@@ -105,10 +105,23 @@
 ## 三、 快速开始
 
 ### 2.1 环境配置
+
+**方式一：Docker 容器（完全隔离，推荐）**
+
 ```bash
-cd RS-MLLM
-bash setup.sh
+docker build -t rs-mllm .                 # 环境按 uv.lock 精确锁定（CUDA 12.8 + torch 2.8.0）
+docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
 ```
+
+**方式二：uv 固定版本（轻量，不开容器）**
+
+```bash
+bash setup.sh         # uv sync --locked（依赖全部按 uv.lock 固定）
+source .venv/bin/activate
+```
+
+> 无 uv 时 `setup.sh` 自动回退 conda 路径（按 `requirements.txt` 钉版本安装）。
+
 ### 2.2 模型推理
 
 ### 2.3 模型评测

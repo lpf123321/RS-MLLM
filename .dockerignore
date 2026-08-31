@@ -1,0 +1,18 @@
+.git
+.venv
+**/__pycache__
+*.pyc
+.env
+
+# 评测/训练数据不进镜像（运行时挂载）
+datasets_data/*.jsonl
+finetune_framework/**/data/*.json
+finetune_framework/LEVIR-CC/*.json
+evaluation/logs
+evaluation/results.json
+evaluation/data/*.jsonl
+
+# 本地产物
+logs/
+*.log
+round-1/
