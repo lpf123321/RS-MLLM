@@ -27,3 +27,4 @@ finetune_framework/VRSbench/*.json
 finetune_framework/VRSbench/*.jsonl
 finetune_framework/VRSbench/expert_data/
 finetune_framework/VRSbench/expert_data_v2/
+transfer/

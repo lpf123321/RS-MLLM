@@ -24,6 +24,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/training" && pwd)"
 SLURM_DIR="$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 declare -A SLURM=(
   [stage1]="sft_stage1.slurm"
   [stage1_clean]="sft_stage1_clean.slurm"
@@ -55,6 +56,30 @@ fi
 
 if [ -z "$STAGE" ] || [ -z "${SLURM[$STAGE]:-}" ]; then
   usage; exit 1
+fi
+
+# --- 数据自检：关键训练 json 缺失时提示下载 ---
+VRS="$REPO_ROOT/finetune_framework/VRSbench"
+NEED_JSON=""
+case "$STAGE" in
+  stage1_clean|stage1)    NEED_JSON="manifest_sft_train.json combined_train.json" ;;
+  expert_general|ga3_general) NEED_JSON="expert_data_v2/general_understanding.json" ;;
+  expert_grounding)       NEED_JSON="expert_data/grounding.json" ;;
+  expert_change|a2_change) NEED_JSON="expert_data/change.json" ;;
+  a2b_change)             NEED_JSON="a2_change_mix.json" ;;
+  a1_grounding|a1_full)   NEED_JSON="a1_domainalign.json" ;;
+  ga2_general)            NEED_JSON="g_a2_mix.json" ;;
+  caption)                NEED_JSON="expert_data_caption.jsonl" ;;
+esac
+MISSING=""
+for j in $NEED_JSON; do
+  [ -f "$VRS/$j" ] || MISSING="$MISSING $j"
+done
+if [ -n "$MISSING" ]; then
+  echo "[train] 缺少训练数据:${MISSING}"
+  echo "       请先运行:  bash scripts/fetch_training_data.sh   （从 ModelScope 下载清洗 json）"
+  echo "       或按脚本注释手动放置数据到 $VRS"
+  exit 1
 fi
 
 SBATCH_CMD="sbatch $SLURM_DIR/${SLURM[$STAGE]}"
