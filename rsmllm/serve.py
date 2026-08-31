@@ -1,7 +1,12 @@
 """RS-MLLM 推理服务(报告口径): vLLM 0.26 + bf16/greedy + 像素 200704-2097152 + maxlen 16384.
 
-注意: 当前 vLLM 0.26.0 官方发布版未内置 Qwen3_5ForConditionalGeneration 注册(见 run_smoke);
-若加载报 "failed to be implemented", 需依赖评测链路 transformers 路径或补注册。
+实测(2026-08-31): vLLM 0.26.0 官方 +cu129 wheel 的 registry 含
+Qwen3_5ForConditionalGeneration(5 个 Qwen3_5 架构), 加载/生成均验证通过;
+需官方 cu129 wheel + torchcodec/ffmpeg 依赖链 + VLLM_USE_FLASHINFER_SAMPLER=0
+(flashinfer 0.6.14 与 nvcc 12.4 不兼容所致)。
+
+注意: 本入口为单模型推理; 多专家"规则路由 + 单 Adapter 激活"的部署链路
+见 evaluation/run_delta_task_router.py 与报告 §5.3(任务路由机制)。
 用法: python -m rsmllm.serve --model w8a8
 """
 from __future__ import annotations
