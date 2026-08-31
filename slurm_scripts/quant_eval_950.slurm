@@ -1,46 +1,38 @@
 #!/bin/bash
 #SBATCH --job-name=quant950
-#SBATCH --output=${RSMLLM_LOGS_DIR:-REPO/logs}/quant950_%j.log
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
 #SBATCH --time=02:00:00
-# 量化模型 950 清单评测（与 bf16 基线同口径）
+# 量化模型 950 清单评测（与 bf16 基线同口径，仓库内评测器）
+# 用法: sbatch slurm_scripts/quant_eval_950.slurm <model_dir> <profile> <outdir> [manifest]
 set -euo pipefail
-PROJECT=${RSMLLM_REPO:-REPO}
-ROOT=REPO0260727
-ENV=${ROOT}/environments/vllm0
+
+# 仓库根：clone 后设置环境变量 RSMLLM_REPO 或修改下方默认值
+PROJECT=${RSMLLM_REPO:-/home/u2024311009/rs-mllm}
+# 评测器（仓库内拆包目录脚本）
+EVAL_DIR=${PROJECT}/evaluation/vllm_eval
+# vllm 0.26 环境（uv 项目，clone 后 uv sync）
+ENV=${RSMLLM_ENV:-/home/u2024311009/rs-mllm-uv-verify}
 UV=${HOME}/.local/bin/uv
 cd "${PROJECT}"
-export PYTHONUNBUFFERED=1 PYTHONNOUSERSITE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 VLLM_WORKER_MULTIPROC_METHOD=spawn
-export PYTHONPATH=${PROJECT}/scripts:${PROJECT}/scripts/specprobe_fix${PYTHONPATH:+:$PYTHONPATH}
 
-MODEL="${1:?用法: quant_eval_950.slurm <model_dir> <profile> <outdir>}"
+export PYTHONUNBUFFERED=1 PYTHONNOUSERSITE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 VLLM_WORKER_MULTIPROC_METHOD=spawn
+export PYTHONPATH="${EVAL_DIR}${PYTHONPATH:+:$PYTHONPATH}"
+
+MODEL="${1:?用法: quant_eval_950.slurm <model_dir> <profile> <outdir> [manifest]}"
 PROFILE="${2:?profile: mmerestore_bf16|mmerestore_w8a8|mmerestore_gptq}"
 OUTDIR="${3:?outdir}"
+MANIFEST="${4:-${RSMLLM_TILED:-/home/u2024311009/tiled_rag}/e0_pair/e2_manifest.jsonl}"
 
-# 评测器：仓库内拆包目录脚本（evaluation/vllm_eval/），标准直跑
-export PYTHONPATH="${PROJECT}/evaluation/vllm_eval${PYTHONPATH:+:$PYTHONPATH}"
-"${UV}" run --project "${ENV}" --offline python "${PROJECT}/evaluation/vllm_eval/vision_opd_vllm_eval.py" \
-  --manifest ${RSMLLM_TILED:-REPO}/tiled_rag/e0_pair/e2_manifest.jsonl \
+echo "=== quant950 start $(date -Is) model=$MODEL profile=$PROFILE ==="
+"${UV}" run --project "${ENV}" --offline python "${EVAL_DIR}/vision_opd_vllm_eval.py" \
+  --manifest "${MANIFEST}" \
   --model "$MODEL" --model-profile "$PROFILE" --output-dir "$OUTDIR" \
   --batch-size 64 --max-num-seqs 64 --max-model-len 16384
 
-# 评分（clean_correct 官方口径，同样用仓库内 schema/scoring）
-"${UV}" run --project "${ENV}" --offline python - << 'PYEOF'
-import json, sys
-sys.path.insert(0, "${PROJECT}/evaluation/vllm_eval")
-from schema import Sample
-from scoring import score_prediction
-outdir, = sys.argv[1:]
-corr = tot = 0
-for line in open(f"{outdir}/prediction_attempts.jsonl"):
-    r = json.loads(line)
-    s = Sample.from_dict(r["sample"])
-    sc = score_prediction(s, r.get("prediction", ""))
-    corr += bool(sc.get("clean_correct")) if isinstance(sc, dict) else bool(sc)
-    tot += 1
-print(f"accuracy: {corr}/{tot} = {corr/tot:.4f}")
-PYEOF
-echo "=== quant950 done ==="
+# 评分（clean_correct 官方口径，用仓库内 schema/scoring）
+"${UV}" run --project "${ENV}" --offline python "${EVAL_DIR}/score_run.py" "$OUTDIR"
+
+echo "=== quant950 done $(date -Is) ==="
