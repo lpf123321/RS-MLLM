@@ -16,7 +16,6 @@ wandb/
 data/
 output/
 outputs/
-artifacts/
 logs/
 log/
 
