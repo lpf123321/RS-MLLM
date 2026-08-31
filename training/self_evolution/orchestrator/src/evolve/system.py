@@ -30,6 +30,10 @@ def runtime_env(config: dict[str, Any]) -> dict[str, str]:
     return env
 
 
+def conda_environment(config: dict[str, Any], component: str, fallback: str) -> str:
+    return str(config.get("environments", {}).get(component, fallback))
+
+
 def run_logged(command: list[str], log_path: Path, env: dict[str, str], cwd: Path | None = None) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(log_path.with_suffix(log_path.suffix + ".command"), shlex.join(command) + "\n")
@@ -91,8 +95,9 @@ def train_sam(
     env["SAM3_REPO"] = config["repositories"]["sam3_lora"]
     env["SAM3_CHECKPOINT"] = current_checkpoint
     sam_cfg = config["sam_training"]
+    sam_environment = conda_environment(config, "sam", "Sam3_lora")
     command = [
-        "conda", "run", "-n", "Sam3_lora", "python", str(bridge / "scripts/train_vopd_bbox_lora.py"),
+        "conda", "run", "-n", sam_environment, "python", str(bridge / "scripts/train_vopd_bbox_lora.py"),
         "--config", str(sam_config), "--output-dir", str(output), "--data-root", data_root,
         "--devices", *map(str, devices), "--max-epochs", str(sam_cfg["epochs_per_round"]),
         "--min-epochs", str(sam_cfg["epochs_per_round"]), "--negative-manifest", negative_manifest,
@@ -103,7 +108,7 @@ def train_sam(
     if float(sam_cfg["distill_weight"]) > 0:
         cache = output / "base_teacher_replay.pt"
         cache_command = [
-            "conda", "run", "-n", "Sam3_lora", "python", str(bridge / "scripts/build_teacher_cache.py"),
+            "conda", "run", "-n", sam_environment, "python", str(bridge / "scripts/build_teacher_cache.py"),
             "--manifest", negative_manifest, "--output", str(cache), "--device", str(devices[0]),
             "--accepted-only", "--one-per-image", "--batch-size", "2",
         ]
@@ -115,7 +120,7 @@ def train_sam(
         raise FileNotFoundError(adapter)
     merged = output / "sam3_merged.pt"
     merge_command = [
-        "conda", "run", "-n", "Sam3_lora", "python", str(bridge / "scripts/merge_vopd_lora_checkpoint.py"),
+        "conda", "run", "-n", sam_environment, "python", str(bridge / "scripts/merge_vopd_lora_checkpoint.py"),
         "--base-checkpoint", current_checkpoint, "--adapter", str(adapter),
         "--config", str(sam_config), "--output", str(merged),
     ]
@@ -224,7 +229,8 @@ def train_mllm(
     custom_template = opd.get("custom_chat_template_file")
     if custom_template:
         overrides.append(f'actor_rollout_ref.model.custom_chat_template_file={custom_template}')
-    command = ["conda", "run", "-n", "vision-opd-rtx5090", "python", "-m", "verl.trainer.main_ppo", "--config-name", "vopd", *overrides]
+    opd_environment = conda_environment(config, "opd", "vision-opd-rtx5090")
+    command = ["conda", "run", "-n", opd_environment, "python", "-m", "verl.trainer.main_ppo", "--config-name", "vopd", *overrides]
     env = runtime_env(config)
     # Ray embeds its session name below TMPDIR; nested experiment paths can
     # exceed Linux's 107-byte AF_UNIX socket limit. Keep this short and still
@@ -238,7 +244,7 @@ def train_mllm(
     if not step_dirs:
         raise FileNotFoundError(f"No Vision-OPD checkpoint under {checkpoint_root}")
     merge_command = [
-        "conda", "run", "-n", "vision-opd-rtx5090", "python", "-m", "verl.model_merger", "merge",
+        "conda", "run", "-n", opd_environment, "python", "-m", "verl.model_merger", "merge",
         "--backend", "fsdp", "--local_dir", str(step_dirs[-1] / "actor"), "--target_dir", str(merged_root),
     ]
     run_logged(merge_command, run_root / "merge.log", env, repo)
@@ -259,8 +265,9 @@ def evaluate_sam_selectivity(
     env = runtime_env(config)
     env["SAM3_REPO"] = config["repositories"]["sam3_lora"]
     env["SAM3_CHECKPOINT"] = checkpoint
+    sam_environment = conda_environment(config, "sam", "Sam3_lora")
     command = [
-        "conda", "run", "-n", "Sam3_lora", "python", str(bridge / "scripts/evaluate_vopd_selectivity.py"),
+        "conda", "run", "-n", sam_environment, "python", str(bridge / "scripts/evaluate_vopd_selectivity.py"),
         "--config", str(sam_config), "--split-dir", str(Path(data_root) / "valid"),
         "--negative-manifest", negative_manifest, "--output-dir", str(output),
         "--mode", "base", "--device", str(device), "--batch-size", "2",

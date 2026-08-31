@@ -65,6 +65,7 @@ def _resolve_image(path: str, image_root: str) -> str:
     if os.path.isfile(path):
         return path
     candidates = [
+        os.path.join(image_root, path),
         os.path.join(image_root, os.path.basename(path)),
         os.path.join(image_root, "Images_train", os.path.basename(path)),
         os.path.join(image_root, "Images_val", os.path.basename(path)),

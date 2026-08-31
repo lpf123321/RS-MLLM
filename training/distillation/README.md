@@ -7,12 +7,13 @@
 
 | 目录 | 内容 |
 |---|---|
+| `expert_lora/` | 实际保留的 General Exp3、Grounding bootstrap/Exp1/Exp4/Exp5 LoRA 训练、base+delta 合并和 ModelScope 下载入口 |
 | `flashopd_mm/` | 轻量多模态 OPD：student rollout、local/API teacher、逐 token KL/JSD、LoRA 与分布式入口 |
-| `opsd/vision_opd/` | Region–Global OPSD 的关键 VERL 实现、配置、数据准备和训练/合并入口 |
+| `opsd/vision_opd/` | 固定上游版本的完整 VERL/Vision-OPD 框架、Region–Global OPSD 改动、配置与训练/合并入口 |
 | `pipeline/` | 正式数据构建、固定 Vision-OPD-9B 教师 on-policy/off-policy 实验及审计脚本 |
 
 两条实现互补：`flashopd_mm` 便于阅读和独立验证 teacher–student OPD；
-`opsd/vision_opd` 是正式 Region–Global OPSD 实验所使用的实现切片。
+`opsd/vision_opd` 是正式 Region–Global OPSD 实验所使用的完整可安装源码快照。
 
 ## 快速检查
 
@@ -30,6 +31,8 @@ bash scripts/run_vrsbench.sh configs/vrsbench_smoke_200.yaml
 
 正式 OPSD 需要完整 Vision-OPD/VERL 环境。入口、所需环境变量和数据 schema 见
 [`opsd/README.md`](opsd/README.md) 与 [`pipeline/README.md`](pipeline/README.md)。
+General/Grounding Expert 的已验证 SFT 参数和运行入口见
+[`expert_lora/README.md`](expert_lora/README.md)。
 
 ## 来源快照
 

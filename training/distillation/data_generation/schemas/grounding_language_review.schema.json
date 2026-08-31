@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidate_id", "accepted", "reason", "language_text", "box_visually_supported", "description_unique", "source_style_matched"],
+  "properties": {
+    "candidate_id": {"type": "string", "minLength": 1},
+    "accepted": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "language_text": {"type": "string", "maxLength": 1200},
+    "box_visually_supported": {"type": "boolean"},
+    "description_unique": {"type": "boolean"},
+    "source_style_matched": {"type": "boolean"}
+  }
+}

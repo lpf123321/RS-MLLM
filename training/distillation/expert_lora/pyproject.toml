@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rs-mllm-expert-lora"
+version = "0.1.0"
+description = "Reproducible Qwen3.5-VL General/Grounding Expert LoRA experiments"
+requires-python = ">=3.10"
+dependencies = [
+  "huggingface-hub>=1.0",
+  "modelscope-hub>=0.3.0",
+  "peft==0.18.0",
+  "Pillow==12.3.0",
+  "pyarrow>=16",
+  "qwen-vl-utils==0.0.14",
+  "safetensors>=0.5",
+  "torch==2.10.0",
+  "transformers==5.5.0",
+]
+
+[project.scripts]
+rs-mllm-expert-data = "expert_lora.data:main"
+rs-mllm-expert-compose = "expert_lora.compose:main"
+rs-mllm-expert-train = "expert_lora.train:main"
+rs-mllm-expert-run = "expert_lora.runner:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -314,7 +314,14 @@ def run_training(cfg: OPDConfig):
     )
 
     # ---- 7. Train ----
-    trainer.train(resume_from_checkpoint=True)
+    from transformers.trainer_utils import get_last_checkpoint
+
+    resume_checkpoint = (
+        get_last_checkpoint(cfg.output_dir)
+        if os.path.isdir(cfg.output_dir)
+        else None
+    )
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
     trainer.save_model()
 
     if rank == 0:

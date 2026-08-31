@@ -205,6 +205,45 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(summary["rows_with_optional_gt_bbox"], 0)
         self.assertIsNone(prepared["optional_gt_bbox_xyxy"])
 
+    def test_prepare_accepts_portable_train_valid_bundle_without_test_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "images").mkdir()
+            Image.new("RGB", (32, 24), "white").save(root / "images" / "train.png")
+            Image.new("RGB", (40, 30), "blue").save(root / "images" / "valid.png")
+            split_root = root / "published_splits"
+            split_root.mkdir()
+            for split, image, sample_id in (
+                ("train", "images/train.png", "train-id"),
+                ("valid", "images/valid.png", "valid-id"),
+            ):
+                row = {
+                    "sample_id": sample_id, "source_index": 1 if split == "train" else 2,
+                    "image_relative_path": image, "question": "What color is it?",
+                    "options": ["white", "blue", "red", "green"],
+                    "prompt": "<image>\nWhat color is it?", "gt_answer": "A" if split == "train" else "B",
+                    "question_family": "what color", "stratum": "what color",
+                }
+                (split_root / f"{split}.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            config = {
+                "workspace": str(root / "workspace"), "seed": 42,
+                "data": {
+                    "root": str(root), "prepared_split_root": str(split_root),
+                    "train_size": 1, "valid_size": 1, "test_size": 0,
+                    "smoke_train_size": 1, "smoke_valid_size": 1,
+                },
+            }
+            summary = prepare(config)
+            prepared_test = (root / "workspace" / "data" / "splits" / "test.jsonl").read_text()
+            prepared_train = json.loads(
+                (root / "workspace" / "data" / "splits" / "train.jsonl").read_text()
+            )
+        self.assertEqual(summary["split_counts"], {"train": 1, "valid": 1, "test": 0})
+        self.assertFalse(summary["test_labels_published"])
+        self.assertEqual(prepared_train["image_relative_path"], "images/train.png")
+        self.assertTrue(Path(prepared_train["image_path"]).is_absolute())
+        self.assertEqual(prepared_test, "")
+
     def test_bbox_free_dual_dataset_builders_and_pixel_hash(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -247,7 +286,10 @@ class CoreTests(unittest.TestCase):
             }
             trajectories = root / "train.jsonl"
             trajectories.write_text(json.dumps(row) + "\n", encoding="utf-8")
-            config = {"workspace": str(root / "workspace"), "opd_training": {"gpus": 1}}
+            config = {
+                "workspace": str(root / "workspace"), "opd_training": {"gpus": 1},
+                "sam_pseudo_supervision": {"source": "local_sam_recovery_mask"},
+            }
             sam = build_sam_dataset(config, trajectories, "smoke", 0)
             coco = json.loads((Path(sam["split_dir"]) / "_annotations.coco.json").read_text())
             self.assertEqual(sam["samples"], 1)
@@ -263,6 +305,89 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(opd["accepted"], 1)
             with Image.open(teacher) as reopened:
                 self.assertEqual(pixel_sha256(reopened), row["final_mllm_pixel_sha256"])
+
+    def test_opsd_builder_rebases_published_relative_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data_root = root / "published"
+            image = data_root / "vision_opd/images/source.png"
+            teacher = data_root / "teacher_crops/teacher.png"
+            image.parent.mkdir(parents=True)
+            teacher.parent.mkdir(parents=True)
+            Image.new("RGB", (16, 16), "white").save(image)
+            Image.new("RGB", (8, 8), "blue").save(teacher)
+            row = {
+                "sample_id": "portable",
+                "image_path": "vision_opd/images/source.png",
+                "teacher_image_path": "teacher_crops/teacher.png",
+                "prompt": "<image>\nWhat is visible?",
+                "gt_answer": "A",
+                "question": "What is visible?",
+                "accepted_for_opsd": True,
+                "searched_bboxes_xyxy": [],
+                "extracted_targets": [],
+                "search_mode": 1,
+                "num_pop": 0,
+            }
+            trajectories = root / "train.jsonl"
+            trajectories.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            config = {
+                "workspace": str(root / "workspace"),
+                "data": {"root": str(data_root)},
+                "opd_training": {"gpus": 1},
+            }
+            report = build_opd_parquet(config, trajectories, "full", 0)
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(report["output"])
+            self.assertEqual(table.column("images").to_pylist()[0][0]["path"], str(image))
+            self.assertEqual(
+                table.column("bbox_images").to_pylist()[0][0]["path"], str(teacher)
+            )
+
+    def test_tree_node_weak_box_builder_is_a_distinct_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            Image.new("RGB", (100, 80), "white").save(source)
+            row = {
+                "sample_id": "tree", "image_path": str(source), "width": 100, "height": 80,
+                "question": "Where is it?", "answer_correct": True, "search_mode": 2,
+                # This GT box must not influence the weak-box output.
+                "optional_gt_bbox_xyxy": [0, 0, 100, 80],
+                "target_traces": [
+                    {"target_index": 0, "target_text": "usable", "initial_sam_success": False,
+                     "final_nodes": [{"bbox_xywh": [10, 20, 30, 20], "source": "fine"}]},
+                    {"target_index": 1, "target_text": "already found", "initial_sam_success": True,
+                     "final_nodes": [{"bbox_xywh": [1, 1, 5, 5], "source": "fast"}]},
+                    {"target_index": 2, "target_text": "missing", "initial_sam_success": False,
+                     "final_nodes": []},
+                    {"target_index": 3, "target_text": "ambiguous", "initial_sam_success": False,
+                     "final_nodes": [
+                         {"bbox_xywh": [1, 1, 5, 5], "source": "fine"},
+                         {"bbox_xywh": [6, 6, 5, 5], "source": "fine"},
+                     ]},
+                ],
+            }
+            trajectories = root / "train.jsonl"
+            trajectories.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            result = build_sam_dataset({
+                "workspace": str(root / "workspace"),
+                "filter": {"min_area_ratio": 0.001, "max_area_ratio": 0.85},
+                "sam_pseudo_supervision": {"source": "tree_final_node"},
+            }, trajectories, "full", 0)
+            coco = json.loads((Path(result["split_dir"]) / "_annotations.coco.json").read_text())
+            rejected = [json.loads(line) for line in Path(result["rejection_manifest"]).read_text().splitlines()]
+        self.assertEqual(result["samples"], 1)
+        self.assertEqual(result["instances"], 1)
+        self.assertEqual(coco["annotations"][0]["bbox"], [10.0, 20.0, 30.0, 20.0])
+        self.assertEqual(coco["annotations"][0]["pseudo_bbox_node_source"], "fine")
+        self.assertTrue(coco["info"]["uses_tree_node_bbox"])
+        self.assertFalse(coco["info"]["uses_dataset_gt_bbox"])
+        self.assertEqual(
+            {row["reason"] for row in rejected},
+            {"initial_sam_success", "missing_final_node", "ambiguous_multiple_final_nodes"},
+        )
 
     def test_mode1_produces_no_sam_training_samples(self):
         with tempfile.TemporaryDirectory() as directory:

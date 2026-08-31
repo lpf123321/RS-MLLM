@@ -147,22 +147,90 @@ def _frozen_split(records: list[dict[str, Any]], manifest_path: str | Path) -> d
     return result
 
 
+def _load_prepared_splits(data_cfg: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Load a portable, already-frozen train/valid bundle.
+
+    Published split rows use the orchestrator's canonical schema but carry only
+    relative image paths.  Test labels may be intentionally absent; in that case
+    the corresponding configured size must be zero.
+    """
+    data_root = Path(data_cfg["root"]).expanduser().resolve()
+    split_root = Path(data_cfg["prepared_split_root"]).expanduser().resolve()
+    required = {
+        "sample_id", "source_index", "image_relative_path", "question", "options",
+        "prompt", "gt_answer", "question_family", "stratum",
+    }
+    result: dict[str, list[dict[str, Any]]] = {}
+    seen_ids: set[str] = set()
+    for split in ("train", "valid", "test"):
+        expected = int(data_cfg[f"{split}_size"])
+        source = split_root / f"{split}.jsonl"
+        if not source.is_file():
+            if expected == 0:
+                result[split] = []
+                continue
+            raise FileNotFoundError(f"Prepared {split} split is missing: {source}")
+        rows = []
+        for item in read_jsonl(source):
+            missing = required.difference(item)
+            if missing:
+                raise ValueError(f"Prepared {split} row misses fields {sorted(missing)}")
+            sample_id = str(item["sample_id"])
+            if sample_id in seen_ids:
+                raise ValueError(f"Prepared splits overlap at sample id: {sample_id}")
+            seen_ids.add(sample_id)
+            relative = Path(str(item["image_relative_path"]))
+            if relative.is_absolute():
+                raise ValueError(f"Prepared image path must be relative: {relative}")
+            image_path = (data_root / relative).resolve()
+            try:
+                image_path.relative_to(data_root)
+            except ValueError as exc:
+                raise ValueError(f"Prepared image escapes data root: {relative}") from exc
+            if not image_path.is_file():
+                raise FileNotFoundError(image_path)
+            with Image.open(image_path) as image:
+                width, height = image.size
+            answer = str(item["gt_answer"]).strip().upper()
+            if answer not in "ABCD" or len(answer) != 1:
+                raise ValueError(f"Prepared answer must be A/B/C/D: {answer!r}")
+            options = _normalize_options(item["options"])
+            record = dict(item)
+            record.update({
+                "sample_id": sample_id, "image_path": str(image_path),
+                "image_relative_path": relative.as_posix(), "width": width, "height": height,
+                "options": options, "gt_answer": answer, "split": split,
+                "optional_gt_bbox_xyxy": item.get("optional_gt_bbox_xyxy"),
+                "optional_gt_bbox_xywh": item.get("optional_gt_bbox_xywh"),
+                "optional_gt_bbox_area_ratio": item.get("optional_gt_bbox_area_ratio"),
+                "source_extra_info": item.get("source_extra_info", {}),
+            })
+            rows.append(record)
+        result[split] = rows
+    return result
+
+
 def prepare(config: dict[str, Any]) -> dict[str, Any]:
     root = workspace(config)
-    records = load_source_records(config)
     data_cfg = config["data"]
+    prepared_split_root = data_cfg.get("prepared_split_root")
     frozen_manifest = config.get("validated_sam_method", {}).get("split_manifest")
-    if frozen_manifest:
-        splits = _frozen_split(records, frozen_manifest)
-        train_limit = data_cfg.get("train_limit")
-        if train_limit is not None:
-            splits["train"] = splits["train"][:int(train_limit)]
+    if prepared_split_root:
+        splits = _load_prepared_splits(data_cfg)
+        records = [row for split in ("train", "valid", "test") for row in splits[split]]
     else:
-        splits = stratified_split(records, {
-            "train": int(data_cfg["train_size"]),
-            "valid": int(data_cfg["valid_size"]),
-            "test": int(data_cfg["test_size"]),
-        }, int(config["seed"]))
+        records = load_source_records(config)
+        if frozen_manifest:
+            splits = _frozen_split(records, frozen_manifest)
+            train_limit = data_cfg.get("train_limit")
+            if train_limit is not None:
+                splits["train"] = splits["train"][:int(train_limit)]
+        else:
+            splits = stratified_split(records, {
+                "train": int(data_cfg["train_size"]),
+                "valid": int(data_cfg["valid_size"]),
+                "test": int(data_cfg["test_size"]),
+            }, int(config["seed"]))
     actual_sizes = {name: len(rows) for name, rows in splits.items()}
     expected_sizes = {name: int(data_cfg[f"{name}_size"]) for name in ("train", "valid", "test")}
     if actual_sizes != expected_sizes:
@@ -202,7 +270,12 @@ def prepare(config: dict[str, Any]) -> dict[str, Any]:
             for row in records
         ),
         "seed": int(config["seed"]),
-        "split_source": str(Path(frozen_manifest).resolve()) if frozen_manifest else "generated_stratified_split",
+        "split_source": (
+            str(Path(prepared_split_root).resolve()) if prepared_split_root
+            else str(Path(frozen_manifest).resolve()) if frozen_manifest
+            else "generated_stratified_split"
+        ),
+        "test_labels_published": bool(splits["test"]),
     }
     write_json(root / "manifests" / "data_summary.json", summary)
     return summary

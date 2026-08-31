@@ -1,0 +1,4 @@
+jsonschema>=4.23,<5
+numpy>=1.26,<3
+Pillow>=10,<13
+pyarrow>=16,<24

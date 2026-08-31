@@ -1,0 +1,112 @@
+seed: 42
+workspace: ${SELF_EVOLUTION_WORKSPACE}
+trajectory_workers: 3
+
+environments:
+  sam: ${SAM_CONDA_ENV}
+  opd: ${OPD_CONDA_ENV}
+
+repositories:
+  cvsearch: ${SELF_EVOLUTION_ROOT}/cvsearch
+  sam3_lora: ${SELF_EVOLUTION_ROOT}/cvsearch
+  vision_opd: ${VISION_OPD_ROOT}
+
+validated_sam_method:
+  root: ${SELF_EVOLUTION_ROOT}/sam_bridge
+  train_negative_manifest: ${SAM_TRAIN_NEGATIVE_MANIFEST}
+  valid_negative_manifest: ${SAM_VALID_NEGATIVE_MANIFEST}
+
+data:
+  root: ${VOPD_DATA_ROOT}
+  prepared_split_root: ${VOPD_PREPARED_SPLITS}
+  train_size: 999
+  valid_size: 624
+  test_size: 0
+  smoke_train_size: 64
+  smoke_valid_size: 16
+  smoke_anchor_ids:
+    train: [0168b1fd1282914bc3de, e54f7c574b948def0449, 4546a89e9007f54da08c, 117b6f5bc83934e922f3]
+    valid: [4c9830587d185c252709, 326afa9320071c4b3ebc]
+  experiment_train_fraction: 0.2
+  experiment_train_records: 999
+
+models:
+  sam_t0: ${SAM_T0}
+  mllm_t0: ${MLLM_T0}
+  spacy: ${SPACY_MODEL}
+
+cvsearch:
+  ic_examples: ${SELF_EVOLUTION_ROOT}/cvsearch/cvsearch/ic_examples/vstar.json
+  answering_confidence_threshold_lower: 0.0
+  answering_confidence_threshold_upper: 0.9
+  fast_threshold: 1.1
+  force_visual_search: true
+  fine_sam_policy: trace_only
+  threshold_descrease: [0.05, 0.1, 0.2]
+  pop_multiplier: 3
+  patch_scale: 1.2
+  max_pixels: 12845056
+  min_pixels: 3136
+
+filter:
+  min_area_ratio: 0.001
+  max_area_ratio: 0.85
+
+sam_pseudo_supervision:
+  source: local_sam_recovery_mask
+  require_initial_failure: true
+  recovery_stages: [fine_probe_1, local_retry_1, fine_probe_2, local_retry_2, fine_probe_3]
+  multi_instance: true
+  use_mask_loss: false
+  min_area_ratio: 0.0001
+  max_area_ratio: 0.85
+
+negative_generation:
+  verifier_model: ${MLLM_T0}
+  absent_probability_threshold: 0.9
+  seed: 42
+  batch_size: 8
+
+sam_training:
+  gpus: 1
+  num_workers: 0
+  rank: 16
+  alpha: 32
+  dropout: 0.1
+  epochs_per_round: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  batch_size_per_gpu: 1
+  presence_weight: 5.0
+  negative_ratio: 1.0
+  ranking_weight: 2.0
+  ranking_margin: 0.2
+  distill_weight: 0.0
+
+opd_training:
+  epochs_per_round: 1
+  learning_rate: 0.000002
+  rollout_n: 8
+  smoke_rollout_n: 2
+  train_batch_size: 96
+  smoke_train_batch_size: 4
+  distillation_topk: 100
+  alpha: 0.5
+  is_clip: 2.0
+  max_prompt_length: 8192
+  max_response_length: 256
+  gpus: 4
+  sequence_parallel_size: 2
+  rollout_tensor_parallel_size: 1
+  rollout_gpu_memory_utilization: 0.6
+  checkpoint_save_freq: 1
+  max_actor_ckpt_to_keep: 1
+  # Historical controlled variant: its OPSD records/teacher crops are identical
+  # to strict recovery, so reuse the strict-run Qwen candidate and isolate SAM.
+  reuse_models:
+    smoke: ${STRICT_MLLM_SMOKE}
+    full: ${STRICT_MLLM_FULL}
+
+promotion:
+  max_direct_accuracy_drop: 0.01
+  max_rounds: 1

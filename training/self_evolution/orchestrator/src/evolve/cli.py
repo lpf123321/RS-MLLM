@@ -185,6 +185,11 @@ def run_round(config: dict[str, Any], stage: str, round_id: int) -> dict[str, An
 def evaluate_checkpoint(
     config: dict[str, Any], split: str, checkpoint: str, stage: str,
 ) -> dict[str, Any]:
+    if split == "test" and int(config["data"].get("test_size", 0)) == 0:
+        raise RuntimeError(
+            "This public reproduction bundle intentionally seals test labels. "
+            "Use --split valid, or provide a private test split and a config with test_size > 0."
+        )
     state = load_or_initialize_state(config, stage)
     if split == "test":
         max_rounds = int(config["promotion"]["max_rounds"])
