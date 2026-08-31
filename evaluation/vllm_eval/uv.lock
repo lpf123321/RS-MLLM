@@ -2426,7 +2426,7 @@ requires-dist = [
     { name = "torchaudio", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu129" },
     { name = "torchcodec", specifier = "==0.15.0+cu129", index = "https://download.pytorch.org/whl/cu129" },
     { name = "torchvision", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cu129" },
-    { name = "vllm", path = "vllm-0.26.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl" },
+    { name = "vllm", url = "https://github.com/vllm-project/vllm/releases/download/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" },
 ]
 
 [[package]]
@@ -2660,10 +2660,10 @@ name = "tokenspeed-mla"
 version = "0.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "apache-tvm-ffi", marker = "sys_platform != 'darwin'" },
-    { name = "nvidia-cutlass-dsl", marker = "sys_platform != 'darwin'" },
-    { name = "tokenspeed-triton", marker = "sys_platform != 'darwin'" },
-    { name = "torch", marker = "sys_platform != 'darwin'" },
+    { name = "apache-tvm-ffi" },
+    { name = "nvidia-cutlass-dsl" },
+    { name = "tokenspeed-triton" },
+    { name = "torch" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/65/81d7e9f14472bc4c6abb576c9b1edd8e40ab01832027c4e647bfe2890749/tokenspeed_mla-0.1.8-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:952209cf4b29a54e6b6e7e088be9d4a40f24792b06fdfa330de8077b9926a7d9", size = 752341, upload-time = "2026-06-24T03:36:28.619Z" },
@@ -2888,7 +2888,7 @@ wheels = [
 [[package]]
 name = "vllm"
 version = "0.26.0+cu129"
-source = { path = "vllm-0.26.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
+source = { url = "https://github.com/vllm-project/vllm/releases/download/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -2963,7 +2963,7 @@ dependencies = [
     { name = "xgrammar", marker = "platform_machine == 'aarch64' or platform_machine == 'arm64' or platform_machine == 'ppc64le' or platform_machine == 's390x' or platform_machine == 'x86_64'" },
 ]
 wheels = [
-    { filename = "vllm-0.26.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:6ce4ca30616f0a35810391015622b197a7b8b267ed27f8716f0789db79ff578b" },
+    { url = "https://github.com/vllm-project/vllm/releases/download/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:6ce4ca30616f0a35810391015622b197a7b8b267ed27f8716f0789db79ff578b" },
 ]
 
 [package.metadata]
