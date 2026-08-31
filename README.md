@@ -104,29 +104,46 @@
 
 ## 三、 快速开始
 
-### 2.1 环境配置
+### 2.1 硬件要求
 
-**方式一：Docker 容器（完全隔离，推荐）**
+- **显卡**：NVIDIA GPU，显存 **≥ 40GB**（本项目在 A100-PCIE-40GB 上实测验证；A100/H100/A800 等同级可）
+- **CPU**：x86_64（已在 x86 服务器验证；**arm64 未验证**，理论可运行但不保证）
+- **内存**：建议 ≥ 64 GB（大分辨率遥感图解码/预处理在 CPU 侧）
+- **存储**：建议 ≥ 100 GB 可用（基座 9.3GB + 4 专家合并 34GB + torch/数据/镜像缓存；实测 49GB 根分区构建会失败）
+
+> **备注**：上述配置是**已经实测验证过**的规格，实际资源消耗量远低于此规格；
+> 但本项目未在这些规格之外的其他硬件配置上运行过，不保证完全的兼容性。
+
+### 2.2 环境配置
+
+**方式一：uv 固定版本（推荐，版本全部按 `uv.lock` 锁死）**
 
 ```bash
-docker build -t rs-mllm .                 # 环境按 uv.lock 精确锁定（CUDA 12.8 + torch 2.8.0）
-docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
-```
-
-**方式二：uv 固定版本（轻量，不开容器）**
-
-```bash
-bash setup.sh         # uv sync --locked（依赖全部按 uv.lock 固定）
+uv sync --locked            # 按 uv.lock 精确安装 121 个依赖（CUDA 12.8 + torch 2.8.0）
 source .venv/bin/activate
 ```
 
-> 无 uv 时 `setup.sh` 自动回退 conda 路径（按 `requirements.txt` 钉版本安装）。
+**方式二：懒人一键（`setup.sh` 自动识别 uv/conda 并自动进入环境）**
 
-### 2.2 模型推理
+```bash
+source setup.sh             # 有 uv → uv sync --locked 并激活 .venv；无 uv → conda 兜底
+```
 
-### 2.3 模型评测
+> `setup.sh` 只是回滚路径：它自动探测 uv（有则锁版本）或 conda（无 uv 时兜底），
+> 被 `source` 后会自动激活对应环境；直接 `bash setup.sh` 执行时只安装、打印激活指引。
 
-### 2.4 模型训练
+**方式三：Docker 容器（完全隔离，照抄即用）**
+
+```bash
+docker build -t rs-mllm .
+docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
+```
+
+### 2.3 模型推理
+
+### 2.4 模型评测
+
+### 2.5 模型训练
 
 模型训练采用 **统一 SFT 主干 + 多专家（四专家）LoRA 微调** 的流程，全部训练脚本位于
 `scripts/training/`，并可通过 `scripts/train.sh` 一键启动。
