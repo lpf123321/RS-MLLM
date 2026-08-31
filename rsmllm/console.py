@@ -39,14 +39,14 @@ def _ask_model() -> str:
 
 def _cmd_eval() -> None:
     model = _ask_model()
-    subsets = _ask("评测子集(逗号分隔: " + ",".join(SUBSETS) + ")", "950")
-    datasets = _ask("数据集(逗号分隔: vrsbench,mme,xlrs,levircc) 或 all", "all")
-    print(f"  → 评测 model={model} subsets={subsets} datasets={datasets}")
+    datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
+    print(f"  → 评测 model={model} datasets={datasets}")
     cmd = [sys.executable, "-m", "evaluation.main",
-           "--model", model, "--subsets", subsets, "--datasets", datasets,
-           "--batch-size", str(REPORT_CONF["batch_size"]),
-           "--max-num-seqs", str(REPORT_CONF["max_num_seqs"]),
-           "--max-model-len", str(REPORT_CONF["max_model_len"])]
+           "--model_path", model, "--datasets"] + datasets.split() + [
+           "--eval_batch_size", str(REPORT_CONF["batch_size"]),
+           "--image_min_pixels", str(REPORT_CONF["min_pixels"]),
+           "--image_max_pixels", str(REPORT_CONF["max_pixels"]),
+           "--data_root", str(MANIFESTS["vrsbench"].parent)]
     subprocess.run(cmd, check=False)
 
 

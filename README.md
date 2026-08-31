@@ -184,12 +184,14 @@ python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本
 ```bash
 ./bin/rsmllm          # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
 # 或脚本直接调用:
-python -m evaluation.main --model w8a8 --subsets 950 --datasets all \
-  --batch-size 64 --max-num-seqs 64 --max-model-len 16384
+python -m evaluation.main --model_path w8a8 --datasets vrsbench mme xlrs levircc \
+  --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
+  --data_root datasets --output results/950.json
 ```
 
-子集口径与报告附录一致：`950` 量化部署、`770` 量化对比、`590` 运行时配对、
-`400` 离散精度、`full` 统一评测清单（来自 `rsmllm/config.py` 的 `SUBSETS`）。
+评测子集（`950` 量化部署 / `770` 量化对比 / `590` 运行时配对 / `400` 离散精度）
+通过 `--data_root` 指向对应清单目录实现，口径与报告附录一致；
+像素上下限与报告评测口径一致（200,704 - 2,097,152）。
 
 **量化转换**（与报告同链路）：
 
