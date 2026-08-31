@@ -1,0 +1,50 @@
+# Qwen3.5-4B + VRSBench：前 200 条冒烟测试
+student_model: "${STUDENT_MODEL}"
+teacher_model: "${TEACHER_MODEL}"
+teacher_backend: "local"
+teacher_device: "cpu"
+
+multimodal: true
+data_path: "${VRSBENCH_TRAIN_JSONL}"
+image_root: "${VRSBENCH_IMAGE_ROOT}"
+max_samples: 200
+max_seq_length: 1024
+max_pixels: 401408
+
+ce_coef: 1.0
+kl_coef: 0.1
+loss_balance: "fixed"
+kl_type: "reverse"
+temperature: 1.0
+kl_clip_min: 0.0
+kl_clip_max: 2.0
+kl_top_k: 0
+
+max_new_tokens: 16
+rollout_top_k: 0
+rollout_top_p: 1.0
+rollout_temperature: 1.0
+disable_after_ratio: 1.0
+
+learning_rate: 5.0e-6
+num_epochs: 1
+per_device_batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.0
+lr_scheduler: "cosine"
+weight_decay: 0.05
+bf16: true
+gradient_checkpointing: true
+
+use_lora: true
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules: "q_proj,v_proj,k_proj,o_proj,gate_proj,up_proj,down_proj"
+
+output_dir: "./output/vrsbench_smoke_200"
+save_steps: 100
+logging_steps: 1
+save_total_limit: 1
+eval_strategy: "no"
+eval_split_ratio: 0.0

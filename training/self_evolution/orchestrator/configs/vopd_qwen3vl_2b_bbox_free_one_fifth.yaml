@@ -1,0 +1,95 @@
+seed: 42
+workspace: ${SELF_EVOLUTION_WORKSPACE}
+# GPUs 4-7 are shared and may be occupied by unrelated jobs. Keep CVSearch
+# trajectory generation on the four GPUs reserved for this experiment.
+trajectory_workers: 4
+
+repositories:
+  cvsearch: ${SELF_EVOLUTION_ROOT}/cvsearch
+  sam3_lora: ${SELF_EVOLUTION_ROOT}/cvsearch
+  vision_opd: ${VISION_OPD_ROOT}
+
+validated_sam_method:
+  root: ${SELF_EVOLUTION_ROOT}/sam_bridge
+  split_manifest: ${SAM_SPLIT_MANIFEST}
+  reference_adapter: ${SAM_REFERENCE_ADAPTER}
+  reference_merged_checkpoint: ${SAM_REFERENCE_CHECKPOINT}
+
+data:
+  root: ${VOPD_DATA_ROOT}
+  source_jsonl: ${VOPD_TRAIN_JSONL}
+  train_size: 999
+  train_limit: 999
+  valid_size: 624
+  test_size: 624
+  smoke_train_size: 64
+  smoke_valid_size: 16
+  experiment_train_fraction: 0.2
+  experiment_train_records: 999
+
+models:
+  sam_t0: ${SAM_T0}
+  mllm_t0: ${MLLM_T0}
+  spacy: ${SPACY_MODEL}
+
+cvsearch:
+  ic_examples: ${CVSEARCH_ROOT}/cvsearch/ic_examples/vstar.json
+  answering_confidence_threshold_lower: 0.0
+  answering_confidence_threshold_upper: 0.9
+  fast_threshold: 1.1
+  force_visual_search: true
+  threshold_descrease: [0.05, 0.1, 0.2]
+  pop_multiplier: 3
+  patch_scale: 1.2
+  max_pixels: 12845056
+  min_pixels: 3136
+
+filter:
+  min_area_ratio: 0.001
+  max_area_ratio: 0.85
+
+negative_generation:
+  verifier_model: ${NEGATIVE_VERIFIER_MODEL}
+  absent_probability_threshold: 0.9
+  seed: 42
+  batch_size: 8
+
+sam_training:
+  gpus: 1
+  num_workers: 0
+  rank: 16
+  alpha: 32
+  dropout: 0.1
+  epochs_per_round: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  batch_size_per_gpu: 1
+  presence_weight: 5.0
+  negative_ratio: 1.0
+  ranking_weight: 2.0
+  ranking_margin: 0.2
+  distill_weight: 0.0
+
+opd_training:
+  epochs_per_round: 1
+  learning_rate: 0.000002
+  rollout_n: 8
+  smoke_rollout_n: 2
+  train_batch_size: 96
+  smoke_train_batch_size: 4
+  distillation_topk: 100
+  alpha: 0.5
+  is_clip: 2.0
+  max_prompt_length: 8192
+  max_response_length: 256
+  gpus: 4
+  sequence_parallel_size: 2
+  rollout_tensor_parallel_size: 1
+  rollout_gpu_memory_utilization: 0.6
+  # save_freq=-1 still saves the mandatory final step, without retaining every intermediate FSDP state.
+  checkpoint_save_freq: -1
+  max_actor_ckpt_to_keep: 1
+
+promotion:
+  max_direct_accuracy_drop: 0.01
+  max_rounds: 1

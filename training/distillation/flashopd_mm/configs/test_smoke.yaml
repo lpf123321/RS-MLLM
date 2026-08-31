@@ -1,0 +1,58 @@
+# ========== 模型（改成本地路径） ==========
+student_model: "${STUDENT_MODEL}"
+teacher_model: "${TEACHER_MODEL}"
+# ========== Loss 配置 ==========
+ce_coef: 1.0
+kl_coef: 0.1
+loss_balance: "fixed"
+ema_decay: 0.99
+
+# ========== KL 散度 ==========
+kl_type: "reverse"
+temperature: 1.0
+kl_clip_min: 0.0
+kl_clip_max: 2.0
+kl_top_k: 0
+
+# ========== Rollout ==========
+max_new_tokens: 64
+rollout_top_k: 0
+rollout_top_p: 1.0
+rollout_temperature: 1.0
+
+# ========== 调度 ==========
+disable_after_ratio: 1.0
+
+# ========== Teacher Backend ==========
+teacher_backend: "local"
+
+# ========== 训练 ==========
+learning_rate: 5.0e-6
+num_epochs: 3
+per_device_batch_size: 1
+gradient_accumulation_steps: 4
+warmup_ratio: 0.05
+lr_scheduler: "cosine"
+weight_decay: 0.05
+bf16: true
+max_seq_length: 1024
+
+# ========== LoRA（默认开 LoRA） ==========
+use_lora: true
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules: "q_proj,v_proj,k_proj,o_proj,gate_proj,up_proj,down_proj"
+
+# ========== 输出 ==========
+output_dir: "./output/flashopd_run"
+save_steps: 500
+logging_steps: 10
+save_total_limit: 3
+
+# ========== 评估 ==========
+eval_strategy: "steps"
+eval_split_ratio: 0.05
+
+# ========== 数据 ==========
+data_path: "data/demo.jsonl"

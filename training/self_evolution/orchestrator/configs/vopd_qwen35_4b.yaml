@@ -1,0 +1,81 @@
+seed: 42
+workspace: /home/cpy/workspace/self_evolve_cvsearch
+
+repositories:
+  cvsearch: /home/cpy/ICML26-CVSearch
+  sam3_lora: /home/cpy/sam3_lora
+  vision_opd: /home/cpy/Vision-OPD-training-clean
+  sam3_training_bridge: /home/cpy/sam3_lora_test
+
+data:
+  root: /home/cpy/workspace/dataset/vopd_dataset
+  source_jsonl: /home/cpy/workspace/dataset/vopd_dataset/train.jsonl
+  train_size: 4993
+  valid_size: 624
+  test_size: 624
+  smoke_train_size: 64
+  smoke_valid_size: 16
+
+models:
+  sam_t0: /home/cpy/workspace/model/sam3/sam3.pt
+  mllm_t0: /home/cpy/workspace/model/student/Qwen3.5-4B
+  spacy: /data1/liliupeng/models/en_core_web_sm-3.8.0
+
+cvsearch:
+  ic_examples: /home/cpy/ICML26-CVSearch/cvsearch/ic_examples/vstar.json
+  answering_confidence_threshold_lower: 0.0
+  answering_confidence_threshold_upper: 0.9
+  fast_threshold: 0.6
+  threshold_descrease: [0.05, 0.1, 0.2]
+  pop_multiplier: 3
+  patch_scale: 1.2
+  max_pixels: 12845056
+  min_pixels: 3136
+
+filter:
+  min_area_ratio: 0.001
+  max_area_ratio: 0.85
+  min_logprob_gain: 0.05
+  jitter_ratio: 0.05
+  min_jitter_passes: 2
+
+sam_training:
+  rank: 16
+  alpha: 32
+  dropout: 0.1
+  epochs_per_round: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  batch_size_per_gpu: 1
+  presence_weight: 5.0
+  negative_ratio: 1.0
+  ranking_weight: 2.0
+  ranking_margin: 0.2
+  distill_weight: 1.0
+
+opd_training:
+  epochs_per_round: 1
+  learning_rate: 0.000002
+  rollout_n: 8
+  smoke_rollout_n: 2
+  train_batch_size: 96
+  smoke_train_batch_size: 8
+  distillation_topk: 100
+  alpha: 0.5
+  is_clip: 2.0
+  max_prompt_length: 8192
+  max_response_length: 256
+  gpus: 8
+  sequence_parallel_size: 4
+  rollout_tensor_parallel_size: 2
+  rollout_gpu_memory_utilization: 0.75
+
+promotion:
+  minimum_extra_correct: 2
+  max_sam_ap50_drop: 0.01
+  max_sam_recall_drop: 0.01
+  max_direct_accuracy_drop: 0.01
+  max_regression_accuracy_drop: 0.015
+  max_mean_pop_ratio: 1.25
+  mean_pop_override_accuracy_gain: 0.01
+  max_rounds: 3

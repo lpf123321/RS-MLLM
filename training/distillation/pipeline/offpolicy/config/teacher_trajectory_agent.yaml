@@ -1,0 +1,2 @@
+- name: teacher_trajectory
+  _target_: offpolicy.teacher_trajectory_agent.TeacherTrajectoryAgentLoop

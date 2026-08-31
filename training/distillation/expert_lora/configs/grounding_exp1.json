@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "grounding_exp1_washed_vrs36285",
+  "description": "Continue the 942 adapter on washed VRSBench-Referring.",
+  "expert": "grounding",
+  "expert_delta": "deltas/grounding/delta_model.pt",
+  "data": "grounding/exp1_washed_vrs36285.json",
+  "data_schema": "vrs_grounding",
+  "expected_records": 36285,
+  "init_adapter": "grounding_bootstrap_942",
+  "world_size": 8,
+  "effective_batch_size": 32,
+  "epochs": 1,
+  "learning_rate": 0.0001,
+  "rank": 32,
+  "alpha": 64,
+  "dropout": 0.05,
+  "workers": 0,
+  "seed": 20260823,
+  "max_pixels": 3211264,
+  "reported_eval": {
+    "vrsbench_referring_mean_iou": 0.664107,
+    "vrsbench_referring_acc_at_0_5": 0.772573
+  }
+}
