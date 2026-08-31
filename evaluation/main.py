@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import random
@@ -11,7 +12,7 @@ from tqdm import tqdm
 
 from evaluation.evalsets import vrsbench, mme, xlrs, levircc, xlrs_caption, xlrs_grounding
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

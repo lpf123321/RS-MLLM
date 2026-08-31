@@ -2,6 +2,7 @@
 """Smoke test DeltaRouter + token_compression selectors."""
 import argparse
 from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -12,7 +13,7 @@ from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 
 
 def main():

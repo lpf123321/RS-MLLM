@@ -14,6 +14,7 @@ Usage:
 """
 import argparse
 import json
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -25,7 +26,7 @@ from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASETS = {

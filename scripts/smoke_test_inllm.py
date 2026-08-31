@@ -15,6 +15,7 @@ Usage (on a GPU node):
         --change_lora .../lora/change
 """
 import argparse
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -25,7 +26,7 @@ from evaluation.evalsets import vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 
 CONFIGS = [
     ("l2 keep=0.5 + FastV-K keep=0.5 (k=2)",

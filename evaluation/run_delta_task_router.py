@@ -9,6 +9,7 @@ The General expert can be replaced with the merged exp7 Delta.
 import argparse
 import json
 from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -21,7 +22,7 @@ from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.router.task_prune_config import CANDIDATE_TASK_PRUNE_CONFIG
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),

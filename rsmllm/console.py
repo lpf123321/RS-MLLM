@@ -105,7 +105,7 @@ def main() -> int:
             elif choice == "5":
                 _cmd_data()
             elif choice == "6":
-                _cmd_simple("Token 剪枝", "scripts/run_prune_sweep.py")
+                _cmd_simple("Token 剪枝", "evaluation/run_prune_sweep.py")
             elif choice == "7":
                 _cmd_simple("容错探针", "scripts/quant_tol_probe.py")
             elif choice == "8":

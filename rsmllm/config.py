@@ -12,13 +12,25 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _settle(key: str, default_repo: Path, cluster_default: str | None = None) -> Path:
+    """env 优先 -> 仓库本地可用 -> 集群路径(兼容正在运行的链路)"""
+    v = os.environ.get(key)
+    if v:
+        return Path(v).expanduser().resolve()
+    if default_repo.exists():
+        return default_repo
+    if cluster_default:
+        return Path(cluster_default)
+    return default_repo
+
+
 def _env_path(key: str, default: Path) -> Path:
     v = os.environ.get(key)
     return Path(v).expanduser().resolve() if v else default
 
 
 # 数据根(清洗后清单默认为仓库 datasets/; 图片/其他大数据通过 RSMLLM_*_ROOT 指向)
-DATA_ROOT = _env_path("RSMLLM_DATA_ROOT", REPO_ROOT / "datasets")
+DATA_ROOT = _settle("RSMLLM_DATA_ROOT", REPO_ROOT / "datasets", "/users/u2024311136/shared/shared_datasets")
 IMAGES_ROOT = _env_path("RSMLLM_IMAGES_ROOT", DATA_ROOT / "images")
 MODELS_CACHE = _env_path("RSMLLM_MODEL_CACHE", REPO_ROOT / ".models")
 MODELS_ROOT = _env_path("RSMLLM_MODELS_ROOT", REPO_ROOT / "models")
@@ -57,12 +69,20 @@ REPORT_CONF = {
 
 # ModelScope 模型注册表(download → 按需拉取)
 MODEL_REGISTRY = {
-    "base": "HITSZ-JBGS/rs-mllm-qwen35-4b",
-    "mmerestore_bf16": "HITSZ-JBGS/rs-mllm-mmerestore-bf16",
-    "w8a8": "HITSZ-JBGS/rs-mllm-mmerestore-w8a8-int8",
-    "gptq": "HITSZ-JBGS/rs-mllm-mmerestore-w4a16-gptq",
-    "expert_general": "HITSZ-JBGS/rs-mllm-expert-general",
-    "expert_ground": "HITSZ-JBGS/rs-mllm-expert-ground",
-    "expert_change": "HITSZ-JBGS/rs-mllm-expert-change",
-    "expert_caption": "HITSZ-JBGS/rs-mllm-expert-caption",
+    "base": "Fun10165/qwen-3.5-rs",
+    "mmerestore_bf16": "Fun10165/rs-mllm-mmerestore-bf16",
+    "w8a8": "Fun10165/rs-mllm-mmerestore-w8a8-int8",
+    "gptq": "Fun10165/rs-mllm-mmerestore-w4a16-gptq",
+    "expert_general": "Fun10165/rs-mllm-expert-general",
+    "expert_ground": "Fun10165/rs-mllm-expert-ground",
+    "expert_change": "Fun10165/rs-mllm-expert-change",
+    "expert_caption": "Fun10165/rs-mllm-expert-caption",
+    "expert_general_w8a8": "Fun10165/rs-mllm-expert-general-w8a8-int8",
+    "expert_general_gptq": "Fun10165/rs-mllm-expert-general-w4a16-gptq",
+    "expert_ground_w8a8": "Fun10165/rs-mllm-expert-ground-w8a8-int8",
+    "expert_ground_gptq": "Fun10165/rs-mllm-expert-ground-w4a16-gptq",
+    "expert_change_w8a8": "Fun10165/rs-mllm-expert-change-w8a8-int8",
+    "expert_change_gptq": "Fun10165/rs-mllm-expert-change-w4a16-gptq",
+    "expert_caption_w8a8": "Fun10165/rs-mllm-expert-caption-w8a8-int8",
+    "expert_caption_gptq": "Fun10165/rs-mllm-expert-caption-w4a16-gptq",
 }

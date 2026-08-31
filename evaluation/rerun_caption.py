@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import json
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -38,7 +39,7 @@ def main():
     ap.add_argument("--max_samples", type=int, default=0)
     args = ap.parse_args()
 
-    SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+    SHARED = DATA_ROOT
     data_path = args.data_path or f"{SHARED}/VRSBench/vrsbench_eval.jsonl"
 
     from evaluation.adapters.router import RouterAdapter

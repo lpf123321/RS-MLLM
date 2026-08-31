@@ -16,6 +16,7 @@ Usage (on a GPU node):
         --change_lora .../lora/change
 """
 import argparse
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -26,7 +27,7 @@ from evaluation.evalsets import levircc, mme, vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 
 
 def pick_samples(dataset_modules):

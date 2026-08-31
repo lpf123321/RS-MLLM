@@ -9,6 +9,7 @@ RS-MLLM 推理脚本 —— 支持 LoRA + 剪枝 + 四数据集评估。
 """
 import argparse
 import json
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import re
@@ -36,7 +37,7 @@ except ImportError:
         "levircc": "Describe the changes between the two images concisely in 1-2 sentences.",
     }
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 _BBOX_ANGLE_RE = re.compile(r"\{<\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*><\s*(\d+(?:\.\d+)?)\s*>\}")
 _BBOX_COMMA_RE = re.compile(
     r"\{\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*[,;\s]+\s*(\d+(?:\.\d+)?)\s*\}"

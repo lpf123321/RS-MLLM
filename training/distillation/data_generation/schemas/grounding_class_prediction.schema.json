@@ -1,11 +1,3 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["image", "classes", "reason"],
-  "properties": {
-    "image": {"type": "string", "minLength": 1},
-    "classes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-    "reason": {"type": "string"}
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:c245e8d8b05b7867709cc0dcef74477dc59aef8d2de9ab6eee739d591f6d0001
+size 352

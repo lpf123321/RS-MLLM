@@ -12,6 +12,7 @@ Usage (on a GPU node):
         --change_lora .../lora/change
 """
 import argparse
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -24,7 +25,7 @@ from evaluation.router import rules
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 
 
 def main():

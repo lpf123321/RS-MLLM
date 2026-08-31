@@ -1,27 +1,3 @@
-{
-    "embed_dim": 1280,
-    "vision_cfg": {
-        "image_size": 448,
-        "layers": 32,
-        "width": 4096,
-        "head_width": 128,
-        "mlp_ratio": 5,
-        "patch_size": 14,
-        "eva_model_name": "eva-clip-8b-14-plus-x",
-        "drop_path_rate": 0,
-        "qkv_bias": false,
-        "xattn": true,
-        "postnorm": false,
-        "fusedLN": false,
-        "use_rms_norm": true
-    },
-    "text_cfg": {
-        "context_length": 77,
-        "vocab_size": 49408,
-        "width": 1280,
-        "heads": 20,
-        "layers": 32,
-        "xattn": false,
-        "fusedLN": false
-    }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:702956177ae2546b3f93c83f72f0256fc24aebfd05a71c69dcad6b52f624efe6
+size 613

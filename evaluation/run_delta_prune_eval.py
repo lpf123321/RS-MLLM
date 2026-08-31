@@ -13,6 +13,7 @@ Example:
 import argparse
 import json
 from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
@@ -23,7 +24,7 @@ from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
 from evaluation.main import SYSTEM_PROMPTS, evaluate
 
-SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
+SHARED = DATA_ROOT
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),
     "mme": (mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),

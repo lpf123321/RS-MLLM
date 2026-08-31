@@ -160,7 +160,52 @@ source setup.sh             # 有 uv → uv sync --locked 并激活 .venv；无 
 
 ### 3.3 模型推理
 
+**推荐：交互式控制台（问答式选择任务，模型首次使用自动从 ModelScope 拉取）**
+
+```bash
+./bin/rsmllm            # 进入控制台（或 python -m rsmllm.console）
+```
+
+菜单：`[2] 推理服务` → 选模型别名 → 自动下载并启动推理。
+
+**非交互（脚本）**：
+
+```bash
+python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本地缓存命中即用)
+```
+
+支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
+`w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等 15 个），
+或直接给 ModelScope id / 本地路径。模型按需下载缓存在 `.models/`（
+`RSMLLM_MODEL_CACHE` 可覆盖），离线时 `MODELSCOPE_OFFLINE=1` 强制本地命中。
+
 ### 3.4 模型评测
+
+```bash
+./bin/rsmllm          # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
+# 或脚本直接调用:
+python -m evaluation.main --model w8a8 --subsets 950 --datasets all \
+  --batch-size 64 --max-num-seqs 64 --max-model-len 16384
+```
+
+子集口径与报告附录一致：`950` 量化部署、`770` 量化对比、`590` 运行时配对、
+`400` 离散精度、`full` 统一评测清单（来自 `rsmllm/config.py` 的 `SUBSETS`）。
+
+**量化转换**（与报告同链路）：
+
+```bash
+python -m rsmllm.quantize --method w8a8-int8 --model mmerestore_bf16 \
+  --calibration calibration_512.jsonl --output quantized_models/out
+```
+
+**容错探针 / TTFT / 并发扫描 / 剪枝**（实验级入口）：
+
+```bash
+python scripts/quant_tol_probe.py       # 位翻转注入 + 完整性检测
+python scripts/ttft_serve_probe.py      # vLLM serve /metrics TTFT
+python scripts/run_batch_scan.py        # 6 档并发吞吐/时延扫描
+python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
+```
 
 ### 3.5 模型训练
 
