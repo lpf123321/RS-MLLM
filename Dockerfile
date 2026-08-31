@@ -12,6 +12,7 @@ ENV PATH="/root/.local/bin:$PATH"
 # Python 3.10 + 编译工具（flash-attn 等需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 python3.10-venv python3.10-dev \
+    libgl1 libglib2.0-0 libxcb1 libxcb-shm0 libxcb-xfixes0 \
     curl git build-essential ninja-build \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
