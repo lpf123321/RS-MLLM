@@ -42,7 +42,7 @@ export VOPD_PREPARED_SPLITS="${VOPD_PREPARED_SPLITS:-${VOPD_DATA_ROOT}/splits}"
 export MLLM_T0="${MLLM_T0:-${ASSET_ROOT}/models/Qwen3-VL-2B-Instruct}"
 export SAM_T0
 export SPACY_MODEL="${SPACY_MODEL:-${DATA_ROOT}/runtime/en_core_web_sm-3.8.0}"
-export SAM_CONDA_ENV="${SAM_CONDA_ENV:-sam3_lora}"
+export SAM_CONDA_ENV="${SAM_CONDA_ENV:-Sam3_lora}"
 export OPD_CONDA_ENV="${OPD_CONDA_ENV:-vision_opd}"
 ORCHESTRATOR_CONDA_ENV="${ORCHESTRATOR_CONDA_ENV:-cvsearch}"
 

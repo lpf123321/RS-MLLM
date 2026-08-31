@@ -21,11 +21,17 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(f"Missing required repositories: {sorted(missing)}")
     source_markers = {
         "cvsearch": ("cvsearch/CVSearch.py", "sam3/model_builder.py"),
-        "sam3_lora": ("sam3/model_builder.py", "lora_layers.py"),
+        "sam3_lora": (
+            "sam3/model_builder.py",
+            "sam3/assets/bpe_simple_vocab_16e6.txt.gz",
+            "lora_layers.py",
+        ),
         "vision_opd": ("verl/trainer/main_ppo.py",),
     }
+    resolved_repositories: dict[str, Path] = {}
     for name in sorted(required_repositories):
         path = Path(repositories[name]).expanduser().resolve()
+        resolved_repositories[name] = path
         if not path.is_dir():
             raise FileNotFoundError(f"{name} source directory is missing: {path}")
         missing_markers = [relative for relative in source_markers[name] if not (path / relative).is_file()]
@@ -33,6 +39,20 @@ def validate_config(config: dict[str, Any]) -> None:
             raise FileNotFoundError(
                 f"{name} source directory is incomplete ({', '.join(missing_markers)}): {path}"
             )
+
+    if resolved_repositories["cvsearch"] == resolved_repositories["sam3_lora"]:
+        raise ValueError(
+            "CVSearch and SAM3-LoRA must use separate source directories: the search fork "
+            "returns backbone features while the training runtime returns SAM3Output"
+        )
+    sam3_training_forward = (
+        resolved_repositories["sam3_lora"] / "sam3/model/sam3_image.py"
+    ).read_text(encoding="utf-8")
+    if "return previous_stages_out, backbone_out" in sam3_training_forward:
+        raise ValueError(
+            "SAM3-LoRA points to the CVSearch forward contract; use the dedicated "
+            "training/self_evolution/sam3_lora runtime"
+        )
 
     method = config.get("validated_sam_method", {})
     method_root = Path(method.get("root", "")).expanduser().resolve()

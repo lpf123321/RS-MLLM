@@ -3,10 +3,8 @@
 本目录存放训练方法相关的**蒸馏与自进化**模块。LoRA 微调框架见顶层 `finetune_framework/`，
 训练提交脚本见顶层 `slurm_scripts/`。
 
-本地轻量复现证据与尚未复跑的边界见 [`VALIDATION.md`](VALIDATION.md)。
-
-模型与数据不进入 Git 仓库。需上传到 ModelScope 的冻结训练集、生成轨迹、delta
-和 LoRA 清单见 [`MODELSCOPE_ASSETS.md`](MODELSCOPE_ASSETS.md)。
+模型与数据不进入 Git 仓库。各模块 README 和 `scripts/download_assets.sh` 记录
+ModelScope 资产 ID、下载布局、运行入口及已验证边界。
 
 目录结构：
 

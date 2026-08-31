@@ -81,7 +81,8 @@ SAM COCO 只读取“mode 2、最终回答正确”的轨迹，并逐目标处�
 
 ### 自动负例
 
-每轮先从新的 SAM train/valid COCO 自动调用 `/home/cpy/sam3_lora_test/scripts/build_negative_manifests.py`：
+每轮先从新的 SAM train/valid COCO 自动调用
+`training/self_evolution/sam_bridge/scripts/build_negative_manifests.py`：
 
 - train 生成并均衡选择 verified generic/random，一条正样本对应一条负 prompt。
 - valid 生成并尽量均衡选择 generic/random/semantic/counterfactual/crop。
@@ -200,18 +201,21 @@ branch-3 伪框诊断中，stock/candidate 的 pseudo AP50 分别为 0.634%/0.37
 
 | 模块 | 本地路径 | 用途 |
 |---|---|---|
-| CVSearch | `/home/cpy/ICML26-CVSearch` | 目标提取、SAM 定位、Fast/Tree Search 和最终回答 |
-| Vision-OPD | `/home/cpy/Vision-OPD-training-clean` | 固定教师的区域–全局 OPSD 训练 |
-| SAM3-LoRA | `/home/cpy/sam3_lora` | SAM3 模型、LoRA 注入和底层训练依赖 |
+| CVSearch | `training/self_evolution/cvsearch` | 目标提取、SAM 定位、Fast/Tree Search 和最终回答 |
+| Vision-OPD | `training/distillation/opsd/vision_opd` | 固定教师的区域–全局 OPSD 训练 |
+| SAM3-LoRA | `training/self_evolution/sam3_lora` | 与 CVSearch fork 隔离的 SAM3 训练源码、LoRA 注入和 tokenizer |
 
-SAM 的任务化训练入口不重新编写，直接复用已经跑通并完成 VSTAR/VOPD/HR-Bench 验证的 `/home/cpy/sam3_lora_test` 方法。该目录不是第四个上游仓库，而是既有方法、冻结 manifest、checkpoint 和机器报告的实验工作区。
+SAM 的任务化训练入口复用已经跑通并完成 VSTAR/VOPD/HR-Bench 验证的历史
+`/home/cpy/sam3_lora_test` 方法，发布后的可移植副本位于
+`training/self_evolution/sam_bridge`。历史目录只是既有方法、冻结 manifest、checkpoint
+和机器报告的实验工作区，不是复现时的运行依赖。
 
 关键复用文件：
 
-- `scripts/train_vopd_bbox_lora.py`：annotation-level bbox LoRA 训练。
-- `scripts/vopd_negative_common.py`：manifest 负查询、真/假框 ranking loss。
-- `scripts/evaluate_vopd_selectivity.py`：正框定位与负 prompt FPR 联合评测。
-- `scripts/merge_vopd_lora_checkpoint.py`：将 adapter 合并回 stock SAM3 checkpoint。
+- `sam_bridge/scripts/train_vopd_bbox_lora.py`：annotation-level bbox LoRA 训练。
+- `sam_bridge/scripts/vopd_negative_common.py`：manifest 负查询、真/假框 ranking loss。
+- `sam_bridge/scripts/evaluate_vopd_selectivity.py`：正框定位与负 prompt FPR 联合评测。
+- `sam_bridge/scripts/merge_vopd_lora_checkpoint.py`：将 adapter 合并回 stock SAM3 checkpoint。
 - `manifests/splits.json`：冻结的 4993/624/624 数据划分。
 - `manifests/negative_repair/full/train_mix_generic_random_1to1.jsonl`：已由视觉模型确认的 generic/random 1:1 训练负例。
 - `manifests/negative_repair/full/valid_benchmark_balanced_624.jsonl`：冻结 valid 选择性评测集。

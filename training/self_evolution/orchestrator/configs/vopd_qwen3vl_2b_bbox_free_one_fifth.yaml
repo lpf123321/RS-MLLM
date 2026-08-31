@@ -6,7 +6,7 @@ trajectory_workers: 4
 
 repositories:
   cvsearch: ${SELF_EVOLUTION_ROOT}/cvsearch
-  sam3_lora: ${SELF_EVOLUTION_ROOT}/cvsearch
+  sam3_lora: ${SELF_EVOLUTION_ROOT}/sam3_lora
   vision_opd: ${VISION_OPD_ROOT}
 
 validated_sam_method:

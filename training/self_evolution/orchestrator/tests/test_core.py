@@ -22,10 +22,38 @@ from evolve.system import train_mllm
 
 SELF_EVOLUTION_ROOT = Path(__file__).resolve().parents[2]
 CVSEARCH_ROOT = SELF_EVOLUTION_ROOT / "cvsearch"
+SAM3_LORA_ROOT = SELF_EVOLUTION_ROOT / "sam3_lora"
 SAM_BRIDGE_SCRIPTS = SELF_EVOLUTION_ROOT / "sam_bridge" / "scripts"
 
 
 class CoreTests(unittest.TestCase):
+    def test_sam3_training_runtime_is_separate_and_complete(self):
+        self.assertNotEqual(CVSEARCH_ROOT.resolve(), SAM3_LORA_ROOT.resolve())
+        self.assertTrue((SAM3_LORA_ROOT / "lora_layers.py").is_file())
+        self.assertTrue((SAM3_LORA_ROOT / "sam3/model_builder.py").is_file())
+        self.assertTrue(
+            (SAM3_LORA_ROOT / "sam3/assets/bpe_simple_vocab_16e6.txt.gz").is_file()
+        )
+
+        training_forward = (SAM3_LORA_ROOT / "sam3/model/sam3_image.py").read_text()
+        search_forward = (CVSEARCH_ROOT / "sam3/model/sam3_image.py").read_text()
+        self.assertIn("return previous_stages_out\n", training_forward)
+        self.assertNotIn("return previous_stages_out, backbone_out", training_forward)
+        self.assertIn("return previous_stages_out, backbone_out", search_forward)
+
+        for name in (
+            "repro_tree_node_weak_box.yaml",
+            "repro_strict_local_recovery.yaml",
+            "repro_fine_trace_only.yaml",
+        ):
+            config_text = (SELF_EVOLUTION_ROOT / "orchestrator/configs" / name).read_text()
+            self.assertIn(
+                "sam3_lora: ${SELF_EVOLUTION_ROOT}/sam3_lora", config_text
+            )
+            self.assertNotIn(
+                "sam3_lora: ${SELF_EVOLUTION_ROOT}/cvsearch", config_text
+            )
+
     def test_controlled_variant_can_reuse_mllm(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -426,7 +454,7 @@ class CoreTests(unittest.TestCase):
 
     def test_validated_bbox_loader_supports_one_prompt_multiple_objects(self):
         scripts = str(SAM_BRIDGE_SCRIPTS)
-        for import_root in (scripts, str(CVSEARCH_ROOT)):
+        for import_root in (scripts, str(SAM3_LORA_ROOT)):
             if import_root not in sys.path:
                 sys.path.insert(0, import_root)
         from vopd_bbox_common import VOPDBBoxDataset
