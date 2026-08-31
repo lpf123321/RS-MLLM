@@ -1,7 +1,7 @@
 [project]
 name = "rsmllm-vllm-eval"
 version = "0.1.0"
-description = "RS-MLLM vLLM 离线评测器环境(报告口径): vllm 0.26 + torch 2.11 cu129 + torchcodec 0.15 cu129"
+description = "RS-MLLM vLLM 离线评测器环境(报告配置): vllm 0.26 + torch 2.11 cu129 + torchcodec 0.15 cu129"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "torch==2.11.0",

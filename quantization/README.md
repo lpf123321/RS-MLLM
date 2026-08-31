@@ -10,7 +10,7 @@
 | NF4（bitsandbytes 运行时） | 加载时 | CI [-2.03, +1.86]（有统计学意义下降，排除） | ≈2.3 GB | 未实测 |
 
 - **部署默认：W8A8-INT8**（时延收益最大、无精度退化、5.54 GB 落入 8 GB 预算）；**W4A16-GPTQ 为存储更小备选**。
-- 评测口径：量化对比子集（770）+ 运行时配对子集（590，A-B-B-A 交替），`clean_correct` 官方计分；详见报告附录「评测校验条件」。
+- 评测配置：量化对比子集（770）+ 运行时配对子集（590，A-B-B-A 交替），`clean_correct` 官方计分；详见报告附录「评测校验条件」。
 - 数字来源均为报告 §6.2 固定清单实测——**不应用其他来源数字替换**。
 
 ## 转换（vLLM 0.26 已验证支持 Qwen3.5 架构）
@@ -35,7 +35,7 @@ python scripts/quantize_qwen35_vlm.py \
 # 量化配对评测（报告 770/590 子集 A-B-B-A 交替）：
 sbatch quantization/quant_pair_eval.sbatch
 
-# 独立模型评测入口（evaluation.main，像素/口径与报告一致）：
+# 独立模型评测入口（evaluation.main，像素/配置与报告一致）：
 python -m evaluation.main --model_path <quantized_model> --datasets vrsbench mme xlrs levircc \
   --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
   --data_path_overrides '<json: 子集清单路径>' --output results/<name>.json

@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--output")
     e.set_defaults(fn=_cmd_eval)
 
-    s = sub.add_parser("serve", help="vLLM 推理服务(报告口径)")
+    s = sub.add_parser("serve", help="vLLM 推理服务(报告配置)")
     s.add_argument("--model", required=True)
     s.add_argument("--port", type=int, default=8001)
     s.add_argument("--max-model-len", type=int, default=REPORT_CONF["max_model_len"])

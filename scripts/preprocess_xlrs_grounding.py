@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert XLRS visual-grounding split_evals to messages format (official口径).
+"""Convert XLRS visual-grounding split_evals to messages format (official protocol).
 
 Reads the classmate's flat jsonl and rewrites it into the ``messages`` format,
 keeping the OFFICIAL question and the 0-1 normalized bbox ``[xmin, ymin, xmax,

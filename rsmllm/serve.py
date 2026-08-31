@@ -1,4 +1,4 @@
-"""RS-MLLM 推理服务(报告口径): vLLM 0.26 + bf16/greedy + 像素 200704-2097152 + maxlen 16384.
+"""RS-MLLM 推理服务(报告配置): vLLM 0.26 + bf16/greedy + 像素 200704-2097152 + maxlen 16384.
 
 实测(2026-08-31): vLLM 0.26.0 官方 +cu129 wheel 的 registry 含
 Qwen3_5ForConditionalGeneration(5 个 Qwen3_5 架构), 加载/生成均验证通过;
@@ -39,7 +39,7 @@ def main() -> int:
             gpu_memory_utilization=args.gpu_mem,
             enforce_eager=args.eager,
         )
-        # 多模态参数(报告口径)
+        # 多模态参数(报告配置)
         if "limit_mm_per_prompt" in LLM.__init__.__code__.co_varnames or True:
             llm_kwargs["limit_mm_per_prompt"] = {"image": 2}
             llm_kwargs["mm_processor_kwargs"] = {

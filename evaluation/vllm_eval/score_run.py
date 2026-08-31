@@ -5,7 +5,7 @@
 读取 <outdir>/prediction_attempts.jsonl，每行含 sample 与 prediction；
 先经 score_prediction 得到 score，再走 summarize_predictions 的分组聚合
 （离散题 accuracy 只在 clean_eligible 上算；caption 用 caption_metrics、
-grounding 用 bbox_metrics —— 与评测器同一份官方口径）。
+grounding 用 bbox_metrics —— 与评测器同一份官方计分）。
 """
 import json
 import sys

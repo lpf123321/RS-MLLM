@@ -1,4 +1,4 @@
-# vLLM 离线评测器（RS-MLLM 报告口径）
+# vLLM 离线评测器（RS-MLLM 报告配置）
 
 本目录是 RS-MLLM 四数据集评测使用的 **vLLM 批量评测器**（拆包为目录脚本，
 无包结构、`python xxx.py` 直接运行）。
@@ -12,7 +12,7 @@
 | `model_policy.py` | 可信模型 profile（sha256/required_files 校验） |
 | `model.py` | Qwen 适配器 |
 | `run_eval.py` | 评测协议（max_new_tokens 派生） |
-| `schema.py` / `scoring.py` | 样例结构与计分（含 clean_correct 口径） |
+| `schema.py` / `scoring.py` | 样例结构与计分（含 clean_correct 计分） |
 | `vision_opd_tools.py` / `_v2` / `_v3` | 工具（sha256、percentile 等） |
 | `vision_opd_profile.py` | 注册 vision_opd_9b profile |
 | `prompts.py` / `sampling.py` / `caption_metrics.py` / `validate_run.py` | 提示词、采样、caption 代理指标、验证 |

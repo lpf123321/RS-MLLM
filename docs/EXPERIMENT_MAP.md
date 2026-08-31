@@ -8,7 +8,7 @@
 | 报告位置 | 内容 | 仓库对应 | 运行 |
 |---|---|---|---|
 | §3.2 数据集 | 四个基准清单 | `datasets_data/{vrsbench_eval,mme_rs,xlrs,levircc_test}.jsonl` | 数据预处理入口：`rsmllm` 菜单 [5] |
-| 附录·评测校验条件 | 像素 200,704–2,097,152、greedy、批基准 | `rsmllm/config.py` `REPORT_CONF` | 该配置为报告口径唯一来源 |
+| 附录·评测校验条件 | 像素 200,704–2,097,152、greedy、批基准 | `rsmllm/config.py` `REPORT_CONF` | 报告中的唯一配置来源 |
 | 附录·评测校验条件 | 清单子集切换 | `--data_path_overrides`（覆盖清单路径） | 见 `evaluation/main.py` 参数；`--data_root` 为**输出目录** |
 
 ## ② 训练（报告 §5 多专家 LoRA + OPSD）
@@ -81,7 +81,7 @@
 `任务前缀 → 关键词 → 默认 General` 顺序匹配，Adapter Manager 动态加载并
 仅激活**一个**适配器（基座常驻显存）。
 
-| 推理参数 | 报告口径 | 仓库实现 | 一致 |
+| 推理参数 | 报告配置 | 仓库实现 | 一致 |
 |---|---|---|---|
 | 推理引擎 | vLLM 0.26 批量调度 | `rsmllm/serve.py`；评测 `evaluation/main.py` | ✅ |
 | 像素区间 | 200,704 – 2,097,152 | `config.REPORT_CONF` + serve `mm_processor_kwargs` | ✅ |

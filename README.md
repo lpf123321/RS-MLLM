@@ -158,6 +158,10 @@ source setup.sh             # 有 uv → uv sync --locked 并激活 .venv；无 
 
 > 被 `source` 后会自动激活对应环境；直接 `bash setup.sh` 执行时只安装、打印激活指引。
 
+> **评测环境独立**（vllm 0.26 + torch 2.11 cu129，与训练环境不同）：
+> `cd evaluation/vllm_eval && uv sync --locked`（见 `evaluation/vllm_eval/README.md`）。
+> 评测器依赖 vllm 0.26，不能用 3.2 的训练环境运行（torch 2.8 cu128 缺 vllm）。
+
 ### 3.3 模型推理
 
 **推荐：交互式控制台（问答式选择任务，模型首次使用自动从 ModelScope 拉取）**
@@ -180,6 +184,31 @@ python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本
 `RSMLLM_MODEL_CACHE` 可覆盖），离线时 `MODELSCOPE_OFFLINE=1` 强制本地命中。
 
 ### 3.4 模型评测
+
+评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384），
+一键还原环境：
+
+```bash
+# 1) 一键环境（uv sync --locked 精确锁定 vllm 0.26 + torch 2.11 cu129）
+bash setup.sh                      # 训练/推理环境(torch 2.8 cu128)
+bash evaluation/vllm_eval/setup_env.sh   # 评测环境(vllm 0.26 cu129, 独立 venv)
+export VLLM_USE_FLASHINFER_SAMPLER=0     # 必需(flashinfer 0.6.14 与 nvcc12.4 不兼容)
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+# 2) vLLM 评测器(与报告一致: 三pass + clean_correct 计分)
+cd evaluation/vllm_eval
+.venv/bin/python vision_opd_vllm_eval.py \
+  --manifest /path/to/testset.jsonl \
+  --model /path/to/model_dir \
+  --model-profile mmerestore_bf16   # 或 --derived-profile <manifest.json>
+  --output-dir results/xxx \
+  --min-pixels 200704 --max-pixels 2097152 --batch-size 128
+
+# 3) 评分(与报告一致: 离散题只算 clean_eligible, caption 走 caption_metrics)
+.venv/bin/python score_run.py results/xxx
+```
+
+**转录评测（Transformers 路径，不依赖 vLLM）**：
 
 ```bash
 ./bin/rsmllm          # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
@@ -205,7 +234,11 @@ python -m rsmllm.quantize --method w8a8-int8 --model mmerestore_bf16 \
 **容错探针 / TTFT / 并发扫描 / 剪枝**（实验级入口）：
 
 ```bash
-python scripts/quant_tol_probe.py       # 位翻转注入 + 完整性检测
+python scripts/quant_tol_probe.py \
+  --model bf16 --model-dir /path/to/bf16 \
+  --model w8a8 --model-dir /path/to/w8a8 \
+  --model gptq --model-dir /path/to/gptq \
+  --out-dir results/quant_tol_probe     # 容错探针: 位翻转 + 哈希检测率 + 输出漂移
 python scripts/ttft_serve_probe.py      # vLLM serve /metrics TTFT
 python scripts/run_batch_scan.py        # 6 档并发吞吐/时延扫描
 python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描

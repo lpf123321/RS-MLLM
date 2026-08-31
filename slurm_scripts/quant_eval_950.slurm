@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
 #SBATCH --time=02:00:00
-# 量化模型 950 清单评测（与 bf16 基线同口径，仓库内评测器）
+# 量化模型 950 清单评测（与 bf16 基线相同配置，仓库内评测器）
 # 用法: sbatch slurm_scripts/quant_eval_950.slurm <model_dir> <profile> <outdir> [manifest]
 set -euo pipefail
 
@@ -32,7 +32,7 @@ echo "=== quant950 start $(date -Is) model=$MODEL profile=$PROFILE ==="
   --model "$MODEL" --model-profile "$PROFILE" --output-dir "$OUTDIR" \
   --batch-size 64 --max-num-seqs 64 --max-model-len 16384
 
-# 评分（clean_correct 官方口径，用仓库内 schema/scoring）
+# 评分（clean_correct 官方计分，用仓库内 schema/scoring）
 "${UV}" run --project "${ENV}" --offline python "${EVAL_DIR}/score_run.py" "$OUTDIR"
 
 echo "=== quant950 done $(date -Is) ==="
