@@ -1,6 +1,14 @@
 """量化容错敏感性比较探针：对 bf16 / W8A8-INT8 / W4A16-GPTQ 三个模型表示，
 注入固定种子的权重位翻转，测量 (A) 完整性哈希检测率 (B) 绕过校验加载后的输出漂移。
+
+独立运行:
+    python scripts/quant_tol_probe.py \
+        --model bf16 --model-dir /path/to/model_mmerestore \
+        --model w8a8 --model-dir /path/to/model_mmerestore_w8a8_int8 \
+        --model gptq --model-dir /path/to/model_mmerestore_w4a16_gptq \
+        --out-dir results/quant_tol_probe
 """
+import argparse
 import typing  # noqa: F401
 import torch  # noqa: F401
 import os
@@ -12,12 +20,6 @@ import numpy as np
 
 from vllm import LLM, SamplingParams
 
-BASE = "/home/u2024311009/tiled_rag"
-MODELS = {
-    "bf16": f"{BASE}/model_mmerestore",
-    "w8a8": f"{BASE}/compressed_models/model_mmerestore_w8a8_int8",
-    "gptq": f"{BASE}/compressed_models/model_mmerestore_w4a16_gptq",
-}
 PROMPTS = [
     "请用一句话描述这幅遥感图像。",
     "图中主要地物是什么？",
@@ -30,9 +32,6 @@ PROMPTS = [
     "图中主干道走向如何？",
     "指出图中颜色最深的区域。",
 ] * 2
-SEED = 20260826
-N_FLIPS = 20
-OUT = "/home/u2024311009/RS-MLLM/results/quant_tol_probe"
 
 
 def sha256_file(path: str) -> str:
@@ -102,8 +101,25 @@ def run(model_dir: str, prompts: list[str], sp: SamplingParams) -> dict:
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    # 每个模型: --model <名字> --model-dir <路径>（可多组）
+    ap.add_argument("--model", action="append", default=[], help="模型名(bf16/w8a8/gptq/任意)")
+    ap.add_argument("--model-dir", action="append", default=[], help="模型目录，与 --model 一一对应")
+    ap.add_argument("--out-dir", default="results/quant_tol_probe", help="输出目录(默认仓库内 results/)")
+    ap.add_argument("--n-flips", type=int, default=20, help="每个权重张量注入的翻转位个数")
+    ap.add_argument("--seed", type=int, default=20260826, help="随机种子(可复现)")
+    ap.add_argument("--max-tokens", type=int, default=40, help="生成最大 token 数(短答)")
+    args = ap.parse_args()
+
+    if len(args.model) != len(args.model_dir):
+        ap.error("--model 与 --model-dir 数量必须一致(如 --model bf16 --model-dir /path/to/model)")
+    MODELS = dict(zip(args.model, args.model_dir))
+    SEED = args.seed
+    N_FLIPS = args.n_flips
+    OUT = args.out_dir
+
     os.makedirs(OUT, exist_ok=True)
-    sp = SamplingParams(max_tokens=40, temperature=0.0)
+    sp = SamplingParams(max_tokens=args.max_tokens, temperature=0.0)
     result = {}
     for name, mdir in MODELS.items():
         print(f"=== {name} ===", flush=True)
