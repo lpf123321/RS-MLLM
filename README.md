@@ -1,4 +1,24 @@
 
+## 目录
+
+- [一、基本信息](#一基本信息)
+  - [1.1 摘要](#11-摘要)
+  - [1.2 主要工作](#12-主要工作)
+  - [1.3 项目分工](#13-项目分工)
+- [二、项目概述](#二项目概述)
+  - [2.1 整体架构图](#21-整体架构图)
+- [三、快速开始](#三快速开始)
+  - [2.1 硬件要求](#21-硬件要求)
+  - [2.2 环境配置](#22-环境配置)
+  - [2.3 模型推理](#23-模型推理)
+  - [2.4 模型评测](#24-模型评测)
+  - [2.5 模型训练](#25-模型训练)
+- [四、测试结果](#四测试结果)
+- [五、目录索引](#五目录索引)
+- [六、Acknowledgment](#六acknowledgment)
+
+---
+
 ## 一、基本信息
 
 ### 1.1 摘要
@@ -123,20 +143,20 @@ uv sync --locked            # 按 uv.lock 精确安装 121 个依赖（CUDA 12.8
 source .venv/bin/activate
 ```
 
-**方式二：一键配置（`setup.sh` 自动识别 uv/conda 并自动进入环境）**
+**方式二：Docker 容器（推荐**
+
+```bash
+docker build -t rs-mllm .
+docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
+```
+
+**方式三：一键配置（`setup.sh` 自动识别 uv/conda 并自动进入环境）**
 
 ```bash
 source setup.sh             # 有 uv → uv sync --locked 并激活 .venv；无 uv → conda 兜底
 ```
 
 > 被 `source` 后会自动激活对应环境；直接 `bash setup.sh` 执行时只安装、打印激活指引。
-
-**方式三：Docker 容器**
-
-```bash
-docker build -t rs-mllm .
-docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
-```
 
 ### 2.3 模型推理
 
