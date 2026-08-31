@@ -1,0 +1,28 @@
+[project]
+name = "rsmllm-vllm-eval"
+version = "0.1.0"
+description = "RS-MLLM vLLM 离线评测器环境(报告口径): vllm 0.26 + torch 2.11 cu129 + torchcodec 0.15 cu129"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+    "torchaudio==2.11.0",
+    "vllm==0.26.0",
+    "av",
+    "safetensors",
+    "torchcodec==0.15.0+cu129",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu129" }
+torchvision = { index = "pytorch-cu129" }
+torchaudio = { index = "pytorch-cu129" }
+torchcodec = { index = "pytorch-cu129" }
+# vllm 0.26 cu129 wheel 来自官方 GitHub release(仅 Linux x86_64)
+# setup_env.sh 会下载到本目录; 若已存在用 path 本地还原(避免重复下载)
+vllm = { path = "./vllm-0.26.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true

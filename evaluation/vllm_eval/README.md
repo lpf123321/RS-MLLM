@@ -36,24 +36,24 @@ python vision_opd_vllm_eval.py \
 
 ## 运行环境（vllm 0.26 + torch 2.11 cu129）
 
-评测器依赖 **vLLM 0.26**，用本项目独立环境（不与 rs-mllm 主项目共用）：
+评测器依赖 **vLLM 0.26**，用本项目独立环境（不与 rs-mllm 主项目共用）。
+**标准可复现**（uv 项目 + uv.lock 精确锁定，已验证干净环境加载 Qwen3.5 成功）：
 
 ```bash
-# 标准 uv 环境（cu129 wheel）
-uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python \
-  --index-url https://download.pytorch.org/whl/cu129 \
-  torch==2.11.0+cu129 torchvision==0.26.0+cu129 torchaudio==2.11.0+cu129 \
-  -i https://pypi.org/simple av \
-  "vllm==0.26.0+cu129" --find-links https://wheels.vllm.ai/0.26.0/cu129
+# 一键: bash evaluation/vllm_eval/setup_env.sh
+cd evaluation/vllm_eval
+uv sync --locked          # 依 uv.lock 精确还原(vllm 0.26 + torch 2.11 cu129 + torchcodec 0.15 cu129)
 ```
 
 运行前置（Qwen3.5 加载）：
 ```bash
 export VLLM_USE_FLASHINFER_SAMPLER=0          # flashinfer 0.6.14 与 nvcc12.4 不兼容
-export LD_LIBRARY_PATH=<ffmpeg全链symlink目录>:$LD_LIBRARY_PATH  # torchcodec/ffmpeg
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 ```
+
+> **注意**：`VLLM_USE_FLASHINFER_SAMPLER=0` 为必需（否则 flashinfer 0.6.14 编译失败）。
+> 图片评测**不需要** `LD_LIBRARY_PATH`（uv.lock 已含 torchcodec cu129 + nvidia libs）。
+> vllm wheel 由 `setup_env.sh` 下载；GitHub 慢时可用 ghproxy 加速。
 
 ## 数据/模型
 
