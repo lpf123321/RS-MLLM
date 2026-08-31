@@ -8,10 +8,11 @@ Outputs:
 
 import json
 import os
+from rsmllm.config import DATA_ROOT
 from pathlib import Path
 
-DATA_ROOT = Path("/users/u2024311136/shared/shared_datasets/VRSBench")
-OUTPUT_DIR = Path("/home/u2024311136/RS-MLLM/output")
+DATA_ROOT = Path("$DATA_ROOT/VRSBench")
+OUTPUT_DIR = Path("REPO_ROOT/output")
 
 TASK_PREFIX = {
     "caption": "[CAP]",

@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,7 +25,7 @@ from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASETS = {

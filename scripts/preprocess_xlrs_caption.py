@@ -13,7 +13,7 @@ import argparse
 import json
 
 DEFAULT_SRC = (
-    "/users/u2024311136/shared/shared_models/lora_expert/evaluation/split_evals/"
+    "M_ROOT/lora_expert/evaluation/split_evals/"
     "xlrs_caption_en.jsonl"
 )
 DEFAULT_OUT = "evaluation/data/xlrs_caption.jsonl"

@@ -17,7 +17,7 @@ from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 from peft import PeftModel
 
 MODEL_PATH = '/home/u2024311149/models/Qwen3.5-4B'
-LORA_PATH = '/users/u2024311136/shared/shared_models/sft_stage1_lora'
+LORA_PATH = 'M_ROOT/sft_stage1_lora'
 DATA_ROOT = os.environ.get('DATA_ROOT', '/home/u2024311149/RS-MLLM/datasets/shared_datasets')
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prune/output/viz')
 os.makedirs(OUT_DIR, exist_ok=True)

@@ -12,7 +12,7 @@
 set -euo pipefail
 export PYTHONUNBUFFERED=1
 cd /home/u2024311149/RS-MLLM
-export DATA_ROOT=/users/u2024311136/shared/shared_datasets
+export DATA_ROOT=${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 python scripts/smoke_test_delta_fourier.py

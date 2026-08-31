@@ -16,6 +16,7 @@ Usage (on a GPU node):
 """
 import argparse
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,7 +25,7 @@ from evaluation.evalsets import vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 
 CONFIGS = [
     ("l2 keep=0.5 + FastV-K keep=0.5 (k=2)",

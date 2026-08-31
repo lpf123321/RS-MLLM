@@ -14,7 +14,7 @@
 
 set -eo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-DATA_ROOT_VALUE="${DATA_ROOT:-/users/u2024311136/shared/shared_datasets}"
+DATA_ROOT_VALUE="${DATA_ROOT:-${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}}"
 DATA_PATH="${DATA_PATH:-$DATA_ROOT_VALUE/XLRS-Bench-lite/xlrs.jsonl}"
 CONDA_ENV="${CONDA_ENV:-rs_mllm}"
 

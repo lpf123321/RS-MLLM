@@ -17,9 +17,9 @@ cd /home/u2024311149/RS-MLLM
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 
 python scripts/convert_merged_model_to_delta.py \
-    --base_model /users/u2024311136/shared/shared_models/lora_expert/base_model \
+    --base_model ${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/base_model \
     --merged_model prune/output/new_experts/general_exp7_merged \
-    --reference_delta /users/u2024311136/shared/shared_models/lora_expert/lora/general/delta_model.pt \
+    --reference_delta ${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/general/delta_model.pt \
     --output prune/output/new_experts/general_exp7_delta.pt
 
 echo "=== MERGED MODEL TO DELTA DONE ==="

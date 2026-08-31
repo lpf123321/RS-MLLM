@@ -2,6 +2,7 @@
 """One-sample-per-task smoke test for the Delta task Router."""
 
 import json
+from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
 
 from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
@@ -10,11 +11,11 @@ from evaluation.router import rules
 from evaluation.router.task_prune_config import CANDIDATE_TASK_PRUNE_CONFIG
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHARED = "/users/u2024311136/shared/shared_datasets"
+SHARED = "DATA_ROOT"
 GENERAL = "prune/output/new_experts/general_exp7_delta.pt"
-GROUNDING = "/users/u2024311136/shared/shared_models/lora_expert/lora/grounding/delta_model.pt"
-CHANGE = "/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt"
-CAPTION = "/users/u2024311136/shared/shared_models/lora_expert/lora/caption/delta_model.pt"
+GROUNDING = "M_ROOT/lora_expert/lora/grounding/delta_model.pt"
+CHANGE = "M_ROOT/lora_expert/lora/change/delta_model.pt"
+CAPTION = "M_ROOT/lora_expert/lora/caption/delta_model.pt"
 
 
 def first(module, path, task=None):
@@ -39,7 +40,7 @@ def main():
     samples[1]["prompt"] = caption_instruction
 
     adapter = DeltaPrunedAdapter(
-        "/users/u2024311136/shared/shared_models/lora_expert/base_model",
+        "M_ROOT/lora_expert/base_model",
         general_lora=GENERAL, grounding_lora=GROUNDING,
         change_lora=CHANGE, caption_lora=CAPTION,
         prune_method="l2norm", keep_ratio=1.0,

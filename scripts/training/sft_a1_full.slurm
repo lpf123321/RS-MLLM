@@ -35,7 +35,7 @@ MODEL_PATH="$REPO_ROOT/outputs/merged/sft_stage1_clean"
 # ---- 混合训练数据（待 4096 导出完成后生成）----
 DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/a1_domainalign.json"
 # ---- 高分辨率 XLRS train 图目录 ----
-XRS_IMG="/users/u2024311136/shared/shared_datasets/XLRS-Bench_visual_grounding_en/images_exported_train_4096"
+XRS_IMG="${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}/XLRS-Bench_visual_grounding_en/images_exported_train_4096"
 # ---- VRS refer 图 root（相对路径 assets/vrsbench/... 拼接）----
 SHR_DATA="/users/u2024311009/team_share/rs-mllm-ready-20260725/data"
 

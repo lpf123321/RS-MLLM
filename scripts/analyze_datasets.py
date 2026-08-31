@@ -5,14 +5,15 @@ Analyzes all 4 remote sensing datasets and outputs a markdown report.
 
 import json
 import os
+from rsmllm.config import DATA_ROOT
 from collections import Counter
 from pathlib import Path
 
 from PIL import Image
 
 
-DATA_ROOT = Path("/users/u2024311136/shared/shared_datasets")
-REPORT_PATH = Path("/home/u2024311136/RS-MLLM/data/dataset_analysis_report.md")
+DATA_ROOT = Path("$DATA_ROOT")
+REPORT_PATH = Path("REPO_ROOT/data/dataset_analysis_report.md")
 
 
 def _image_resolution_counter(image_paths, max_samples=200):

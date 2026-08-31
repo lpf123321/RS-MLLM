@@ -11,9 +11,9 @@
 
 set -e
 export PYTHONUNBUFFERED=1
-export PYTHONPATH="${PYTHONPATH:-}:/home/u2024311136/RS-MLLM"
+export PYTHONPATH="${PYTHONPATH:-}:${RSMLLM_REPO:-REPO}"
 
-cd /home/u2024311136/RS-MLLM
+cd ${RSMLLM_REPO:-REPO}
 source /opt/app/anaconda3/etc/profile.d/conda.sh
 conda activate rs_mllm
 set +u

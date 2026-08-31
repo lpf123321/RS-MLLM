@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=rsmllm-docker-build
-#SBATCH --output=/home/u2024311009/RS-MLLM/logs/docker_build_%j.log
+#SBATCH --output=${RSMLLM_LOGS_DIR:-REPO/logs}/docker_build_%j.log
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
@@ -8,7 +8,7 @@
 #SBATCH --time=02:00:00
 # 在 GPU 计算节点上: docker 存在性检查 -> nvidia-smi -> 构建镜像 -> 容器内 import 验证
 set -euo pipefail
-cd /home/u2024311009/rs-mllm-docker
+cd ${RSMLLM_DOCKER_DIR:-REPO}
 
 echo "== docker =="; docker --version
 echo "== gpu =="; nvidia-smi -L || true

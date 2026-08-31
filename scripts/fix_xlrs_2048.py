@@ -16,11 +16,12 @@ Usage:
 """
 import argparse
 import json
+from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
 import re
 
 SPLIT_EVALS = (
-    "/users/u2024311136/shared/shared_models/lora_expert/evaluation/split_evals/"
+    "M_ROOT/lora_expert/evaluation/split_evals/"
 )
 PIXEL_DIMS_RE = re.compile(r"Given a \d+ x \d+ pixel")
 

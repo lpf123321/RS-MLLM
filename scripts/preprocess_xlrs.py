@@ -12,6 +12,7 @@ Images are saved to output/images/ (deduplicated by index, 800 files max).
 import json
 import io
 import os
+from rsmllm.config import DATA_ROOT
 import sys
 import time
 import argparse
@@ -23,8 +24,8 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-ARROW_DIR = Path("/users/u2024311136/shared/shared_datasets/XLRS-Bench-lite/train")
-OUTPUT_DIR = Path("/users/u2024311136/shared/shared_datasets/XLRS-Bench-lite")
+ARROW_DIR = Path("$DATA_ROOT/XLRS-Bench-lite/train")
+OUTPUT_DIR = Path("$DATA_ROOT/XLRS-Bench-lite")
 IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images_resized"
 MAX_LONG_EDGE = 1024
 LOG_FILE = OUTPUT_DIR / "preprocess_xlrs.log"

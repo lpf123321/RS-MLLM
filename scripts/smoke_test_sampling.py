@@ -10,6 +10,7 @@ Checks, for each of the 4 datasets:
 No GPU/model required. Run with the rs_mllm conda env.
 """
 import os
+from pathlib import Path
 import random
 import sys
 from collections import Counter
@@ -19,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs
 from evaluation.router import rules
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),

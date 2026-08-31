@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Smoke test DeltaRouter + token_compression selectors."""
 import argparse
+from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,15 +12,15 @@ from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import vrsbench
 from evaluation.main import SYSTEM_PROMPTS
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", default="/users/u2024311136/shared/shared_models/lora_expert/base_model")
-    parser.add_argument("--general_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/general/delta_model.pt")
-    parser.add_argument("--grounding_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/grounding/delta_model.pt")
-    parser.add_argument("--change_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt")
+    parser.add_argument("--model_path", default="M_ROOT/lora_expert/base_model")
+    parser.add_argument("--general_lora", default="M_ROOT/lora_expert/lora/general/delta_model.pt")
+    parser.add_argument("--grounding_lora", default="M_ROOT/lora_expert/lora/grounding/delta_model.pt")
+    parser.add_argument("--change_lora", default="M_ROOT/lora_expert/lora/change/delta_model.pt")
     parser.add_argument("--keep_ratio", type=float, default=0.5)
     parser.add_argument("--batch_size", type=int, default=2)
     args = parser.parse_args()

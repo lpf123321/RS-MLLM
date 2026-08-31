@@ -18,8 +18,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 
 python scripts/convert_general_sft_exp7_to_delta.py \
-    --base_model /users/u2024311136/shared/shared_models/lora_expert/base_model \
-    --expert_delta /users/u2024311136/shared/shared_models/lora_expert/lora/general/delta_model.pt \
+    --base_model ${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/base_model \
+    --expert_delta ${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/general/delta_model.pt \
     --peft_lora /users/u2024311164/shared/exp7_old_mme_plus_old_xlrs_plus_vrsbench_vqa_weighted_lora \
     --output prune/output/new_experts/general_exp7_merged
 

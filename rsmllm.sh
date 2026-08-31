@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# RS-MLLM 交互式入口: ./rsmllm.sh
+set -euo pipefail
+cd "$(dirname "$0")"
+exec uv run --project . python -m rsmllm.console "$@"

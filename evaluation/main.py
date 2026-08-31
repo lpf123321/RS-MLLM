@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+from pathlib import Path
 import random
 import re
 
@@ -10,7 +11,7 @@ from tqdm import tqdm
 
 from evaluation.evalsets import vrsbench, mme, xlrs, levircc, xlrs_caption, xlrs_grounding
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

@@ -1,0 +1,68 @@
+"""RS-MLLM 集中配置: 所有路径/模型注册/报告口径参数. 环境变量可覆盖: RSMLLM_*.
+
+独立运行约束:
+  - 不依赖任何共享服务器的绝对路径; 默认数据/模型/产物都在仓库内或 MODEL_CACHE.
+  - 数据与模型通过 ModelScope 按需获取(见 rsmllm/models.py), 本地缓存命中即复用.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _env_path(key: str, default: Path) -> Path:
+    v = os.environ.get(key)
+    return Path(v).expanduser().resolve() if v else default
+
+
+# 数据根(清洗后清单默认为仓库 datasets/; 图片/其他大数据通过 RSMLLM_*_ROOT 指向)
+DATA_ROOT = _env_path("RSMLLM_DATA_ROOT", REPO_ROOT / "datasets")
+IMAGES_ROOT = _env_path("RSMLLM_IMAGES_ROOT", DATA_ROOT / "images")
+MODELS_CACHE = _env_path("RSMLLM_MODEL_CACHE", REPO_ROOT / ".models")
+MODELS_ROOT = _env_path("RSMLLM_MODELS_ROOT", REPO_ROOT / "models")
+RESULTS_DIR = _env_path("RSMLLM_RESULTS_DIR", REPO_ROOT / "results")
+LOGS_DIR = _env_path("RSMLLM_LOGS_DIR", REPO_ROOT / "logs")
+
+# Manifest 命名(仓库 datasets_data/ 与共享数据集构建一致)
+MANIFESTS = {
+    "vrsbench": DATA_ROOT / "vrsbench_eval.jsonl",
+    "mme": DATA_ROOT / "mme_rs.jsonl",
+    "xlrs": DATA_ROOT / "xlrs.jsonl",
+    "levircc": DATA_ROOT / "levircc_test.jsonl",
+}
+
+# 评测子集(报告附录: 770 量化对比 / 590 运行时配对 / 400 离散精度 / 950 量化部署)
+SUBSETS = {
+    "950": "e2_manifest",
+    "770": "quant_compare",
+    "590": "runtime_pair",
+    "400": "discrete_direction",
+    "full": "alltask_full",
+}
+
+# 报告口径配置(与《技术报告》附录"评测校验条件"保持一致)
+REPORT_CONF = {
+    "vllm_version": "0.26.0",
+    "dtype": "bfloat16",
+    "sampling": "greedy",
+    "max_model_len": 16384,
+    "batch_size": 64,
+    "max_num_seqs": 64,
+    "min_pixels": 200704,
+    "max_pixels": 2097152,
+    "gpu_memory_utilization": 0.85,
+}
+
+# ModelScope 模型注册表(download → 按需拉取)
+MODEL_REGISTRY = {
+    "base": "HITSZ-JBGS/rs-mllm-qwen35-4b",
+    "mmerestore_bf16": "HITSZ-JBGS/rs-mllm-mmerestore-bf16",
+    "w8a8": "HITSZ-JBGS/rs-mllm-mmerestore-w8a8-int8",
+    "gptq": "HITSZ-JBGS/rs-mllm-mmerestore-w4a16-gptq",
+    "expert_general": "HITSZ-JBGS/rs-mllm-expert-general",
+    "expert_ground": "HITSZ-JBGS/rs-mllm-expert-ground",
+    "expert_change": "HITSZ-JBGS/rs-mllm-expert-change",
+    "expert_caption": "HITSZ-JBGS/rs-mllm-expert-caption",
+}

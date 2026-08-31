@@ -3,13 +3,13 @@ set -e
 # ================================================================
 # 修复 jsonl 中的绝对路径 → 新服务器路径
 #
-# jsonl 文件中硬编码了 /users/u2024311136/shared/shared_datasets/
+# jsonl 文件中硬编码了 ${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}/
 # 此脚本将其替换为 $DATA_ROOT (默认: $REPO_ROOT/datasets)
 # ================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-OLD_PATH="/users/u2024311136/shared/shared_datasets"
+OLD_PATH="${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}"
 NEW_PATH="${DATA_ROOT:-$REPO_ROOT/datasets}"
 
 echo "============================================"

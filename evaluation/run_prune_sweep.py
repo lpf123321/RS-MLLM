@@ -8,7 +8,7 @@ can be resumed; ``summary.json`` aggregates everything for plotting.
 
 Example:
     python -m evaluation.run_prune_sweep \
-        --model_path /users/u2024311136/shared/shared_models/lora_expert/base_model \
+        --model_path M_ROOT/lora_expert/base_model \
         --general_lora .../lora/general --grounding_lora .../lora/grounding \
         --change_lora .../lora/change \
         --methods l2 divprune \
@@ -18,7 +18,9 @@ Example:
 """
 import argparse
 import json
+from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,7 +29,7 @@ from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs
 from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASETS = {

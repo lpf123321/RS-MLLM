@@ -25,14 +25,14 @@ export PYTHONUNBUFFERED=1
 REPO_ROOT=/home/u2024311149/RS-MLLM
 cd "$REPO_ROOT"
 
-export DATA_ROOT=/users/u2024311136/shared/shared_datasets
+export DATA_ROOT=${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 
-MODEL_PATH="${MODEL_PATH:-/users/u2024311136/shared/shared_models/lora_expert/base_model}"
-GENERAL="${GENERAL_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/general/delta_model.pt}"
-GROUNDING="${GROUNDING_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/grounding/delta_model.pt}"
-CHANGE="${CHANGE_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt}"
+MODEL_PATH="${MODEL_PATH:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/base_model}"
+GENERAL="${GENERAL_LORA:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/general/delta_model.pt}"
+GROUNDING="${GROUNDING_LORA:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/grounding/delta_model.pt}"
+CHANGE="${CHANGE_LORA:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/change/delta_model.pt}"
 N_SAMPLES="${N_SAMPLES:-1000}"
 SAMPLE_SEED="${SAMPLE_SEED:-2026}"
 BATCH_SIZE="${BATCH_SIZE:-32}"

@@ -8,7 +8,9 @@ The General expert can be replaced with the merged exp7 Delta.
 
 import argparse
 import json
+from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,7 +21,7 @@ from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.router.task_prune_config import CANDIDATE_TASK_PRUNE_CONFIG
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),
@@ -56,17 +58,17 @@ class XLRSInstructionCaption:
 
 DATASETS["xlrs_caption"] = (
     XLRSInstructionCaption,
-    "/users/u2024311136/shared/shared_models/lora_expert/evaluation/split_evals/xlrs_caption_en.jsonl",
+    "M_ROOT/lora_expert/evaluation/split_evals/xlrs_caption_en.jsonl",
 )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Delta task-adaptive pruning Router")
-    parser.add_argument("--model_path", default="/users/u2024311136/shared/shared_models/lora_expert/base_model")
+    parser.add_argument("--model_path", default="M_ROOT/lora_expert/base_model")
     parser.add_argument("--general_lora", default="prune/output/new_experts/general_exp7_delta.pt")
-    parser.add_argument("--grounding_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/grounding/delta_model.pt")
-    parser.add_argument("--change_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt")
-    parser.add_argument("--caption_lora", default="/users/u2024311136/shared/shared_models/lora_expert/lora/caption/delta_model.pt")
+    parser.add_argument("--grounding_lora", default="M_ROOT/lora_expert/lora/grounding/delta_model.pt")
+    parser.add_argument("--change_lora", default="M_ROOT/lora_expert/lora/change/delta_model.pt")
+    parser.add_argument("--caption_lora", default="M_ROOT/lora_expert/lora/caption/delta_model.pt")
     parser.add_argument("--datasets", nargs="+", choices=list(DATASETS), default=list(DATASETS))
     parser.add_argument("--random_samples", type=int, default=1000)
     parser.add_argument("--sample_seed", type=int, default=2026)

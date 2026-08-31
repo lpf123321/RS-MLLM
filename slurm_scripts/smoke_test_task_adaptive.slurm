@@ -17,15 +17,15 @@ export PYTHONUNBUFFERED=1
 REPO_ROOT=/home/u2024311149/RS-MLLM
 cd "$REPO_ROOT"
 
-export DATA_ROOT=/users/u2024311136/shared/shared_datasets
+export DATA_ROOT=${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PATH="/home/u2024311149/.conda/envs/rs_mllm/bin:$PATH"
 
-MODEL_PATH="${MODEL_PATH:-/users/u2024311136/shared/shared_models/lora_expert/base_model}"
+MODEL_PATH="${MODEL_PATH:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/base_model}"
 GENERAL="${GENERAL_LORA:-/home/u2024311149/RS-MLLM/prune/output/new_experts/general_exp7_delta.pt}"
 GROUNDING="${GROUNDING_LORA:-/home/u2024311149/RS-MLLM/prune/output/new_experts/ground_expert_update_delta.pt}"
-CHANGE="${CHANGE_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/change/delta_model.pt}"
-CAPTION="${CAPTION_LORA:-/users/u2024311136/shared/shared_models/lora_expert/lora/caption/delta_model.pt}"
+CHANGE="${CHANGE_LORA:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/change/delta_model.pt}"
+CAPTION="${CAPTION_LORA:-${RSMLLM_MODELS_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/models}/lora_expert/lora/caption/delta_model.pt}"
 
 mkdir -p logs
 

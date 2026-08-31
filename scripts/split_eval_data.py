@@ -12,9 +12,10 @@ LEVIR-CC 全是 change caption（路由到 Change）。
 """
 import json
 import os
+from rsmllm.config import DATA_ROOT
 
-SHARED = "/users/u2024311136/shared/shared_datasets"
-OUT = "/home/u2024311136/RS-MLLM/evaluation/split_evals"
+SHARED = "$DATA_ROOT"
+OUT = "REPO_ROOT/evaluation/split_evals"
 os.makedirs(OUT, exist_ok=True)
 
 

@@ -16,6 +16,7 @@ Usage:
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,7 +38,7 @@ def main():
     ap.add_argument("--max_samples", type=int, default=0)
     args = ap.parse_args()
 
-    SHARED = os.environ.get("DATA_ROOT", "/users/u2024311136/shared/shared_datasets")
+    SHARED = os.environ.get("DATA_ROOT", str(Path(__file__).resolve().parent.parent / "datasets"))
     data_path = args.data_path or f"{SHARED}/VRSBench/vrsbench_eval.jsonl"
 
     from evaluation.adapters.router import RouterAdapter

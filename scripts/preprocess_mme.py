@@ -8,6 +8,7 @@ Output: output/mme_rs.jsonl (3,738 lines), output/images/mme_*.png (1,265 max)
 
 import json
 import os
+from rsmllm.config import DATA_ROOT
 import sys
 import time
 import traceback
@@ -18,9 +19,9 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-ANNOT_PATH = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS/MME_RealWorld.json")
-IMAGE_ROOT = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS")
-OUTPUT_DIR = Path("/users/u2024311136/shared/shared_datasets/MME-RealWorld-RS")
+ANNOT_PATH = Path("$DATA_ROOT/MME-RealWorld-RS/MME_RealWorld.json")
+IMAGE_ROOT = Path("$DATA_ROOT/MME-RealWorld-RS")
+OUTPUT_DIR = Path("$DATA_ROOT/MME-RealWorld-RS")
 IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images_resized"
 MAX_LONG_EDGE = 1024
 LOG_FILE = OUTPUT_DIR / "preprocess_mme.log"
