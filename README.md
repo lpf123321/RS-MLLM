@@ -186,11 +186,13 @@ python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本
 # 或脚本直接调用:
 python -m evaluation.main --model_path w8a8 --datasets vrsbench mme xlrs levircc \
   --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
-  --data_root datasets --output results/950.json
+  --data_path_overrides '{"vrsbench":"/path/950/vrsbench_eval.jsonl","mme":"/path/950/mme_rs.jsonl","xlrs":"/path/950/xlrs.jsonl","levircc":"/path/950/levircc_test.jsonl"}' \
+  --output results/950.json
 ```
 
 评测子集（`950` 量化部署 / `770` 量化对比 / `590` 运行时配对 / `400` 离散精度）
-通过 `--data_root` 指向对应清单目录实现，与报告附录的说明一致；
+通过 `--data_path_overrides` 把清单路径改到对应子集文件实现（`--data_root` 是
+结果的输出目录，默认 `output/`），与报告附录的说明一致；
 像素上下限与报告评测设置一致（200,704 - 2,097,152）。
 
 **量化转换**（与报告同链路）：

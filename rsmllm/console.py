@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 
 from rsmllm.config import REPORT_CONF, SUBSETS, MANIFESTS
 from rsmllm.models import get_model, MODEL_REGISTRY
@@ -46,7 +47,8 @@ def _cmd_eval() -> None:
            "--eval_batch_size", str(REPORT_CONF["batch_size"]),
            "--image_min_pixels", str(REPORT_CONF["min_pixels"]),
            "--image_max_pixels", str(REPORT_CONF["max_pixels"]),
-           "--data_root", str(MANIFESTS["vrsbench"].parent)]
+           "--data_path_overrides", json.dumps(
+               {k: str(v) for k, v in MANIFESTS.items()})]
     subprocess.run(cmd, check=False)
 
 
