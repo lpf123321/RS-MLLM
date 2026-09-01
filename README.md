@@ -214,21 +214,24 @@ python -m rsmllm.router --chat
 
 ### 3.4 模型评测
 
-评测走 **vLLM 0.26 离线批量推理**（greedy + bf16 + 像素 200,704–2,097,152）。数据与模型首次自动懒加载，无需手动准备。
+评测走 `evaluation/main.py`（vLLM 批处理 + 官方计分，与报告一致：greedy + bf16 + 像素 200,704–2,097,152）。
+数据与模型首次自动懒加载（图片/清单/权重），无需手动准备。
 
 ```bash
 # 一次性建评测环境
 bash evaluation/vllm_eval/setup_env.sh
 
-# 一键路由专家评测（4 专家×任务；--limit 限制样本数做小验证）
-evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
+# 单专家评测（如 Caption 专家评 VRSBench Caption；模型自动从 ModelScope 拉取）
+evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
+    --adapter qwen35vl \
+    --model-path <expert_caption路径: 本地目录 或 ModelScope 别名 expert_caption> \
+    --datasets vrsbench --subtask caption
 
-# 或交互入口（菜单 [1]）
-./rsmllm.sh
+# 一键路由专家评测（4 专家×对应任务）
+evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 ```
 
-懒加载：图片 `datasets/shared_datasets/`（`prepare_eval` 自动下载）、清单 `evaluation/vllm_eval/manifests/`（自动构建）、模型 `.models/`（`get_model` 下载）。
-结果写入 `evaluation/vllm_eval/results/<manifest>_<profile>/`（`clean_summary.json` 等）。HF 走镜像 `https://hf-mirror.com`。
+懒加载：图片 `datasets/shared_datasets/`、模型 `.models/`（`get_model` 自动下载）。`--subtask` 可选 `vqa/caption/referring/mcq/change`。结果写入 `--output` 指定 json。
 > **数据懒加载**：评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像
 > （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
 > 并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，

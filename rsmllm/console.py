@@ -68,25 +68,25 @@ def _cmd_eval() -> None:
     print(f"  → 评测 model={model} datasets={datasets} profile={profile}")
     # 标准 ModelScope 用法: 别名/ID 走 snapshot_download, 缓存命中复用, 返回真实缓存路径
     model_dir = get_model(model)
-    # vLLM 评测器(评测环境, 报告一致): manifest 懒加载(图片就绪 + 相对路径可移植)
+    # 官方评测入口: evaluation.main.py --adapter qwen35vl (完整模型逐专家), 非 vision_opd 遗留器
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
-    eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
     py = eval_py if eval_py.exists() else sys.executable
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     from rsmllm.data import prepare_eval
     ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
-    manifest = prepare_eval(ds)   # 首次: 图片下载 + 可移植评测清单构建(含 ensure)
-    # profile 若为本地文件路径 → --derived-profile; 否则按名字 → --model-profile
-    profile_path = Path(profile).expanduser()
-    profile_arg = "--derived-profile" if profile_path.is_file() else "--model-profile"
-    cmd = [str(py), str(eval_dir / "vision_opd_vllm_eval.py"),
-           "--manifest", str(manifest),
-           "--model", model_dir,
-           profile_arg, profile,
-           "--min-pixels", str(REPORT_CONF["min_pixels"]),
-           "--max-pixels", str(REPORT_CONF["max_pixels"]),
-           "--batch-size", str(REPORT_CONF["batch_size"])]
+    prepare_eval(ds)   # 首次: 图片下载(评测清单由 main.py 自加载 datasets_data)
+    subtask = _ask("子任务(留空=全量 / vqa / caption / referring / mcq / change)", "")
+    main_py = Path(__file__).resolve().parent.parent / "evaluation" / "main.py"
+    cmd = [str(py), str(main_py),
+           "--adapter", "qwen35vl",
+           "--model-path", model_dir,
+           "--datasets", ds]
+    if subtask:
+        cmd += ["--subtask", subtask]
+    cmd += ["--image_max_pixels", str(REPORT_CONF["max_pixels"]),
+            "--eval_batch_size", str(REPORT_CONF["batch_size"]),
+            "--output", str(Path(__file__).resolve().parent.parent / "results" / f"{ds}_{subtask or 'all'}.json")]
     subprocess.run(cmd, check=False, env=env)
 
 

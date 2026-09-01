@@ -28,7 +28,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = REPO_ROOT / "evaluation" / "vllm_eval"
 PY = EVAL_DIR / ".venv" / "bin" / "python"
-MANIFESTS = EVAL_DIR / "manifests"
 
 # 路由映射: 专家 -> [(任务名, 源清单, task_type 过滤, 输出标签)]
 ROUTE_PLAN = {
@@ -73,42 +72,40 @@ SRC_TO_DATASET = {
     "xlrs_caption_en.jsonl": "xlrs_caption",
 }
 
-
-def build_subtask_manifest(src_name: str, task_type: str | None, label: str) -> Path:
-    """从源 manifest 切出子任务子集(按 task_type), 返回子清单路径."""
-    src = MANIFESTS / src_name
-    if task_type is None:
-        return src
-    out = MANIFESTS / f"{Path(src_name).stem}__{label}.jsonl"
-    written = 0
-    with src.open(encoding="utf-8") as f, out.open("w", encoding="utf-8") as g:
-        for line in f:
-            d = json.loads(line)
-            if d.get("task_type") == task_type:
-                g.write(line)
-                written += 1
-    print(f"  子任务清单: {out.name} ({written} samples)")
-    return out
+# router_eval 任务 -> (evaluation.main 的 datasets, --subtask)
+# 依据报告 §7/§5.3 路由映射; subtask 可选 vqa/caption/referring/mcq/change
+TASK_TO_MAIN = {
+    "vrsbench-vqa": ("vrsbench", "vqa"),
+    "mme": ("mme", "mcq"),
+    "xlrs-bench-lite": ("xlrs", "mcq"),
+    "vrsbench-referring": ("vrsbench", "referring"),
+    "xlrs-bench-grounding-en": ("xlrs_grounding", None),
+    "levir-cc": ("levircc", "change"),
+    "vrsbench-caption": ("vrsbench", "caption"),
+    "xlrs-bench-caption": ("xlrs_caption", "caption"),
+}
 
 
-def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -> int:
+def run_eval(model_path: str, profile: str, dataset: str, subtask: str | None,
+             limit: int | None) -> int:
+    """经 evaluation.main.py 的 qwen35vl 适配器评测(官方入口, 非 vision_opd 遗留器).
+
+    单专家模型(完整模型) → --adapter qwen35vl --model-path <专家完整模型>
+    数据集与子任务: --datasets <ds> [--subtask <subtask>] (--subtask 过滤只评本专家任务)
+    """
+    main_py = REPO_ROOT / "evaluation" / "main.py"
+    cmd = [str(PY), str(main_py),
+           "--adapter", "qwen35vl",
+           "--model-path", model_path,
+           "--datasets", dataset]
+    if subtask:
+        cmd += ["--subtask", subtask]
     if limit:
-        # 子清单截断(评测器无 --max-samples)
-        sub = manifest.with_name(f"{manifest.stem}_n{limit}.jsonl")
-        with manifest.open(encoding="utf-8") as f, sub.open("w", encoding="utf-8") as g:
-            for i, line in enumerate(f):
-                if i >= limit:
-                    break
-                g.write(line)
-        manifest = sub
-    cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
-           "--manifest", str(manifest),
-           "--model", model_path,
-           "--model-profile", profile,
-           "--min-pixels", "200704",
-           "--max-pixels", "2097152",
-           "--batch-size", "128"]
-    print(f"  → 评测 {manifest.name} ...", flush=True)
+        cmd += ["--max-samples", str(limit)]
+    out = REPO_ROOT / "results"
+    out.mkdir(parents=True, exist_ok=True)
+    cmd += ["--output", str(out / f"{dataset}_{subtask or 'all'}.json")]
+    print(f"  → 评测 dataset={dataset} subtask={subtask} ...", flush=True)
     return subprocess.run(cmd, check=False).returncode
 
 
@@ -137,15 +134,18 @@ def main() -> int:
         print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {alias}")
         model_path = resolve_model(alias)
         for task_name, src_name, task_type in tasks:
-            # 首次自动准备: 图片下载 + 可移植评测清单构建(vrsbench 等 6 数据集)
+            # 首次自动准备: 图片/清单懒加载
             from rsmllm.data import prepare_eval
             if src_name in SRC_TO_DATASET:
                 prepare_eval(SRC_TO_DATASET[src_name])
-            print(f"\n[{expert}] {task_name} ...")
-            manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
-            r = run_eval(model_path, alias, manifest, args.limit)
+            dataset, subtask = TASK_TO_MAIN.get(task_name, (None, None))
+            if dataset is None:
+                print(f"  [skip] {task_name}: 未映射到 evaluation.main 数据集")
+                continue
+            print(f"\n[{expert}] {task_name} → dataset={dataset} subtask={subtask} ...")
+            r = run_eval(model_path, alias, dataset, subtask, args.limit)
             rc = max(rc, r)
-    print(f"\n[router-eval] 完成. 结果在 evaluation/vllm_eval/results/ (按任务独立时间戳目录)")
+    print(f"\n[router-eval] 完成. 结果在 results/ (按数据集+子任务 json)")
     return rc
 
 

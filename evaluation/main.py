@@ -69,6 +69,7 @@ def evaluate(
     random_samples=0,
     sample_seed=2026,
     task_max_tokens=None,
+    subtask=None,
 ):
     samples = module.load_data(data_path)
     if start_offset > 0:
@@ -79,6 +80,21 @@ def evaluate(
         )
     elif 0 < max_samples < len(samples):
         samples = samples[:max_samples]
+
+    # 子任务过滤: 逐专家评测只评对应任务(如 caption 专家只评 caption)
+    if subtask:
+        _tag = {
+            "caption": "caption",
+            "referring": "referring", "bbox": "referring",
+            "vqa": "vqa", "mcq": "mcq",
+            "change": "change", "change_caption": "change",
+        }
+        want = _tag.get(subtask)
+        if want:
+            samples = [s for s in samples if s.get("task") == want]
+        if not samples:
+            print(f"  [warn] --subtask {subtask} 无匹配样本(任务标签 {want})", flush=True)
+            return {}, {}
 
     # Rewrite image paths for cross-server compatibility
     if OLD_DATA_ROOT:
@@ -225,6 +241,8 @@ def main():
                         help="Grounding LoRA path (router adapter only)")
     parser.add_argument("--change_lora", type=str, default=None,
                         help="Change LoRA path (router adapter only)")
+    parser.add_argument("--caption_lora", type=str, default=None,
+                        help="Caption LoRA path (router adapter only)")
     parser.add_argument("--image_min_pixels", type=int, default=262144,
                         help="Min pixels for image processing")
     parser.add_argument("--image_max_pixels", type=int, default=1048576,
@@ -241,6 +259,10 @@ def main():
     parser.add_argument("--data_path_overrides", type=str, default=None,
                         help='JSON dict overriding dataset data paths, e.g. '
                          '{\\"vrsbench\\": \\"/path/to/split.jsonl\\"}')
+    parser.add_argument("--subtask", type=str, default=None,
+                        help="Only evaluate one subtask per dataset "
+                             "(vqa / caption / referring / mcq / change); "
+                             "e.g. --subtask caption 评 Caption 子任务")
     args = parser.parse_args()
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -313,6 +335,7 @@ def main():
             general_lora=args.general_lora,
             grounding_lora=args.grounding_lora,
             change_lora=args.change_lora,
+            caption_lora=args.caption_lora,
             image_min_pixels=args.image_min_pixels,
             image_max_pixels=args.image_max_pixels,
         )
@@ -350,6 +373,7 @@ def main():
             ds_results, ds_preds = evaluate(
                 adapter, module, data_path, args.max_samples, args.eval_batch_size,
                 random_samples=args.random_samples, sample_seed=args.sample_seed,
+                subtask=args.subtask,
             )
             all_results[ds_name] = ds_results
             if args.save_predictions:
