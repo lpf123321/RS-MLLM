@@ -93,7 +93,11 @@ def run(model_dir: str, prompts: list[str], sp: SamplingParams) -> dict:
               gpu_memory_utilization=0.85,
               max_num_seqs=8, max_model_len=16384, enable_lora=False)
     outs = llm.generate(prompts, sp)
-    llm = None
+    try:
+        llm.shutdown()  # vLLM 0.26: 显式关闭引擎, 释放显存(仅删引用不够, EngineCore 子进程不释放)
+    except Exception:
+        pass
+    del llm
     import gc
     gc.collect()
     torch.cuda.empty_cache()
