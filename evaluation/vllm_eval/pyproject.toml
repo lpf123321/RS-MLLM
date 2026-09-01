@@ -14,7 +14,6 @@ dependencies = [
     "gradio",
     "httpx[socks]",
     "torchcodec==0.15.0+cu129",
-    "llmcompressor==0.12.0",
 ]
 
 [tool.uv.sources]
