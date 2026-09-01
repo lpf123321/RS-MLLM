@@ -201,6 +201,57 @@ bash evaluation/vllm_eval/setup_env.sh
 > （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
 > 评测清单图片路径自动重映射为相对路径（可移植），见 `rsmllm/data.py::get_eval_manifest`。
 
+**从 HuggingFace 官方数据集导入（评委手头是 HF 原始数据时）**：
+
+评测图片也可以直接从 HF 官方源下载，脚本自动解压摆放到评测清单对应的位置：
+
+```bash
+# 方式一：一键(推荐, 约 8.8GB, 快) —— 从 ModelScope 下载已清洗裁剪的图片包
+python scripts/fetch_benchmark_data.py --all
+#   下载 6 个数据集的图片并自动摆放:
+#   datasets/shared_datasets/VRSBench/        (vrsbench 9,350 张)
+#   datasets/shared_datasets/MME-RealWorld-RS/ (mme 1,264 张)
+#   datasets/shared_datasets/XLRS-Bench-lite/  (xlrs 800 张)
+#   datasets/shared_datasets/LEVIR-CC/         (levircc 3,858 张)
+#   datasets/shared_datasets/XLRS-Bench_caption_en/       (xlrs_caption 934 张)
+#   datasets/shared_datasets/XLRS-Bench_visual_grounding_en/ (xlrs_grounding 844 张)
+
+# 方式二：从 HF 官方源下载(全量, 体积大: XLRS 系列 38~127GB, 慢)
+python scripts/fetch_benchmark_data.py --all --source hf
+#   仅指定数据集:
+python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
+```
+
+**目录契约**：图片必须位于 `datasets/shared_datasets/<数据名>/`，评测清单中的图片路径
+以此为根（`build_sample_manifest.py` 已按此生成）：
+
+```
+datasets/shared_datasets/
+├── VRSBench/                          # vrsbench: 官方 Images_val.zip 原文件名直放
+│   └── images/val/P0003_0002.png      #   清单引用名 = 官方 image_id, 解压即用
+├── MME-RealWorld-RS/                  # mme: 官方 images_resized/mme_*.png
+├── XLRS-Bench-lite/                   # xlrs: images_resized/xlrs_00000.png (重编号)
+├── XLRS-Bench_caption_en/             # xlrs_caption: images_exported/xlrs_caption_*.jpg
+├── XLRS-Bench_visual_grounding_en/    # xlrs_grounding: images_exported_test/xlrs_vg_*.jpg
+└── LEVIR-CC/                          # levircc: 官方 zip 原文件名直放
+    └── images/test/A/test_000001.png
+```
+
+**命名规则**：
+- VRSBench / LEVIR-CC：官方文件就是清单引用名（`P0003_0002.png` / `test_000001.png`），
+  zip 解压后文件自然对上，无需改名；
+- XLRS 三件套 / MME：清单引用的是**预处理重编号名**（`images_resized/xlrs_00000.png`、
+  `images_exported/xlrs_caption_00000.jpg`），HF 官方是 arrow 内嵌图，脚本按 `index`
+  列顺序导出并重编号（与评测清单一一对应）。
+
+**图片放在别处时**：不要求一定放 `datasets/shared_datasets/`，可用
+`build_sample_manifest.py --images-root <你的图片目录>` 重写清单中的路径前缀：
+```bash
+python scripts/build_sample_manifest.py --all --images-root /path/to/your/images
+```
+
+菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。
+
 **量化转换**（与报告同链路）：
 
 ```bash
