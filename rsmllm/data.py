@@ -136,7 +136,15 @@ BENCH_DATASETS = {
     "levircc": ("LEVIR-CC", "datasets_data/levircc_test.jsonl"),
 }
 
-_OLD_PREFIX = "/users/u2024311136/shared/shared_datasets/"
+# dataset -> build_sample_manifest 输出的清单文件名(DATASETS 映射名)
+BENCH_MANIFEST_NAME = {
+    "vrsbench": "vrsbench_eval.jsonl",
+    "mme": "mme_rs.jsonl",
+    "xlrs": "xlrs.jsonl",
+    "xlrs_caption": "xlrs_caption_en.jsonl",
+    "xlrs_grounding": "xlrs_grounding_test.jsonl",
+    "levircc": "levircc_test.jsonl",
+}
 
 
 def ensure_benchmark_data(dataset: str, *, refresh: bool = False) -> Path:
@@ -162,52 +170,30 @@ def ensure_benchmark_data(dataset: str, *, refresh: bool = False) -> Path:
     return img_dir
 
 
-def get_eval_manifest(dataset: str) -> Path:
-    """返回可移植评测清单: 图片绝对路径重映射为相对 <datasets>/shared_datasets/<X>.
+def prepare_eval(dataset: str, *, refresh_images: bool = False,
+                 force_build: bool = False) -> Path:
+    """首次评测准备: 图片下载到 datasets/shared_datasets + 构建可移植评测清单.
 
-    输出写入 <仓库>/.tmp_manifests/<dataset>.jsonl, 路径均相对该清单所在目录，
-    评测器(Sample.from_dict manifest_dir 逻辑)可正确解析。
+    流程:
+      1) ensure_benchmark_data(dataset)  -> 图片就绪(本机已有则复用; 否则 ModelScope/HF 下载)
+      2) 若 evaluation/vllm_eval/manifests/<dataset>.jsonl 缺失(评审机未构建), 调用
+         scripts/build_sample_manifest.py 生成(图片相对路径 ../../../datasets/shared_datasets
+         + 真实尺寸), 供评测器/路由评测直接使用。
+
+    返回: 评测清单路径(evaluation/vllm_eval/manifests/<dataset>.jsonl).
     """
     from rsmllm.config import REPO_ROOT
     if dataset not in BENCH_DATASETS:
         raise ValueError(f"未知评测数据集: {dataset} (可选 {list(BENCH_DATASETS)})")
-    subdir, rel_manifest = BENCH_DATASETS[dataset]
-    src_manifest = REPO_ROOT / rel_manifest
-    if not src_manifest.exists():
-        raise FileNotFoundError(f"评测清单缺失: {src_manifest}")
 
-    out_dir = REPO_ROOT / ".tmp_manifests"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{dataset}.jsonl"
+    ensure_benchmark_data(dataset, refresh=refresh_images)
 
-    # 写入 lead map: 把以旧共享前缀开头的图路径改相对
-    old_lead = f"shared_datasets/{subdir}"
-    written = 0
-    with src_manifest.open(encoding="utf-8") as fh, out_path.open("w", encoding="utf-8") as gh:
-        for line in fh:
-            if not line.strip():
-                continue
-            d = json.loads(line)
-            imgs = []
-            if "messages" in d:
-                for m in d["messages"]:
-                    for c in m.get("content", []):
-                        if c.get("type") == "image" and c.get("image"):
-                            imgs.append(c["image"])
-            elif "image" in d:
-                imgs.append(d["image"])
-            for full in imgs:
-                if full.startswith(_OLD_PREFIX):
-                    new = full[len(_OLD_PREFIX):]
-                    # 相对 manifest_dir: .tmp_manifests 与 datasets/shared_datasets 平级
-                    if "messages" in d:
-                        for m in d["messages"]:
-                            for c in m.get("content", []):
-                                if c.get("image") == full:
-                                    c["image"] = str(Path("../datasets/shared_datasets") / new)
-                    elif d.get("image") == full:
-                        d["image"] = str(Path("../datasets/shared_datasets") / new)
-            gh.write(json.dumps(d, ensure_ascii=False) + "\n")
-            written += 1
-    print(f"[data] 评测清单(相对路径) -> {out_path} ({written} 行)")
-    return out_path
+    manifest = REPO_ROOT / "evaluation" / "vllm_eval" / "manifests" / BENCH_MANIFEST_NAME[dataset]
+    if force_build or not manifest.exists():
+        import subprocess as sp
+        script = REPO_ROOT / "scripts" / "build_sample_manifest.py"
+        cmd = [sys.executable, str(script), "--dataset", dataset,
+               "--images-root", "../../../datasets/shared_datasets"]
+        print(f"[data] 构建评测清单: {dataset}")
+        sp.run(cmd, check=True)
+    return manifest

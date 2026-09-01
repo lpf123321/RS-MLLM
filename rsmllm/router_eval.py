@@ -61,6 +61,17 @@ QUANT_EXPERTS = {
 }
 
 
+# 源清单文件名 -> rsmllm.data 数据集键(prapare_eval 用)
+SRC_TO_DATASET = {
+    "vrsbench_eval.jsonl": "vrsbench",
+    "mme_rs.jsonl": "mme",
+    "xlrs.jsonl": "xlrs",
+    "xlrs_grounding_test.jsonl": "xlrs_grounding",
+    "levircc_test.jsonl": "levircc",
+    "xlrs_caption_en.jsonl": "xlrs_caption",
+}
+
+
 def build_subtask_manifest(src_name: str, task_type: str | None, label: str) -> Path:
     """从源 manifest 切出子任务子集(按 task_type), 返回子清单路径."""
     src = MANIFESTS / src_name
@@ -124,6 +135,10 @@ def main() -> int:
         print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {alias}")
         model_path = resolve_model(alias)
         for task_name, src_name, task_type in tasks:
+            # 首次自动准备: 图片下载 + 可移植评测清单构建(vrsbench 等 6 数据集)
+            from rsmllm.data import prepare_eval
+            if src_name in SRC_TO_DATASET:
+                prepare_eval(SRC_TO_DATASET[src_name])
             print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
             r = run_eval(model_path, alias, manifest, args.limit)

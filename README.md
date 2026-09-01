@@ -212,7 +212,8 @@ bash evaluation/vllm_eval/setup_env.sh
 > 评分结果自动写入输出目录：`clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
 > **数据懒加载**：评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像
 > （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
-> 评测清单图片路径自动重映射为相对路径（可移植），见 `rsmllm/data.py::get_eval_manifest`。
+> 并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，
+> 见 `rsmllm/data.py::prepare_eval`。清单为生成产物不入库，评委首次评测时自动构建。
 
 **从 HuggingFace 官方数据集导入（评委手头是 HF 原始数据时）**：
 

@@ -74,10 +74,9 @@ def _cmd_eval() -> None:
     py = eval_py if eval_py.exists() else sys.executable
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    from rsmllm.data import ensure_benchmark_data, get_eval_manifest
+    from rsmllm.data import prepare_eval
     ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
-    ensure_benchmark_data(ds)          # 图片就绪(首次自动下载)
-    manifest = get_eval_manifest(ds)   # 可移植(相对路径)评测清单
+    manifest = prepare_eval(ds)   # 首次: 图片下载 + 可移植评测清单构建(含 ensure)
     # profile 若为本地文件路径 → --derived-profile; 否则按名字 → --model-profile
     profile_path = Path(profile).expanduser()
     profile_arg = "--derived-profile" if profile_path.is_file() else "--model-profile"

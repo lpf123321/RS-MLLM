@@ -35,4 +35,7 @@ transfer/
 .models/
 .raw_images/
 .tmp_manifests/
+
+# 评测清单生成产物（首次使用由 prepare_eval/build_sample_manifest 构建，不入库）
 evaluation/vllm_eval/manifests/
+evaluation/vllm_eval/manifests/*.jsonl

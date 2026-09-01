@@ -249,8 +249,10 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
                     p = img["path"]
                     if marker in p:
                         img["path"] = str(Path(images_root) / p.split(marker, 1)[1])
-                    # 路径已本地化, 重新探测真实尺寸(转换时用的是原始路径, 探测不到)
-                    w, h = image_size(img["path"])
+                    # 存储的相对路径是相对 OUTPUT_DIR(评测清单目录)的;
+                    # 尺寸探测必须用该基准 resolve 到真实文件(否则相对路径跑出仓库根 -> 0,0)
+                    abs_path = (OUTPUT_DIR / img["path"]).resolve()
+                    w, h = image_size(str(abs_path))
                     img["width"], img["height"] = w, h
             if subtask_filter:
                 # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
