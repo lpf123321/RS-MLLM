@@ -51,7 +51,7 @@ def main() -> int:
             import json
             import urllib.request
             from vllm import SamplingParams
-            sp = SamplingParams(temperature=0, max_tokens=1024)
+            sp = SamplingParams(temperature=0, max_tokens=65536)
             while True:
                 req = input("prompt> ").strip()
                 if not req:

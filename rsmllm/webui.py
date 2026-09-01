@@ -51,7 +51,7 @@ def start_vllm_server(args: argparse.Namespace) -> None:
         "--port", str(args.port),
         "--dtype", "bfloat16",
         "--trust-remote-code",
-        "--max-model-len", "16384",
+        "--max-model-len", "65536",
         "--limit-mm-per-prompt", '{"image": 2}',
         "--mm-processor-kwargs", f'{{"min_pixels": {args.min_pixels}, "max_pixels": {args.max_pixels}}}',
     ]
@@ -88,7 +88,7 @@ def build_ui(client: OpenAI, args: argparse.Namespace) -> gr.ChatInterface:
             model=args.model,
             messages=[{"role": "user", "content": content}],
             temperature=0,
-            max_tokens=2048,
+            max_tokens=65536,
         )
         # 剥离 thinking 块, 只显示最终正文(与评测器口径一致)
         text = resp.choices[0].message.content or ""
