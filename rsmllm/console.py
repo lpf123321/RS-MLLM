@@ -44,6 +44,8 @@ def _cmd_eval() -> None:
     model = _ask_model()
     datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
     print(f"  → 评测 model={model} datasets={datasets}")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     cmd = [sys.executable, "-m", "evaluation.main",
            "--model_path", model, "--datasets"] + datasets.split() + [
            "--eval_batch_size", str(REPORT_CONF["batch_size"]),
@@ -51,7 +53,7 @@ def _cmd_eval() -> None:
            "--image_max_pixels", str(REPORT_CONF["max_pixels"]),
            "--data_path_overrides", json.dumps(
                {k: str(v) for k, v in MANIFESTS.items()})]
-    subprocess.run(cmd, check=False)
+    subprocess.run(cmd, check=False, env=env)
 
 
 def _cmd_serve() -> None:

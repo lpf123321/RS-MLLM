@@ -23,6 +23,8 @@ dependencies = [
     "liger_kernel==0.8.0",
     "trl==0.25.0",
     "datasets",
+    "nltk",
+    "rouge_score",
     "opencv-python",
     "ujson",
     "wandb",

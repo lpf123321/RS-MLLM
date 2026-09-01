@@ -320,10 +320,7 @@ def main():
     else:
         from evaluation.adapters.qwen3vl import Qwen3VLAdapter
         adapter = Qwen3VLAdapter(args.model_path, device=args.device,
-                                 compile_model=args.compile_model,
-                                 lora_path=args.lora_path,
-                                 image_min_pixels=args.image_min_pixels,
-                                 image_max_pixels=args.image_max_pixels)
+                                 compile_model=args.compile_model)
         prompt_map = SYSTEM_PROMPTS
 
     if hasattr(adapter, "device"):
