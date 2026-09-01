@@ -200,13 +200,12 @@ cd evaluation/vllm_eval
   --model-profile mmerestore_bf16 \
   --min-pixels 200704 --max-pixels 2097152 --batch-size 128
 
-# 3) 评分(离散题只算 clean_eligible, caption 走 caption_metrics):
-.venv/bin/python score_run.py results/<manifest>_<profile>
 ```
 
 > 说明：`--model-profile` 选 `model_policy.py` 中的可信 profile（如 `mmerestore_bf16`），
 > 或改用 `--derived-profile /path/to/profile.json`（二选一）。
 > `--output-dir` 省略时默认为 `results/<manifest文件名>_<profile>`。
+> 评分结果自动写入输出目录：`clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
 
 **转录评测（Transformers 路径，不依赖 vLLM）**：
 

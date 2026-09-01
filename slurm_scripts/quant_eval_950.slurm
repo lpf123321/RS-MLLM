@@ -32,7 +32,5 @@ echo "=== quant950 start $(date -Is) model=$MODEL profile=$PROFILE ==="
   --model "$MODEL" --model-profile "$PROFILE" --output-dir "$OUTDIR" \
   --batch-size 64 --max-num-seqs 64 --max-model-len 16384
 
-# 评分（clean_correct 官方计分，用仓库内 schema/scoring）
-"${UV}" run --project "${ENV}" --offline python "${EVAL_DIR}/score_run.py" "$OUTDIR"
-
+# 评分结果自动写入 $OUTDIR/clean_summary.json（评测器内置计分）
 echo "=== quant950 done $(date -Is) ==="
