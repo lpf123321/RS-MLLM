@@ -405,6 +405,12 @@ TRUSTED_MODEL_PROFILES: dict[str, TrustedModelProfile] = {
     ),
 }
 
+# 12 个专家模型(4 base + 8 量化)的可信 profile, 由 scripts/gen_expert_profiles.py
+# 从本地合并 checkpoint 生成(sha256 实测); 允许 console 评测单独指定专家.
+from expert_profiles import EXPERT_PROFILES as _EXPERT_PROFILES
+
+TRUSTED_MODEL_PROFILES.update(_EXPERT_PROFILES)
+
 DERIVED_PROFILE_SCHEMA_VERSION = 1
 DERIVED_PROFILE_KIND = "derived_candidate_profile"
 

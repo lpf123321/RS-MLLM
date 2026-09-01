@@ -10,6 +10,7 @@ existing finalize/validate tooling works unchanged.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -319,11 +320,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.batch_size < 1:
         raise ValueError("batch-size must be >= 1")
-    # 默认输出目录: results/<manifest文件名>_<profile>
+    # 默认输出目录: results/<manifest文件名>_<profile>_<时间戳>
+    # 每次运行独占目录, 多次跑同一模型互不覆盖; 显式 --output-dir 时尊重传入(保留 resume 语义)
     if args.output_dir is None:
         manifest_name = Path(args.manifest).stem
         key = args.model_profile or (Path(args.derived_profile).stem if args.derived_profile else "model")
-        args.output_dir = Path("results") / f"{manifest_name}_{key}"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        args.output_dir = Path("results") / f"{manifest_name}_{key}_{stamp}"
     if args.enforce_eager and args.cudagraph_mm_encoder:
         raise ValueError("--cudagraph-mm-encoder cannot be used with --enforce-eager")
     if (args.model_profile is None) == (args.derived_profile is None):
