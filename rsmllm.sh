@@ -3,5 +3,14 @@
 set -euo pipefail
 export PATH="${HOME}/.local/bin:${PATH}"
 cd "$(dirname "$0")"
-# 用评测环境(有 modelscope/vllm, 评测与推理都依赖它)
-PYTHONPATH="${PWD}" evaluation/vllm_eval/.venv/bin/python -m rsmllm.console "$@"
+
+# 解释器选择: 评测 venv(评测/推理) → 根 .venv(训练/量化) → uv run 兜底
+if [ -x "evaluation/vllm_eval/.venv/bin/python" ]; then
+  PY="evaluation/vllm_eval/.venv/bin/python"
+elif [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  exec uv run --project . python -m rsmllm.console "$@"
+fi
+
+PYTHONPATH="${PWD}" "${PY}" -m rsmllm.console "$@"

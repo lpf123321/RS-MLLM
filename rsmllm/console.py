@@ -15,6 +15,12 @@ from pathlib import Path
 from rsmllm.config import REPORT_CONF, SUBSETS, MANIFESTS
 from rsmllm.models import get_model, MODEL_REGISTRY
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+# 训练类分支(deepspeed/trl)依赖根环境; 评测/推理(vllm)依赖评测环境
+TRAIN_PY = str(REPO_ROOT / ".venv" / "bin" / "python")
+if not Path(TRAIN_PY).exists():
+    TRAIN_PY = sys.executable  # uv run 或根 venv 启动时兜底
+
 MAIN_MENU = {
     "1": ("评测实验", "按子集(950/770/590/400/full)评估指定模型"),
     "2": ("推理服务", "按报告配置启动 vLLM 推理"),
@@ -100,20 +106,20 @@ def _cmd_quantize() -> None:
     method = _ask("方法 (w8a8-int8 / w4a16-gptq)", "w8a8-int8")
     model = _ask_model()
     out = _ask("输出目录", "quantized_models/out")
-    cmd = [sys.executable, "rsmllm/quantize.py", "--method", method,
+    cmd = [TRAIN_PY, "rsmllm/quantize.py", "--method", method,
            "--model", model, "--output", out]
     subprocess.run(cmd, check=False)
 
 
 def _cmd_data() -> None:
     ds = _ask("数据集 (vrsbench/mme/xlrs/levircc)", "vrsbench")
-    cmd = [sys.executable, f"scripts/preprocess_{ds}.py"]
+    cmd = [TRAIN_PY, f"scripts/preprocess_{ds}.py"]
     subprocess.run(cmd, check=False)
 
 
 def _cmd_simple(name: str, script: str) -> None:
     print(f"  → {name}: {script}")
-    subprocess.run([sys.executable, script], check=False)
+    subprocess.run([TRAIN_PY, script], check=False)
 
 
 def main() -> int:
