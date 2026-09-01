@@ -1,5 +1,6 @@
 .git
 .venv
+.models
 **/__pycache__
 *.pyc
 .env
@@ -11,6 +12,8 @@ finetune_framework/LEVIR-CC/*.json
 evaluation/logs
 evaluation/results.json
 evaluation/data/*.jsonl
+evaluation/vllm_eval/results
+evaluation/vllm_eval/.venv
 
 # 本地产物
 logs/

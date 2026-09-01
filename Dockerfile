@@ -24,6 +24,10 @@ COPY pyproject.toml uv.lock ./
 # 按 uv.lock 精确安装（--locked 拒绝任何 drift）
 RUN uv sync --locked --no-dev
 
+# 评测环境（vllm 0.26 + torch 2.11 cu129, 独立 uv 项目; uv 自动下载 python 3.11）
+COPY evaluation/vllm_eval/pyproject.toml evaluation/vllm_eval/uv.lock evaluation/vllm_eval/
+RUN cd evaluation/vllm_eval && uv sync --locked
+
 # 代码放入镜像；评测数据（datasets_data/*.jsonl 等）通过 -v 挂载
 COPY . .
 
