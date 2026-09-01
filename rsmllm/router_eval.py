@@ -79,15 +79,8 @@ def build_subtask_manifest(src_name: str, task_type: str | None, label: str) -> 
 
 
 def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -> int:
-    cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
-           "--manifest", str(manifest),
-           "--model", model_path,
-           "--model-profile", profile,
-           "--min-pixels", "200704",
-           "--max-pixels", "2097152",
-           "--batch-size", "128"]
     if limit:
-        # 用 --max-samples? 评测器无该参数, 用子清单截断
+        # 子清单截断(评测器无 --max-samples)
         sub = manifest.with_name(f"{manifest.stem}_n{limit}.jsonl")
         with manifest.open(encoding="utf-8") as f, sub.open("w", encoding="utf-8") as g:
             for i, line in enumerate(f):
@@ -95,6 +88,13 @@ def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -
                     break
                 g.write(line)
         manifest = sub
+    cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
+           "--manifest", str(manifest),
+           "--model", model_path,
+           "--model-profile", profile,
+           "--min-pixels", "200704",
+           "--max-pixels", "2097152",
+           "--batch-size", "128"]
     print(f"  → 评测 {manifest.name} ...", flush=True)
     return subprocess.run(cmd, check=False).returncode
 
