@@ -29,7 +29,7 @@ def setup_runtime_env() -> None:
     """
     import glob
 
-    site_pkgs = Path(__file__).resolve().parent.parent / ".venv" / "lib" / "python3*" / "site-packages"
+    site_pkgs = Path(__file__).resolve().parent / ".venv" / "lib" / "python3*" / "site-packages"
     site_pkgs = next(iter(glob.glob(str(site_pkgs))), None)
     if site_pkgs:
         lib_dirs = [d for d in glob.glob(f"{site_pkgs}/av.libs") + glob.glob(f"{site_pkgs}/nvidia/*/lib")]
@@ -38,7 +38,7 @@ def setup_runtime_env() -> None:
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
     os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
     # ninja 在 venv bin 下(torch.compile 需要; 非交互 shell PATH 可能不含)
-    venv_bin = Path(__file__).resolve().parent.parent / ".venv" / "bin"
+    venv_bin = Path(__file__).resolve().parent / ".venv" / "bin"
     if venv_bin.is_dir():
         os.environ["PATH"] = str(venv_bin) + os.pathsep + os.environ.get("PATH", "")
 

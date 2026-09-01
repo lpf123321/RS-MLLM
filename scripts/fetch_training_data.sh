@@ -24,12 +24,12 @@ MODELSCOPE_REPO="${MODELSCOPE_REPO:-}"
 if [ -z "$MODELSCOPE_REPO" ] && [ -f "$REPO_ROOT/.modelscope_repo" ]; then
   MODELSCOPE_REPO="$(cat "$REPO_ROOT/.modelscope_repo" | tr -d '[:space:]')"
 fi
-if [ -z "$MODELSCOPE_REPO" ] || [ "$MODELSCOPE_REPO" = "REPLACE_WITH_YOUR_MODELSCOPE_REPO_ID" ]; then
+MODELSCOPE_REPO="${MODELSCOPE_REPO:-yasumi/rs-mllm-datasets}"  # 默认: 组员训练数据仓库
+if [ -z "$MODELSCOPE_REPO" ]; then
   echo "[fetch_training_data] 尚未配置 ModelScope 数据仓库。"
   echo "  1) 把 12 个清洗 json（见 scripts/package_training_data.sh 打包）上传到 ModelScope;"
   echo "  2) 把仓库 id 写入 $REPO_ROOT/.modelscope_repo，"
   echo "     或 export MODELSCOPE_REPO=<自己的/user/repo-id>。"
-  echo '  提示: 组员侧已知命名为 "Fun10165/RS-MLLM-training-data"（未确认）。'
   exit 1
 fi
 
