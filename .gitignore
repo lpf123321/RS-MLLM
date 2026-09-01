@@ -30,3 +30,7 @@ finetune_framework/VRSbench/expert_data/
 finetune_framework/VRSbench/expert_data_v2/
 transfer/
 .modelscope_repo
+
+# 懒加载缓存/临时下载（不随仓库分发）
+.models/
+.raw_images/

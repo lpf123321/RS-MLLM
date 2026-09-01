@@ -17,8 +17,11 @@ from rsmllm.config import MODELS_CACHE, MODEL_REGISTRY
 def get_model(name: str, *, cache_dir: str | None = None) -> str:
     """解析模型引用到本地目录; 未命中缓存时按需调用 ModelScope snapshot_download."""
     p = Path(name).expanduser()
-    if p.exists():  # 本地目录优先(复现/离线场景)
-        return str(p)
+    # 本地目录优先(复现/离线场景): 仅当名字像是路径时才检查，
+    # 避免把模型别名(如 "base")误认为是仓库里的同名目录。
+    if p.is_absolute() or ("/" in name or "\\" in name):
+        if p.exists():
+            return str(p)
 
     model_id = MODEL_REGISTRY.get(name, name)  # 别名 or 直接 id
     cache = cache_dir or os.environ.get("RSMLLM_MODEL_CACHE") or str(MODELS_CACHE)

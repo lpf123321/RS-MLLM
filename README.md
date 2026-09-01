@@ -269,12 +269,18 @@ python scripts/generate_mcq_data.py              # 合成 MCQ 样本
 python scripts/gen_expert_deltas.py --verify     # 生成四专家 delta 并验证 W0+Δ==merged
 ```
 
-**环境与数据（跨机器可移植）**：
-- conda 位置/数据集图片根目录由 `scripts/training/env.sh` 自动探测，
-  也可用环境变量显式覆盖：`CONDA_HOME`、`CONDA_ENV`、`TRAIN_DATA_ROOT`（图片根，
-  应含 `assets/vrsbench`、`assets/levir_cc`）。运行时没有任何对固定机路径的硬编码。
-- 训练数据 json 从 ModelScope 拉取：运行 `bash scripts/fetch_training_data.sh`，
-  首次需要把仓库 id 写入 `REPO_ROOT/.modelscope_repo`（或 `export MODELSCOPE_REPO=...`）。
+**环境与数据（跨机器可移植，懒加载）**：
+- **模型**：首次按需从 ModelScope 自动下载，缓存于 `<仓库>/.models/`（`RSMLLM_MODEL_CACHE`
+  可覆盖）。`rsmllm/models.py::get_model()` 支持 本地路径 / 别名（`base`、`expert_*`、
+  `w8a8`…） / ModelScope id。
+- **数据（训练 json）**：`bash scripts/fetch_training_data.sh` 首次自动创建
+  `<仓库>/datasets/` 并下载 14 个清洗训练 json（`rsmllm/data.py::get_dataset`），
+  还原内部名到 `finetune_framework/VRSbench/`，之后命中缓存即复用。
+  环境变量：`RSMLLM_DATASETS_CACHE`、`MODELSCOPE_OFFLINE=1`（纯离线）。
+- **图片**：训练 json 引用 `assets/{vrsbench,levir_cc}/<hash>.png`。
+  `bash scripts/fetch_raw_images.sh`（默认从共享区 VRSBench/LEVIR-CC 原图哈希还原，
+  或 `--hf <repo>` 从 HuggingFace 兜底下载）生成到 `<仓库>/data/assets/`。
+- conda 位置由 `scripts/training/env.sh` 自动探测，可 `CONDA_HOME`/`CONDA_ENV` 覆盖。
 
 **训练配置要点**：所有专家统一采用全参冻结的 LoRA（rank 32 / alpha 64 / dropout 0.05）、
 lr=1e-4、1 epoch、bf16、DeepSpeed ZeRO-2；图像分辨率 262,144 ~ 1,048,576 像素
@@ -283,9 +289,8 @@ lr=1e-4、1 epoch、bf16、DeepSpeed ZeRO-2；图像分辨率 262,144 ~ 1,048,57
 
 > 注 1：训练阶段脚本默认 `deepspeed --num_gpus 2` 需要 2 卡 A100；
 > 若资源少，请自行把对应 slurm 的 `NUM_DEVICES`/`--num_gpus` 调整为可用卡数。
-> 注 2：训练数据 json/jsonl 体积较大，不随仓库分发（gitignore）；运行前请先
-> `bash scripts/fetch_training_data.sh` 拉取（含 ModelScope 清理 json），
-> 图片可用 `bash scripts/fetch_raw_images.sh` 从原始数据集哈希重命名还原。
+> 注 2：`datasets/`、`.models/`、`models/`、`data/assets/` 均为运行时下载产物（gitignore），
+> 不随仓库分发；首次运行对应懒加载脚本会自动创建并下载。
 
 ---
 

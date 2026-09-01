@@ -3,7 +3,7 @@
 # 下载训练数据集（清洗后的 json/jsonl）—— 懒加载: ModelScope 首次下载, 本地命中复用
 #
 # 通过 rsmllm.data 完成:
-#   1) get_dataset("training")   -> 下载到 <仓库>/datasets (默认 RSMLLM_DATASETS_CACHE)
+#   1) get_dataset()   -> 下载到 <仓库>/datasets (默认 RSMLLM_DATASETS_CACHE)
 #   2) restore_training_data()   -> 发布名还原内部名, 放到 finetune_framework/VRSbench/
 # 训练脚本(DATA_PATH)直接读内部名, 无需额外步骤。
 #

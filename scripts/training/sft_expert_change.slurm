@@ -33,7 +33,7 @@ echo "  Node:        $(hostname)"
 echo "  GPU:         $(nvidia-smi -L 2>/dev/null | head -1)"
 echo "============================================================"
 
-MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
+MODEL_PATH="$(resolve_model base)"
 DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/expert_data/change.json"
 SHR_DATA="$TRAIN_DATA_ROOT"
 OUTPUT_DIR="$REPO_ROOT/outputs/checkpoints/expert_change"

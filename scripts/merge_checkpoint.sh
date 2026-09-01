@@ -22,10 +22,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LORA_CKPT="${1:?用法: merge_checkpoint.sh <lora_checkpoint> <merged_name> [base]}"
 MERGED_NAME="${2:?用法: merge_checkpoint.sh <lora_checkpoint> <merged_name> [base]}"
-BASE_MODEL="${3:-$REPO_ROOT/models/Qwen3.5-4B}"
 
 source "$REPO_ROOT/scripts/training/env.sh"
 activate_conda
+
+# base 默认走懒加载（get_model base）；显式传第 3 参则用之
+BASE_MODEL="${3:-$(resolve_model base)}"
 
 MERGED_DIR="$REPO_ROOT/outputs/merged/$MERGED_NAME"
 mkdir -p "$(dirname "$MERGED_DIR")"

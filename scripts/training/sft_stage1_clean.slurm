@@ -34,7 +34,7 @@ echo "  GPU:         $(nvidia-smi -L 2>/dev/null | head -1)"
 echo "  PyTorch:     $(python -c 'import torch; print(torch.__version__)')"
 echo "============================================================"
 
-MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
+MODEL_PATH="$(resolve_model base)"
 DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/manifest_sft_train.json"
 SHR_DATA="$TRAIN_DATA_ROOT"
 OUTPUT_DIR="$REPO_ROOT/outputs/checkpoints/sft_stage1_clean"

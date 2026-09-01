@@ -34,6 +34,8 @@ DATA_ROOT = _settle("RSMLLM_DATA_ROOT", REPO_ROOT / "datasets", "/users/u2024311
 IMAGES_ROOT = _env_path("RSMLLM_IMAGES_ROOT", DATA_ROOT / "images")
 MODELS_CACHE = _env_path("RSMLLM_MODEL_CACHE", REPO_ROOT / ".models")
 MODELS_ROOT = _env_path("RSMLLM_MODELS_ROOT", REPO_ROOT / "models")
+# 数据集缓存(清洗后清单/训练 json): 首次从 ModelScope 自动拉取到 datasets/
+DATASETS_CACHE = _env_path("RSMLLM_DATASETS_CACHE", REPO_ROOT / "datasets")
 RESULTS_DIR = _env_path("RSMLLM_RESULTS_DIR", REPO_ROOT / "results")
 LOGS_DIR = _env_path("RSMLLM_LOGS_DIR", REPO_ROOT / "logs")
 
@@ -85,4 +87,16 @@ MODEL_REGISTRY = {
     "expert_change_gptq": "Fun10165/rs-mllm-expert-change-w4a16-gptq",
     "expert_caption_w8a8": "Fun10165/rs-mllm-expert-caption-w8a8-int8",
     "expert_caption_gptq": "Fun10165/rs-mllm-expert-caption-w4a16-gptq",
+}
+
+# ModelScope 数据集注册表(清洗后训练清单 json): 首次自动拉取到 DATASETS_CACHE
+DATA_REGISTRY = {
+    # 训练数据: 14 个清洗 json(发布名), fetch 后还原内部名到 finetune_framework/VRSbench/
+    "training": "yasumi/rs-mllm-datasets",
+}
+
+# 原始图片来源(HuggingFace 官方数据集): 供 build_assets_from_raw 按内容哈希还原 assets
+HF_RAW = {
+    "vrsbench": "lmms-lab/VRSBench",       # images/ 下按原始名存放
+    "levir_cc": "chuangao/LEVIR-CC-CN",    # 备用: images train/val/test 双时相
 }

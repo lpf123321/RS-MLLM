@@ -58,4 +58,21 @@ pick_data_root() {
   fi
 }
 
+resolve_model() {
+  # 解析模型引用为本地目录: 别名 -> get_model(ModelScope 懒加载); 本地/merged 路径原样返回。
+  # 用法: MODEL_PATH="$(resolve_model base)"  或  MODEL_PATH="$(resolve_model "$MODEL_PATH")"
+  local m="$1"
+  # 本地路径(local dir 或 merged 完整模型目录)原样返回
+  if [ -d "$m" ] || [ -f "$m" ]; then
+    echo "$m"; return 0
+  fi
+  # 否则走 rsmllm 懒加载(基于 REPO_ROOT)
+  local prev_py="$PYTHONPATH"
+  export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
+  local out
+  out=$(python -c "from rsmllm.models import get_model; print(get_model('$m'))")
+  export PYTHONPATH="$prev_py"
+  echo "$out"
+}
+
 export CONDA_HOME CONDA_ENV TRAIN_DATA_ROOT
