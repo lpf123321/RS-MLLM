@@ -27,7 +27,7 @@ mkdir -p "${UPSTREAM_ROOT}"
 # MME's authors explicitly forbid third-party redistribution. Download only the
 # remote-sensing archive from the repository linked by the authors. Running the
 # download requires the reproducer to acknowledge the official terms.
-if [[ ! -s "${UPSTREAM_ROOT}/mme/.download_complete" ]]; then
+if [[ ! -f "${UPSTREAM_ROOT}/mme/.download_complete" ]]; then
   [[ "${RS_MLLM_ACCEPT_MME_TERMS:-0}" == "1" ]] || {
     echo "Read the MME-RealWorld license and set RS_MLLM_ACCEPT_MME_TERMS=1 to acknowledge it." >&2
     exit 2
@@ -39,21 +39,21 @@ if [[ ! -s "${UPSTREAM_ROOT}/mme/.download_complete" ]]; then
   touch "${UPSTREAM_ROOT}/mme/.download_complete"
 fi
 
-if [[ ! -s "${UPSTREAM_ROOT}/vrsbench/.download_complete" ]]; then
+if [[ ! -f "${UPSTREAM_ROOT}/vrsbench/.download_complete" ]]; then
   mkdir -p "${UPSTREAM_ROOT}/vrsbench"
   hf download "${VRS_ID}" Images_train.zip --repo-type dataset --revision "${VRS_REVISION}" \
     --local-dir "${UPSTREAM_ROOT}/vrsbench"
   touch "${UPSTREAM_ROOT}/vrsbench/.download_complete"
 fi
 
-if [[ ! -s "${UPSTREAM_ROOT}/xlrs_lite/.download_complete" ]]; then
+if [[ ! -f "${UPSTREAM_ROOT}/xlrs_lite/.download_complete" ]]; then
   mkdir -p "${UPSTREAM_ROOT}/xlrs_lite"
   hf download "${XLRS_LITE_ID}" --repo-type dataset --revision "${XLRS_LITE_REVISION}" \
     --local-dir "${UPSTREAM_ROOT}/xlrs_lite"
   touch "${UPSTREAM_ROOT}/xlrs_lite/.download_complete"
 fi
 
-if [[ ! -s "${UPSTREAM_ROOT}/xlrs_grounding/.download_complete" ]]; then
+if [[ ! -f "${UPSTREAM_ROOT}/xlrs_grounding/.download_complete" ]]; then
   mkdir -p "${UPSTREAM_ROOT}/xlrs_grounding"
   hf download "${XLRS_GROUNDING_ID}" --repo-type dataset --revision "${XLRS_GROUNDING_REVISION}" \
     --include 'train/*' \
@@ -74,4 +74,5 @@ python "${SCRIPT_DIR}/materialize_images.py" \
   --source "xlrs=${UPSTREAM_ROOT}/xlrs_lite" \
   --source "xlrs_grounding=${UPSTREAM_ROOT}/xlrs_grounding"
 
+touch "${ASSET_ROOT}/datasets/.materialization_complete"
 echo "Official images materialized and hash-verified under ${ASSET_ROOT}/datasets/images."

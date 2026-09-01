@@ -6,6 +6,28 @@
 模型与数据不进入 Git 仓库。各模块 README 和 `scripts/download_assets.sh` 记录
 ModelScope 资产 ID、下载布局、运行入口及已验证边界。
 
+## Expert 续训快捷入口
+
+在仓库根目录运行：
+
+```bash
+# General Expert：MME-new + XLRS-new（保留的 General Exp3 配置，4 GPU）
+bash training/train_general_expert.sh --gpus 0,1,2,3
+
+# Grounding Expert：washed VRSBench + VRSBench-new + XLRS official/new
+# （保留的 Grounding Exp5 联合配置，8 GPU）
+bash training/train_grounding_expert.sh --gpus 0,1,2,3,4,5,6,7
+```
+
+两个入口都会自动下载缺失的 ModelScope 资产，分别合并
+`Qwen3.5-4B + general_expert_delta` 和
+`Qwen3.5-4B + grounding_expert_delta`，然后启动 LoRA 续训。Grounding Exp5
+还会加载 942 条 VRSBench-new 训练得到的 bootstrap LoRA。使用本地资产时设置
+`RS_MLLM_ASSET_ROOT`；已准备完毕且不希望联网时再设置
+`RS_MLLM_SKIP_DOWNLOAD=1`。可先追加 `--prepare-only` 或 `--dry-run` 检查环境。
+需要验证真实 forward/backward 而不启动完整一轮训练时，可使用
+`--max-updates 1`；正式复现实验不要设置该参数。
+
 目录结构：
 
 | 子目录 | 对应报告章节 | 应放入内容 |

@@ -37,7 +37,7 @@ if [[ ! -s "${ASSET_ROOT}/datasets/ASSET_MANIFEST.json" ]]; then
     --local-dir "${ASSET_ROOT}/datasets"
 fi
 
-if [[ ! -d "${ASSET_ROOT}/datasets/images" ]]; then
+if [[ ! -f "${ASSET_ROOT}/datasets/.materialization_complete" ]]; then
   "${SCRIPT_DIR}/download_official_datasets.sh"
 fi
 

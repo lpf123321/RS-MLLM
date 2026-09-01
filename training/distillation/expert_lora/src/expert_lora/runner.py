@@ -68,9 +68,18 @@ def main() -> None:
     parser.add_argument("--asset-root", required=True, type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--gpus", help="comma-separated visible GPU IDs")
+    parser.add_argument(
+        "--max-updates",
+        type=int,
+        default=0,
+        help="stop after N optimizer updates for a smoke test; 0 keeps the full recipe",
+    )
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if args.max_updates < 0:
+        raise ValueError("max_updates must be non-negative")
 
     config = load_config(args.config)
     asset_root = args.asset_root.resolve()
@@ -179,6 +188,8 @@ def main() -> None:
     ]
     if init_adapter:
         command.extend(["--init-lora", str(init_adapter)])
+    if args.max_updates:
+        command.extend(["--max-updates", str(args.max_updates)])
 
     env = os.environ.copy()
     env.update(
