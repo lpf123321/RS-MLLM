@@ -552,6 +552,17 @@ def main() -> None:
         model_load_seconds,
         adapter,
     )
+    # 释放 vLLM 引擎(避免 EngineCore 残留占显存, 影响后续评测)
+    try:
+        if hasattr(adapter, "llm"):
+            del adapter.llm
+        import gc
+        gc.collect()
+        if adapter.torch is not None:
+            adapter.torch.cuda.empty_cache()
+        print("==> vLLM 引擎已释放, 显存已回收", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"==> 清理警告(不影响结果): {exc}", flush=True)
 
 
 class _NullAdapter:
