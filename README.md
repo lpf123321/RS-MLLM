@@ -158,6 +158,9 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 ```
 
 > 评测器依赖 vllm 0.26，要用 `evaluation/vllm_eval` 的评测环境，不能用 3.2 的训练环境。
+>
+> 首次安装需下载约 4GB（torch/nvidia/vllm wheel）。若下载卡住无进度，
+> 设置代理后重跑：`export HTTPS_PROXY=http://<代理>:<端口> HTTP_PROXY=http://<代理>:<端口>`。
 
 ### 3.3 模型推理
 
@@ -194,12 +197,12 @@ cd evaluation/vllm_eval
 .venv/bin/python vision_opd_vllm_eval.py \
   --manifest /path/to/testset.jsonl \
   --model /path/to/model_dir \
-  --model-profile mmerestore_bf16   # 或 --derived-profile <manifest.json>
-  --output-dir results/xxx \
+  --model-profile mmerestore_bf16
+#   (或 --derived-profile /path/to/profile.json; --output-dir 默认 results/<manifest>_<profile>)
   --min-pixels 200704 --max-pixels 2097152 --batch-size 128
 
 # 3) 评分(离散题只算 clean_eligible, caption 走 caption_metrics):
-.venv/bin/python score_run.py results/xxx
+.venv/bin/python score_run.py results/<manifest>_<profile>
 ```
 
 **转录评测（Transformers 路径，不依赖 vLLM）**：

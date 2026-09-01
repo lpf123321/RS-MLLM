@@ -280,7 +280,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="输出目录(默认: results/<manifest文件名>_<profile>)",
+    )
     parser.add_argument("--max-pixels", type=int, default=2_097_152)
     parser.add_argument("--min-pixels", type=int, default=200_704)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -314,6 +319,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.batch_size < 1:
         raise ValueError("batch-size must be >= 1")
+    # 默认输出目录: results/<manifest文件名>_<profile>
+    if args.output_dir is None:
+        manifest_name = Path(args.manifest).stem
+        key = args.model_profile or (Path(args.derived_profile).stem if args.derived_profile else "model")
+        args.output_dir = Path("results") / f"{manifest_name}_{key}"
     if args.enforce_eager and args.cudagraph_mm_encoder:
         raise ValueError("--cudagraph-mm-encoder cannot be used with --enforce-eager")
     if (args.model_profile is None) == (args.derived_profile is None):
