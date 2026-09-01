@@ -24,7 +24,6 @@ evaluation/
 │   └── levircc.py                 #   LEVIR-CC (变化描述, 多参考)
 ├── main.py                        # 入口
 ├── run_eval.sh                    # 交互式运行脚本
-├── run_eval.slurm                 # SLURM 集群提交脚本
 └── README.md                      # 本文件
 ```
 
@@ -66,34 +65,10 @@ bash evaluation/run_eval.sh --datasets vrsbench levircc
 bash evaluation/run_eval.sh --model_path /path/to/model --max_samples 500
 ```
 
-**SLURM 集群提交**:
-
-```bash
-# 默认参数提交
-sbatch evaluation/run_eval.slurm
-
-# 指定数据集和样本数
-sbatch evaluation/run_eval.slurm --datasets vrsbench mme --max_samples 500
-
-# 自定义模型路径和输出
-sbatch evaluation/run_eval.slurm --model_path /path/to/model --output /path/to/results.json
-```
-
-### 固定 XLRS 小样本集
-
-`evaluation/data/xlrs_memory_1000.jsonl` 是已提交的固定 1,000 条 XLRS 小样本集，用于所有显存评测。它按原始 XLRS 文件的既定选择顺序保存，因此不同使用者不需要重新抽样即可使用同一批数据。
-
-```bash
-sbatch evaluation/run_xlrs_memory.slurm
-```
-
-脚本默认读取该固定文件。其来源文件 SHA-256、选择 seed 和全部原始行索引保存在 `evaluation/data/xlrs_memory_1000.metadata.json`；如需验证或重建，可运行 `evaluation/tools/create_xlrs_memory_subset.py`。
-
 ### 3. 查看结果
 
 - 终端输出结果表格
 - JSON 结果默认保存到 `evaluation/results.json`
-- SLURM 日志输出到 `evaluation/logs/eval_<job_id>.out`
 
 ### 4. 命令行参数
 

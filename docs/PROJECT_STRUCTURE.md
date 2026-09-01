@@ -31,16 +31,9 @@
 - 运行清单默认从 `datasets_data/` 读取（`DATA_ROOT` 可覆盖）
 
 ### 核心运行依赖（共享区，需保持可达）
-- 基座模型：`/users/u2024311136/shared/shared_models/lora_expert/base_model`
-- 四专家 delta：`/users/u2024311136/shared/shared_models/lora_expert/lora/{general,grounding,change,caption}/delta_model.pt`
-- 评测数据：`/users/u2024311136/shared/shared_datasets`
-
-### slurm_scripts/ 分类
-- 训练类：`sft_*.slurm`、`run_task_adaptive.slurm`
-- delta 转换类：`convert_*_to_delta.slurm`、`convert_ground_*.slurm`
-- 评测类：`run_delta_*.slurm`、`run_prune_sweep_router.slurm`
-- 冒烟类：`smoke_test_*.slurm`、`smoke_delta_*.slurm`
-- 可视化类：`run_viz_l2*.sh`
+- 模型：ModelScope（`Fun10165/*`），`rsmllm.models.get_model()` 按需下载缓存
+- 评测数据：`datasets_data/`（messages 清单）+ `build_sample_manifest.py` 转换为评测器格式
+- 历史 SLURM 提交脚本归档于 `archive/slurm_experiments/`（证据保留，不参与运行）
 
 ### training/ quantization/ tolerance/（待上传占位）
 - `training/distillation/`：5.2 在线策略蒸馏 OPD / 在线自蒸馏 OPSD
@@ -53,14 +46,8 @@
 ```bash
 # 1) 环境（已有 rs_mllm 环境可跳过）
 bash setup.sh
+bash evaluation/vllm_eval/setup_env.sh
 
-# 2) 评测（SLURM）
-sbatch slurm_scripts/run_task_adaptive.slurm
-# 或交互式
-python evaluation/main.py --model_path <base_model> \
-    --adapter router --general_lora <general_delta> --grounding_lora <grounding_delta> \
-    --change_lora <change_delta> --caption_lora <caption_delta> --datasets all
-
-# 3) 冒烟验证四专家 + 剪枝
-sbatch slurm_scripts/smoke_test_task_adaptive.slurm
+# 2) 评测/推理（唯一交互入口）
+./rsmllm.sh
 ```

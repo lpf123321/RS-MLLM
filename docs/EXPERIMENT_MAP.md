@@ -26,7 +26,7 @@
 | 报告位置 | 实验 | 仓库脚本 | 命令 |
 |---|---|---|---|
 | §6.2 量化方法对比 | W8A8-INT8 / W4A16-GPTQ PTQ 转换 | `scripts/quantize_qwen35_vlm.py` | `python scripts/quantize_qwen35_vlm.py --method w8a8-int8 --model <bf16> --calibration <calib.jsonl> --calibration-meta <meta.json> --output <out>`（`--method` ∈ {w8a8-int8, w4a16-gptq}） |
-| §6.2 量化配对评测 | A-B-B-A 交替、770/590 子集 | `quantization/quant_pair_eval.sbatch`（e0 配对路径）、评测器 `evaluation/main.py` | `sbatch quantization/quant_pair_eval.sbatch` |
+| §6.2 量化配对评测 | A-B-B-A 交替、770/590 子集 | 原始提交脚本归档 `archive/slurm_experiments/quant_pair_eval.sbatch`（e0 配对路径）、评测器 `evaluation/main.py` | 集群复跑需按归档 README 恢复路径 |
 | §6.2 结论 | W8A8: +1.00pp / 5.54GB(-39.2%) / -13.1%；GPTQ: +1.75pp / 3.81GB(-58.2%) / -7.6%；bitsandbytes INT8 +6.7%、NF4 未通过 | 表格 `tables/quant_compare.tex` | 数字来源为报告 §6.2 固定清单实测 |
 | §6.2 部署 | 默认 W8A8-INT8 | `rsmllm` 菜单 [4] / `rsmllm/quantize.py` | `python -m rsmllm.quantize --method w8a8-int8 ...` |
 | 云托管 | 8 个量化专家已上传 ModelScope | `scripts/upload_to_modelscope.py`（env `MODELSCOPE_API_TOKEN`） | `python scripts/upload_to_modelscope.py [--dry-run]` |
