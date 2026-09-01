@@ -18,7 +18,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$REPO_ROOT/finetune_framework/VRSbench"
 TMP="$REPO_ROOT/.data_download"
 
-# TODO: 上传后填写实际 ModelScope 仓库 id，例如 "xxx/RS-MLLM-training-data"
+# ⚠️ 训练数据包(12个清洗json)尚未上传 ModelScope。
+# 上传后在此填写仓库 id 即可一键拉取，例如 "Fun10165/RS-MLLM-training-data"
 MODELSCOPE_REPO="${MODELSCOPE_REPO:-REPLACE_WITH_YOUR_MODELSCOPE_REPO_ID}"
 
 # 若本地已有数据则跳过

@@ -249,6 +249,12 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 模型训练采用 **统一 SFT 主干 + 多专家（四专家）LoRA 微调** 的流程，全部训练脚本位于
 `scripts/training/`，并可通过 `scripts/train.sh` 一键启动。
 
+**前置**：
+1. 训练环境：`bash setup.sh`（torch 2.8 cu128 + deepspeed）
+2. 训练数据：`bash scripts/fetch_training_data.sh`（从 ModelScope 拉取 12 个清洗 json；
+   数据包尚未上传，上传后填写 `fetch_training_data.sh` 中仓库 id）
+3. 训练在 SLURM 集群提交（`train.sh` 生成 sbatch 命令）
+
 **训练流程一览**：
 
 | step | 内容 | 脚本 | 说明 |
