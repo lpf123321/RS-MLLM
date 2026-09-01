@@ -34,6 +34,8 @@ DATASETS = {
     "mme": "mme_rs",          # MME-RealWorld-RS: [MCQ]
     "xlrs": "xlrs",           # XLRS-Bench-lite: [MCQ]/[CAP]
     "levircc": "levircc_test",# LEVIR-CC: [CD]
+    "xlrs_caption": "xlrs_caption_en",   # 平铺格式: image + references + prompt
+    "xlrs_grounding": "xlrs_grounding_test",  # 平铺格式: image + question + bbox
 }
 
 
@@ -137,11 +139,64 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
     }
 
 
+def convert_flat_caption(raw: dict, dataset: str, index: int) -> dict:
+    """平铺 caption 记录 -> Sample dict (v1.0)."""
+    path = raw.get("image", "")
+    w, h = image_size(path)
+    return {
+        "id": str(raw.get("id", f"{dataset}_{index}")),
+        "dataset": dataset,
+        "subtask": "caption",
+        "task_type": "caption",
+        "prompt": raw.get("prompt", "Describe the image in detail."),
+        "images": [{"path": path, "role": "none", "width": w, "height": h, "transform": "none"}],
+        "references": raw.get("references", []) or [],
+        "choices": {},
+        "answer_labels": [],
+        "accepted_labels": [],
+        "clean_status": "keep",
+        "issues": [],
+        "metadata": {"source": f"{dataset}_flat"},
+        "split": "test",
+        "source": {"format": "flat_caption", "index": index},
+        "schema_version": "1.0",
+    }
+
+
+def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
+    """平铺 grounding 记录 -> Sample dict (v1.0, bbox)."""
+    path = raw.get("image", "")
+    w = int(raw.get("image_width", 0) or 0)
+    h = int(raw.get("image_height", 0) or 0)
+    return {
+        "id": str(raw.get("id", f"{dataset}_{index}")),
+        "dataset": dataset,
+        "subtask": "grounding",
+        "task_type": "bbox",
+        "prompt": raw.get("question", ""),
+        "images": [{"path": path, "role": "none", "width": w, "height": h, "transform": "none"}],
+        "references": [],
+        "choices": {},
+        "answer_labels": [],
+        "accepted_labels": [],
+        "clean_status": "keep",
+        "issues": [],
+        "metadata": {"source": f"{dataset}_flat", "bbox": raw.get("bbox", []), "category": raw.get("category", "")},
+        "split": "test",
+        "source": {"format": "flat_grounding", "index": index},
+        "schema_version": "1.0",
+    }
+
+
 def build(dataset: str, subtask_filter: str | None, limit: int | None) -> Path:
     name = DATASETS[dataset]
     src = REPO_ROOT / "datasets_data" / f"{name}.jsonl"
     if not src.exists():
         raise SystemExit(f"缺失源清单: {src}")
+    convert = {
+        "xlrs_caption": convert_flat_caption,
+        "xlrs_grounding": convert_flat_grounding,
+    }.get(dataset, convert_messages)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / f"{name}{'_' + subtask_filter if subtask_filter else ''}.jsonl"
     written = 0
@@ -150,7 +205,7 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None) -> Path:
             if not line.strip():
                 continue
             raw = json.loads(line)
-            sample = convert_messages(raw, dataset, i)
+            sample = convert(raw, dataset, i)
             if subtask_filter:
                 # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
                 tag_map = {"vqa": "open_vqa", "caption": "caption", "referring": "bbox",
