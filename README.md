@@ -175,6 +175,25 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 - `[2]` 推理服务（默认 **WebUI 网页推理**：浏览器 http://127.0.0.1:7860 上传图片/文字对话；也可 CLI）
 - `[3]` 训练 / `[4]` 量化 / `[5]` 数据预处理 / `[7]` 容错探针
 
+**多专家路由推理**（报告 §5.3：4 专家按 prompt 规则路由）：
+
+```bash
+# 1) 一键启动 4 个专家实例(默认模型在 ~/router_models/ 或 ModelScope 自动拉取)
+#    general=8001 grounding=8002 change=8003 caption=8004, 两卡分载
+bash scripts/start_router.sh
+
+# 2) 交互路由对话(自动按规则分发到对应专家)
+python -m rsmllm.router --chat
+#   "Describe the image in detail" → caption
+#   "[REF] Where is the building?" → grounding
+#   "Describe the changes"         → change
+#   "What color is the roof?"      → general
+```
+
+> 路由规则与评测链路一致（`evaluation/router/rules.py`：`[VQA]`/默认→general、
+> `[REF]`/where→grounding、`[CD]`/change→change、`[CAP]`/describe→caption）。
+> 实例按需启停（`pkill -f "vllm.entrypoints"`），用完释放显存不影响评测。
+
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
 `w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等 15 个），
 或直接给 ModelScope id / 本地路径。模型按需下载缓存在 `.models/`（

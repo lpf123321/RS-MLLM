@@ -199,6 +199,24 @@ class VLLMBatchAdapter:
         }
 
     def _prompt_text(self, image_paths: list[str], prompt: str) -> str:
+        # 报告口径 system prompt(与 evaluation/main.py SYSTEM_PROMPTS 一致):
+        # 按任务前缀引导输出格式
+        system = ""
+        if "[VQA]" in prompt:
+            system = ("Obey the task prefix:\n"
+                      "- [VQA] Answer with a single word or short phrase only. No extra text.")
+        elif "[CAP]" in prompt:
+            system = ("Obey the task prefix:\n"
+                      "- [CAP] Describe the image in detail.")
+        elif "[REF]" in prompt:
+            system = ("Obey the task prefix:\n"
+                      "- [REF] Output ONLY the bounding box in format {<x1><y1><x2><y2>} "
+                      "with integer coordinates 0-100, e.g. {<25><40><33><60>}. No other text.")
+        elif "[CD]" in prompt:
+            system = "Describe the changes between the two images concisely in 1-2 sentences."
+        elif "[MCQ]" in prompt:
+            system = ("Answer EXACTLY in format \"X. (X) FullOptionText\" with the letter repeated "
+                      "in parentheses. Example: \"D. (D) White\". Output ONLY that line.")
         content = [
             {
                 "type": "image",
@@ -209,7 +227,9 @@ class VLLMBatchAdapter:
             for path in image_paths
         ]
         content.append({"type": "text", "text": prompt})
-        messages = [{"role": "user", "content": content}]
+        messages = ([{"role": "system", "content": system}] if system else []) + [
+            {"role": "user", "content": content}
+        ]
         return self.processor.apply_chat_template(
             messages,
             tokenize=False,

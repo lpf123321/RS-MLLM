@@ -94,7 +94,8 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
     if not text or not images:
         raise ValueError(f"{dataset} row {index}: empty text/images")
 
-    task_type, prompt = parse_prefix(text)
+    task_type, _ = parse_prefix(text)   # 判定任务类型
+    prompt = text.strip()               # 保留 [VQA] 等前缀(与报告 system prompt 口径一致)
     mcq_choices: dict[str, str] = {}
     if task_type == "single_choice":
         mcq_choices, _ = parse_mcq(prompt)  # 先解析选项(题干+选项完整文本)
