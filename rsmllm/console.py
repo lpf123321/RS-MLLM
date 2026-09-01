@@ -51,6 +51,16 @@ def _ask_model() -> str:
 
 
 def _cmd_eval() -> None:
+    mode = _ask("评测模式 (route=一键路由专家评测 / single=单模型评测)", "route")
+    if mode == "route":
+        quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16")
+        limit = _ask("每任务样本上限(留空=全量, 验证用填小值)", "")
+        print(f"  → 一键路由专家评测: 量化={quant}")
+        cmd = [EVAL_PY, "-m", "rsmllm.router_eval", "--quant", quant]
+        if limit:
+            cmd += ["--limit", limit]
+        subprocess.run(cmd, check=False)
+        return
     model = _ask_model()
     datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
     profile = _ask("模型 profile(mmerestore_bf16 / mmerestore_w8a8 / mmerestore_gptq / 或自定义路径)",
