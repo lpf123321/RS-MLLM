@@ -153,14 +153,11 @@ docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
 **方式三：一键配置（`setup.sh` 自动识别 uv/conda 并自动进入环境）**
 
 ```bash
-source setup.sh             # 有 uv → uv sync --locked 并激活 .venv；无 uv → conda 兜底
+bash setup.sh                                              # 训练/推理环境(torch 2.8 cu128)
+bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(vllm 0.26 cu129)
 ```
 
-> 被 `source` 后会自动激活对应环境；直接 `bash setup.sh` 执行时只安装、打印激活指引。
-
-> **评测环境独立**（vllm 0.26 + torch 2.11 cu129，与训练环境不同）：
-> `cd evaluation/vllm_eval && uv sync --locked`（见 `evaluation/vllm_eval/README.md`）。
-> 评测器依赖 vllm 0.26，不能用 3.2 的训练环境运行（torch 2.8 cu128 缺 vllm）。
+> 评测器依赖 vllm 0.26，要用 `evaluation/vllm_eval` 的评测环境，不能用 3.2 的训练环境。
 
 ### 3.3 模型推理
 

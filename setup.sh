@@ -3,10 +3,8 @@ set -e
 
 # ============================================================
 # RS-MLLM 环境安装（懒人回滚路径，自动识别）
-#   source setup.sh  -> 自动安装并激活环境（uv 优先，conda 兜底）
-#   bash setup.sh    -> 只安装，打印激活指引
-#   ⚠️ 本脚本是【训练/推理环境】(torch 2.8 cu128)。
-#   要跑【vLLM 评测/量化模型评测】请用:  bash evaluation/vllm_eval/setup_env.sh  (vllm 0.26 cu129)
+#   bash setup.sh  -> 安装(训练/推理环境, torch 2.8 cu128)
+#   vLLM 评测环境: bash evaluation/vllm_eval/setup_env.sh  (vllm 0.26 cu129)
 # 推荐直接跑: uv sync --locked && source .venv/bin/activate
 # ============================================================
 
