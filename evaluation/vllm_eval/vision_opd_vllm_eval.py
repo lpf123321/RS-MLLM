@@ -18,6 +18,28 @@ import time
 from pathlib import Path
 from typing import Any
 
+
+def setup_runtime_env() -> None:
+    """自动设置 vLLM 运行时所需环境变量(用户无需手动 export)。
+
+    - LD_LIBRARY_PATH: 从本 venv site-packages 自动推导 av.libs / nvidia/*/lib
+    - VLLM_USE_FLASHINFER_SAMPLER=0: flashinfer 0.6.14 与 nvcc12.4 不兼容
+    - VLLM_WORKER_MULTIPROC_METHOD=spawn: vllm 多进程必须 spawn
+    """
+    import glob
+
+    site_pkgs = Path(__file__).resolve().parent.parent / ".venv" / "lib" / "python3*" / "site-packages"
+    site_pkgs = next(iter(glob.glob(str(site_pkgs))), None)
+    if site_pkgs:
+        lib_dirs = [d for d in glob.glob(f"{site_pkgs}/av.libs") + glob.glob(f"{site_pkgs}/nvidia/*/lib")]
+        if lib_dirs:
+            os.environ["LD_LIBRARY_PATH"] = ":".join(lib_dirs) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+
+
+setup_runtime_env()
+
 import vision_opd_eval as base
 from model import GenerationResult
 from model_policy import (

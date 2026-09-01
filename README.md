@@ -183,16 +183,13 @@ python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本
 ### 3.4 模型评测
 
 评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384），
-一键还原环境：
+统一入口（首次建环境，之后直接评测，无需手动 export）：
 
 ```bash
-# 1) 一键环境（uv sync --locked 精确锁定 vllm 0.26 + torch 2.11 cu129）
-bash setup.sh                      # 训练/推理环境(torch 2.8 cu128)
-bash evaluation/vllm_eval/setup_env.sh   # 评测环境(vllm 0.26 cu129, 独立 venv)
-export VLLM_USE_FLASHINFER_SAMPLER=0     # 必需(flashinfer 0.6.14 与 nvcc12.4 不兼容)
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
+# 1) 一次性建环境(vllm 0.26 + torch 2.11 cu129, 独立于训练环境):
+bash evaluation/vllm_eval/setup_env.sh
 
-# 2) vLLM 评测器(与报告一致: 三pass + clean_correct 计分)
+# 2) vLLM 评测器(环境变量自动设置, 三pass + clean_correct 计分):
 cd evaluation/vllm_eval
 .venv/bin/python vision_opd_vllm_eval.py \
   --manifest /path/to/testset.jsonl \
@@ -201,7 +198,7 @@ cd evaluation/vllm_eval
   --output-dir results/xxx \
   --min-pixels 200704 --max-pixels 2097152 --batch-size 128
 
-# 3) 评分(与报告一致: 离散题只算 clean_eligible, caption 走 caption_metrics)
+# 3) 评分(离散题只算 clean_eligible, caption 走 caption_metrics):
 .venv/bin/python score_run.py results/xxx
 ```
 

@@ -17,11 +17,15 @@
 | `vision_opd_profile.py` | 注册 vision_opd_9b profile |
 | `prompts.py` / `sampling.py` / `caption_metrics.py` / `validate_run.py` | 提示词、采样、caption 代理指标、验证 |
 
-## 运行方式（标准）
+## 运行方式
 
 ```bash
+# 首次: 建环境(一次性)
+bash evaluation/vllm_eval/setup_env.sh
+
+# 每次评测(无需手动 export, 环境变量评测器自动设置):
 cd evaluation/vllm_eval
-python vision_opd_vllm_eval.py \
+.venv/bin/python vision_opd_vllm_eval.py \
   --manifest <testset.jsonl> \
   --model <model_dir> \
   --model-profile <key>   # 或 --derived-profile <manifest.json> \
@@ -33,6 +37,7 @@ python vision_opd_vllm_eval.py \
 - `--model-profile` 取 `model_policy.py` 中可信 profile（如 `mmerestore_bf16`）；
 - 新模型用 `--derived-profile`（结构见 `docs/EXPERIMENT_MAP.md` ⑧）；
 - 三 pass 策略（token 倍数 1x/2x/4x），输出 `prediction_attempts.jsonl` + `run_config.json`。
+- 评测器自包含: VLLM_USE_FLASHINFER_SAMPLER/LD_LIBRARY_PATH/WORKER_MULTIPROC 自动设置。
 
 ## 运行环境（vllm 0.26 + torch 2.11 cu129）
 
@@ -41,19 +46,8 @@ python vision_opd_vllm_eval.py \
 
 ```bash
 # 一键: bash evaluation/vllm_eval/setup_env.sh
-cd evaluation/vllm_eval
-uv sync --locked          # 依 uv.lock 精确还原(vllm 0.26 + torch 2.11 cu129 + torchcodec 0.15 cu129)
+cd evaluation/vllm_eval && uv sync --locked   # 依 uv.lock 还原(vllm 0.26 + torch 2.11 cu129)
 ```
-
-运行前置（Qwen3.5 加载）：
-```bash
-export VLLM_USE_FLASHINFER_SAMPLER=0          # flashinfer 0.6.14 与 nvcc12.4 不兼容
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-```
-
-> **注意**：`VLLM_USE_FLASHINFER_SAMPLER=0` 为必需（否则 flashinfer 0.6.14 编译失败）。
-> 图片评测**不需要** `LD_LIBRARY_PATH`（uv.lock 已含 torchcodec cu129 + nvidia libs）。
-> vllm wheel 由 `setup_env.sh` 下载；GitHub 慢时可用 ghproxy 加速。
 
 ## 数据/模型
 
