@@ -164,20 +164,19 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 
 ### 3.3 模型推理
 
-**推荐：交互式控制台（问答式选择任务，模型首次使用自动从 ModelScope 拉取）**
+**推荐：WebUI 网页推理**（上传遥感图片 + 文字对话，多模态真实推理）
 
 ```bash
-./bin/rsmllm            # 进入控制台（或 python -m rsmllm.console）
+# 建评测环境后（bash evaluation/vllm_eval/setup_env.sh）:
+cd evaluation/vllm_eval
+PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.webui --model <模型路径或别名>
+# 浏览器打开 http://127.0.0.1:7860 上传图片/输入文字进行推理
 ```
 
-菜单：`[2] 推理服务` → 选模型别名 → 自动下载并启动推理。
-
-**非交互（脚本）**：
+**交互式控制台**（统一入口，菜单选择功能）：
 
 ```bash
-# 推理服务需要 vLLM，用评测环境运行：
-cd evaluation/vllm_eval
-PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.serve --model w8a8 --port 8001
+./bin/rsmllm            # 菜单 [1]评测 / [2]推理(默认WebUI) / 其他工具
 ```
 
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
