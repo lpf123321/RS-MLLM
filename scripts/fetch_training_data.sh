@@ -1,37 +1,21 @@
 #!/bin/bash
 # ============================================================
-# 下载训练数据集（清洗后的 json/jsonl）—— 从 ModelScope 拉取
+# 下载训练数据集（清洗后的 json/jsonl）—— 懒加载: ModelScope 首次下载, 本地命中复用
 #
-# 说明:
-#   - 四专家训练所需的 12 个清洗 json 数据已打包上传至 ModelScope。
-#   - 下载后自动放置到 finetune_framework/VRSbench/ 对应位置，
-#     与训练脚本（scripts/training/）的 DATA_PATH 一致。
-#   - 图片（assets/<hash>.png）不在此包内，见 scripts/fetch_raw_images.sh
+# 通过 rsmllm.data 完成:
+#   1) get_dataset("training")   -> 下载到 <仓库>/datasets (默认 RSMLLM_DATASETS_CACHE)
+#   2) restore_training_data()   -> 发布名还原内部名, 放到 finetune_framework/VRSbench/
+# 训练脚本(DATA_PATH)直接读内部名, 无需额外步骤。
 #
 # 用法:
-#   bash scripts/fetch_training_data.sh                       # 用默认 repo
-#   MODELSCOPE_REPO=<repo_id> bash scripts/fetch_training_data.sh
+#   bash scripts/fetch_training_data.sh
+#   环境变量: MODELSCOPE_REPO(默认 yasumi/rs-mllm-datasets), RSMLLM_DATASETS_CACHE,
+#             MODELSCOPE_API_TOKEN, MODELSCOPE_OFFLINE=1(纯离线)
 # ============================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$REPO_ROOT/finetune_framework/VRSbench"
-TMP="$REPO_ROOT/.data_download"
-
-# 从环境或 modelscope 配置文件读取；未配置时按远端已知 repo 名作为默认值
-# （若仍未上传，给出一键流程指引）
-MODELSCOPE_REPO="${MODELSCOPE_REPO:-}"
-if [ -z "$MODELSCOPE_REPO" ] && [ -f "$REPO_ROOT/.modelscope_repo" ]; then
-  MODELSCOPE_REPO="$(cat "$REPO_ROOT/.modelscope_repo" | tr -d '[:space:]')"
-fi
-MODELSCOPE_REPO="${MODELSCOPE_REPO:-yasumi/rs-mllm-datasets}"  # 默认: 组员训练数据仓库
-if [ -z "$MODELSCOPE_REPO" ]; then
-  echo "[fetch_training_data] 尚未配置 ModelScope 数据仓库。"
-  echo "  1) 把 12 个清洗 json（见 scripts/package_training_data.sh 打包）上传到 ModelScope;"
-  echo "  2) 把仓库 id 写入 $REPO_ROOT/.modelscope_repo，"
-  echo "     或 export MODELSCOPE_REPO=<自己的/user/repo-id>。"
-  exit 1
-fi
 
 # 若本地已有数据则跳过
 if [ -f "$DEST/manifest_sft_train.json" ] && [ -f "$DEST/expert_data_caption.jsonl" ]; then
@@ -39,60 +23,29 @@ if [ -f "$DEST/manifest_sft_train.json" ] && [ -f "$DEST/expert_data_caption.jso
   exit 0
 fi
 
-echo "[fetch_training_data] 从 ModelScope 下载训练数据: $MODELSCOPE_REPO"
+echo "[fetch_training_data] 从 ModelScope 懒加载训练数据 ..."
 
-# 优先使用评测环境 python(含 modelscope + 登录凭据); 否则系统 python; 最后 git clone
+# 用评测环境 python(含 modelscope + 登录凭据); 否则系统 python
 EVAL_PY="$REPO_ROOT/evaluation/vllm_eval/.venv/bin/python"
 MS_PY="$EVAL_PY"
 if ! "$MS_PY" -c "import modelscope" 2>/dev/null; then
   MS_PY="python"
 fi
-if "$MS_PY" -c "import modelscope" 2>/dev/null; then
-  mkdir -p "$TMP"
-  "$MS_PY" - "$MODELSCOPE_REPO" "$TMP" <<'PY'
-import sys, shutil, os
-from modelscope import dataset_snapshot_download
-repo_id, dst = sys.argv[1], sys.argv[2]
-dataset_snapshot_download(repo_id, local_dir=dst)
-PY
-  SRC="$TMP"
-else
-  SRC="$TMP"
-  git clone --depth 1 "https://www.modelscope.cn/${MODELSCOPE_REPO}.git" "$TMP" || \
-    { echo "git clone 失败，请先 pip install modelscope"; exit 1; }
+if ! "$MS_PY" -c "import modelscope" 2>/dev/null; then
+  echo "[fetch_training_data] 未找到含 modelscope 的 python，请先 pip install modelscope。"
+  exit 1
 fi
 
-# 将下载的文件还原为训练脚本内部名（发布名 -> 内部名，见 training_data_manifest.sh）
-source "$REPO_ROOT/scripts/training_data_manifest.sh"
-mkdir -p "$DEST"
+PYTHONPATH="$REPO_ROOT:$PYTHONPATH" "$MS_PY" - <<'PY'
+import os
+from rsmllm.data import get_dataset, restore_training_data
 
-# 顶层文件
-for pair in "${DATA_FILES[@]}"; do
-  pub="${pair%%::*}"; int="${pair##*::}"
-  src="$SRC/$pub"
-  [ -f "$src" ] || src="$SRC/finetune_framework/VRSbench/$pub"
-  if [ -f "$src" ]; then
-    cp -n "$src" "$DEST/$int" && echo "  +$int   (<- $pub)"
-  else
-    echo "  !! 未找到 $pub（跳过）"
-  fi
-done
+repo = os.environ.get("MODELSCOPE_REPO", "yasumi/rs-mllm-datasets")
+cache = os.environ.get("RSMLLM_DATASETS_CACHE")
+root = get_dataset(repo, cache_dir=cache)
+print(f"[fetch_training_data] 数据集缓存: {root}")
+dest = restore_training_data(dataset_root=root)
+print(f"[fetch_training_data] 已还原训练json到: {dest}")
+PY
 
-# expert_data / expert_data_v2 子目录
-declare -A SUBS=([expert_data]="DATA_FILES_EXPERT" [expert_data_v2]="DATA_FILES_EXPERT_V2")
-for sub in expert_data expert_data_v2; do
-  mkdir -p "$DEST/$sub"
-  var="${SUBS[$sub]}"; eval "list=(\"\${$var[@]}\")"
-  for pair in "${list[@]}"; do
-    pub="${pair%%::*}"; int="${pair##*::}"
-    src="$SRC/$sub/$pub"; [ -f "$src" ] || src="$SRC/finetune_framework/VRSbench/$sub/$pub"
-    if [ -f "$src" ]; then
-      cp -n "$src" "$DEST/$sub/$int" && echo "  +$sub/$int   (<- $pub)"
-    else
-      echo "  !! 未找到 $sub/$pub（跳过）"
-    fi
-  done
-done
-
-echo "[fetch_training_data] 完成。数据位于 $DEST"
-ls -la "$DEST" | head
+echo "[fetch_training_data] 完成。训练数据位于 $DEST"
