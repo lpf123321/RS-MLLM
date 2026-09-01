@@ -50,16 +50,22 @@ ROUTE_PLAN = {
     ],
 }
 
-# 模型: 量化方式 + 专家 -> 模型引用(本地路径或 get_model 别名)
+# 模型: 量化方式 + 专家 -> (模型路径, profile 注册名)
 # general/ground 用 full 版(含 LoRA); change/caption 无 LoRA(架构如此)。full 优先本地 models/。
 _M = REPO_ROOT / "models"
 QUANT_EXPERTS = {
-    "bf16": {"general": str(_M / "expert_general_full"), "grounding": str(_M / "expert_ground_full"),
-             "change": "expert_change", "caption": "expert_caption"},
-    "w8a8": {"general": str(_M / "expert_general_full_w8a8"), "grounding": str(_M / "expert_ground_full_w8a8"),
-             "change": "expert_change_w8a8", "caption": "expert_caption_w8a8"},
-    "gptq": {"general": str(_M / "expert_general_full_gptq"), "grounding": str(_M / "expert_ground_full_gptq"),
-             "change": "expert_change_gptq", "caption": "expert_caption_gptq"},
+    "bf16": {"general": (str(_M / "expert_general_full"), "expert_general_full"),
+             "grounding": (str(_M / "expert_ground_full"), "expert_ground_full"),
+             "change": ("expert_change", "expert_change"),
+             "caption": ("expert_caption", "expert_caption")},
+    "w8a8": {"general": (str(_M / "expert_general_full_w8a8"), "expert_general_full_w8a8"),
+             "grounding": (str(_M / "expert_ground_full_w8a8"), "expert_ground_full_w8a8"),
+             "change": ("expert_change_w8a8", "expert_change_w8a8"),
+             "caption": ("expert_caption_w8a8", "expert_caption_w8a8")},
+    "gptq": {"general": (str(_M / "expert_general_full_gptq"), "expert_general_full_gptq"),
+             "grounding": (str(_M / "expert_ground_full_gptq"), "expert_ground_full_gptq"),
+             "change": ("expert_change_gptq", "expert_change_gptq"),
+             "caption": ("expert_caption_gptq", "expert_caption_gptq")},
 }
 
 
@@ -133,9 +139,9 @@ def main() -> int:
 
     rc = 0
     for expert, tasks in ROUTE_PLAN.items():
-        alias = QUANT_EXPERTS[args.quant][expert]
-        print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {alias}")
-        model_path = resolve_model(alias)
+        model_ref, profile = QUANT_EXPERTS[args.quant][expert]
+        print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {model_ref} (profile {profile})")
+        model_path = resolve_model(model_ref)
         for task_name, src_name, task_type in tasks:
             # 首次自动准备: 图片下载 + 可移植评测清单构建(vrsbench 等 6 数据集)
             from rsmllm.data import prepare_eval
@@ -143,7 +149,7 @@ def main() -> int:
                 prepare_eval(SRC_TO_DATASET[src_name])
             print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
-            r = run_eval(model_path, alias, manifest, args.limit)
+            r = run_eval(model_path, profile, manifest, args.limit)
             rc = max(rc, r)
     print(f"\n[router-eval] 完成. 结果在 evaluation/vllm_eval/results/ (按任务独立时间戳目录)")
     return rc
