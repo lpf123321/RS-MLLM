@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -72,6 +73,8 @@ def wait_server(port: int, timeout: int = 600) -> OpenAI:
 
 def build_ui(client: OpenAI, args: argparse.Namespace) -> gr.ChatInterface:
     """Gradio 多模态聊天界面(图片上传 + 文字对话)."""
+    thinking_pattern = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>\s*", re.DOTALL)
+
     def respond(message, history):
         content = []
         if message.get("files"):
@@ -85,9 +88,11 @@ def build_ui(client: OpenAI, args: argparse.Namespace) -> gr.ChatInterface:
             model=args.model,
             messages=[{"role": "user", "content": content}],
             temperature=0,
-            max_tokens=256,
+            max_tokens=2048,
         )
-        return resp.choices[0].message.content or ""
+        # 剥离 thinking 块, 只显示最终正文(与评测器口径一致)
+        text = resp.choices[0].message.content or ""
+        return thinking_pattern.sub("", text).strip() or "(无正文, 仅思考过程)"
 
     return gr.ChatInterface(
         fn=respond,
