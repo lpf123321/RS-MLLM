@@ -14,6 +14,7 @@ from datetime import datetime
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -234,7 +235,7 @@ class VLLMBatchAdapter:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            # 报告口径: 开 thinking(与 run_delta_task_router force_think=True 一致)
+            enable_thinking=False,  # 与 qwen35vl 默认一致(报告主链路口径); thinking 为待确认项
         )
 
     def generate_batch(
