@@ -12,6 +12,7 @@ dependencies = [
     "safetensors",
     "modelscope",
     "gradio",
+    "httpx[socks]",
     "torchcodec==0.15.0+cu129",
 ]
 

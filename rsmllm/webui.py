@@ -41,6 +41,9 @@ def parse_args() -> argparse.Namespace:
 def start_vllm_server(args: argparse.Namespace) -> None:
     """后台启动 vLLM OpenAI 兼容服务(复用 vllm serve, 不造轮子)."""
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+    # 本地 API 调用不经过代理(避免 socks/代理劫持本地回环)
+    os.environ["NO_PROXY"] = "127.0.0.1,localhost"
+    os.environ["no_proxy"] = "127.0.0.1,localhost"
     cmd = [
         str(PY), "-m", "vllm.entrypoints.openai.api_server",
         "--model", args.model,

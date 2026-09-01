@@ -43,11 +43,15 @@ def _ask_model() -> str:
 def _cmd_eval() -> None:
     model = _ask_model()
     datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
-    print(f"  → 评测 model={model} datasets={datasets}")
+    profile = _ask("模型 profile(mmerestore_bf16 / mmerestore_w8a8 / mmerestore_gptq / 或自定义路径)",
+                   "mmerestore_bf16")
+    print(f"  → 评测 model={model} datasets={datasets} profile={profile}")
     # vLLM 评测器(评测环境, 报告一致): manifest 取仓库默认清单
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
     py = eval_py if eval_py.exists() else sys.executable
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     manifest_map = {
         "vrsbench": "vrsbench_eval.jsonl",
         "mme": "mme_rs.jsonl",
@@ -56,14 +60,17 @@ def _cmd_eval() -> None:
     }
     ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
     manifest = eval_dir / ".." / ".." / "datasets_data" / manifest_map.get(ds, "vrsbench_eval.jsonl")
+    # profile 若为本地文件路径 → --derived-profile; 否则按名字 → --model-profile
+    profile_path = Path(profile).expanduser()
+    profile_arg = "--derived-profile" if profile_path.is_file() else "--model-profile"
     cmd = [str(py), str(eval_dir / "vision_opd_vllm_eval.py"),
            "--manifest", str(manifest),
            "--model", model,
-           "--model-profile", "mmerestore_bf16",
+           profile_arg, profile,
            "--min-pixels", str(REPORT_CONF["min_pixels"]),
            "--max-pixels", str(REPORT_CONF["max_pixels"]),
            "--batch-size", str(REPORT_CONF["batch_size"])]
-    subprocess.run(cmd, check=False)
+    subprocess.run(cmd, check=False, env=env)
 
 
 def _cmd_serve() -> None:
