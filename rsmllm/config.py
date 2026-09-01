@@ -79,6 +79,8 @@ MODEL_REGISTRY = {
     "expert_ground": "Fun10165/rs-mllm-expert-ground",
     "expert_general_lora": "Fun10165/rs-mllm-expert-general-lora",
     "expert_ground_lora": "Fun10165/rs-mllm-expert-ground-lora",
+    "expert_general_full": "Fun10165/rs-mllm-expert-general-full",
+    "expert_ground_full": "Fun10165/rs-mllm-expert-ground-full",
     "expert_change": "Fun10165/rs-mllm-expert-change",
     "expert_caption": "Fun10165/rs-mllm-expert-caption",
     "expert_general_w8a8": "Fun10165/rs-mllm-expert-general-w8a8-int8",
