@@ -66,11 +66,14 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 - **关 thinking**（`enable_thinking=False`，与 qwen35vl 默认一致；多模态评测不需思考）
 - system prompt 按任务前缀（[VQA]/[CAP]/[REF]/[CD]/[MCQ]，报告口径）
 - manifest 保留任务前缀 + MCQ **保留选项行**（模型需看到 A/B/C/D）
-- `--enforce-eager`（**必须**：观测到 vllm graph 模式下 grounding/bbox 任务启动阶段挂起（无输出、CPU 0%）；eager 规避后跑通。**机制未确认**，router_eval 已内置）
+- `--enforce-eager`（router_eval 当前稳定配置；graph 模式的启动与编译可能耗时，不能仅凭中途无输出判定挂起）
+- vLLM 错误中的 `cuda:0` 是进程内可见设备序号；`CUDA_VISIBLE_DEVICES=1` 时它对应物理 GPU 1，须用 `nvidia-smi` 的 GPU index/UUID 核对，不能据此断言落在物理 GPU 0。
+- 评测器在创建 `LLM` 前用 NVML 解析物理 GPU UUID、做显存预检并持有进程锁；同一物理 GPU 的重复评测会快速失败，不会再启动冲突的 EngineCore；不同物理 GPU 仍可并行。
+- `router_eval` 的子评测返回非零时立即停止，不继续启动后续任务，避免把一次启动失败扩散成多个残缺结果目录。
 - 时间戳输出目录 + resume 保护（code_sha256 校验）
 
 **known issues**：
-1. vllm graph 模式下 grounding/bbox 任务启动挂起（现象，机制未确认；已用 --enforce-eager 规避）
+1. vllm graph 模式下 grounding/bbox 的启动与编译可能持续约 1 分钟；干净的一条样例已完整退出（exit 0），此前的“卡死”判断来自只看启动中途的父进程 CPU/显存快照。`router_eval` 仍保留 `--enforce-eager` 作为当前稳定配置；不要用单次 CPU 快照判定卡死。
 2. MCQ 无选项行 → 模型答语义 0 分（已修：保留选项行）
 3. `xlrs` 官方无 test split（HF 只有 train 74 分片）——我们用其 index 顺序前 3,080 条；`xlrs_caption_en`(934) / `xlrs_grounding_test`(6,310) 是官方 test
 4. 评测环境勿加 llmcompressor（依赖冲突）

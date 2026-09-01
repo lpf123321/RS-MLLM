@@ -114,9 +114,17 @@ def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -
            "--min-pixels", "200704",
            "--max-pixels", "2097152",
            "--batch-size", "128",
-           "--enforce-eager"]  # vllm CUDA graph 在 bbox 任务卡死; eager 规避
+           "--enforce-eager"]  # 当前稳定配置；graph 启动耗时须看完整结果判断
     print(f"  → 评测 {manifest.name} ...", flush=True)
-    return subprocess.run(cmd, check=False).returncode
+    result = subprocess.run(cmd, check=False)
+    if result.returncode:
+        print(
+            f"  ✗ 评测子进程失败 (exit={result.returncode}); "
+            "停止当前路由，避免在同一块 GPU 上继续启动后续任务。",
+            file=sys.stderr,
+            flush=True,
+        )
+    return result.returncode
 
 
 def resolve_model(alias: str) -> str:
@@ -140,7 +148,6 @@ def main() -> int:
             print(f"{expert}: " + ", ".join(t[0] for t in tasks))
         return 0
 
-    rc = 0
     experts = args.experts or list(ROUTE_PLAN)
     for expert in experts:
         tasks = ROUTE_PLAN[expert]
@@ -155,9 +162,10 @@ def main() -> int:
             print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
             r = run_eval(model_path, profile, manifest, args.limit)
-            rc = max(rc, r)
+            if r:
+                return r
     print(f"\n[router-eval] 完成. 结果在 evaluation/vllm_eval/results/ (按任务独立时间戳目录)")
-    return rc
+    return 0
 
 
 if __name__ == "__main__":
