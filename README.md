@@ -215,20 +215,49 @@ python -m rsmllm.router --chat
 ### 3.4 模型评测
 
 评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384）。
-统一入口（首次建环境，之后直接评测，无需手动 export）：
+数据与模型均为**首次自动懒加载**（图片/清单/权重），无需手动准备。
+
+**① 一次性建评测环境**（独立于训练环境，vllm 0.26 + torch 2.11 cu129）：
 
 ```bash
-# 一次性建环境(vllm 0.26 + torch 2.11 cu129, 独立于训练环境):
 bash evaluation/vllm_eval/setup_env.sh
-
-# 评测(菜单 [1], 交互选模型/清单/profile; 模型自动拉取, 结果自动写 clean_summary.json):
-./rsmllm.sh
 ```
 
-> 说明：`--model-profile` 选 `model_policy.py` 中的可信 profile（如 `mmerestore_bf16`），
+**② 方式 A：交互式统一入口**（推荐，菜单引导）：
+
+```bash
+./rsmllm.sh
+# 菜单 [1] 评测 → route(一键路由专家评测) 或 single(单模型)
+#   - route: 选量化方式(bf16/w8a8/gptq)→ 自动跑 4 专家×对应任务
+#   - single: 选模型别名 + 数据集(vrsbench/mme/xlrs/levircc) + profile
+# 结果自动写入 evaluation/vllm_eval/results/<manifest>_<profile>/: clean_summary.json / official_summary.json / unit_scores.jsonl
+```
+
+**② 方式 B：直接命令**（跳过交互菜单，便于精确复现）：
+
+```bash
+# 一键路由专家评测(全部 4 专家; bf16 全量, --limit 可限制样本数做小验证):
+evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
+
+# 单模型 + 单数据集评测(vllm 0.26, 与报告一致):
+evaluation/vllm_eval/.venv/bin/python evaluation/vllm_eval/vision_opd_vllm_eval.py \
+    --manifest <评测清单路径> \
+    --model <模型别名或本地/ModelScope路径> \
+    --model-profile <可信profile名>   # 或 --derived-profile <profile.json>
+```
+
+**懒加载（首次自动，缓存后复用）**：
+| 内容 | 自动行为 | 缓存位置 |
+|---|---|---|
+| 评测图片 | `rsmllm/data.py::prepare_eval` → `fetch_benchmark_data.py` 从 ModelScope/HF 镜像下载 | `datasets/shared_datasets/<数据名>/` |
+| 评测清单 | 缺则 `build_sample_manifest.py` 生成（相对路径 + 真实尺寸） | `evaluation/vllm_eval/manifests/`（生成产物，不入库） |
+| 模型权重 | `rsmllm/models.py::get_model` → ModelScope 下载 | `.models/` |
+
+> 说明：`--model-profile` 选 `model_policy.py` 中的可信 profile（如 `mmerestore_bf16`、专家 `_full` 版），
 > 或改用 `--derived-profile /path/to/profile.json`（二选一）。
-> `--output-dir` 省略时默认为 `results/<manifest文件名>_<profile>`。
-> 评分结果自动写入输出目录：`clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
+> 模型别名见 `rsmllm/config.py::MODEL_REGISTRY`（`base`、`mmerestore_bf16`、`expert_*`、`expert_*_full[_w8a8/gptq]` 等）。
+> `--output-dir` 省略时默认为 `results/<manifest文件名>_<profile>`；评分结果自动写入 `clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
+> HF 走镜像：默认 `HF_ENDPOINT=https://hf-mirror.com`（可覆盖）。
 > **数据懒加载**：评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像
 > （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
 > 并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，
