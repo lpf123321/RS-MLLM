@@ -15,6 +15,7 @@ dependencies = [
     "pillow>=10.0.0",
     "einops",
     "huggingface_hub",
+    "modelscope",
     "requests",
     "deepspeed==0.17.5",
     "peft==0.15.2",
