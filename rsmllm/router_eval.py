@@ -129,6 +129,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quant", choices=list(QUANT_EXPERTS), default="bf16",
                     help="量化方式(只允许选这个, 其余自动分配)")
+    ap.add_argument("--experts", nargs="+", choices=list(ROUTE_PLAN),
+                    help="只跑指定专家(默认全部; 断点续跑用)")
     ap.add_argument("--limit", type=int, help="每任务最多样本(验证用)")
     ap.add_argument("--list", action="store_true", help="打印映射表")
     args = ap.parse_args()
@@ -139,7 +141,9 @@ def main() -> int:
         return 0
 
     rc = 0
-    for expert, tasks in ROUTE_PLAN.items():
+    experts = args.experts or list(ROUTE_PLAN)
+    for expert in experts:
+        tasks = ROUTE_PLAN[expert]
         model_ref, profile = QUANT_EXPERTS[args.quant][expert]
         print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {model_ref} (profile {profile})")
         model_path = resolve_model(model_ref)
