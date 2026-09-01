@@ -11,6 +11,7 @@ dependencies = [
     "av",
     "safetensors",
     "modelscope",
+    "gradio",
     "torchcodec==0.15.0+cu129",
 ]
 

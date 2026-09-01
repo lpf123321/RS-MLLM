@@ -68,16 +68,21 @@ def _cmd_eval() -> None:
 
 def _cmd_serve() -> None:
     model = _ask_model()
-    port = _ask("端口", "8001")
-    print(f"  → vLLM serve model={model} port={port}")
-    # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动推理服务
+    mode = _ask("模式 (webui=网页界面 / cli=命令行对话)", "webui")
+    # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    cmd = [str(py), "-m", "rsmllm.serve",
-           "--model", model, "--port", port,
-           "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
+    if mode == "webui":
+        print(f"  → WebUI 推理 model={model} (浏览器打开 http://127.0.0.1:7860)")
+        cmd = [str(py), "-m", "rsmllm.webui", "--model", model]
+    else:
+        port = _ask("端口", "8001")
+        print(f"  → CLI 推理 model={model} port={port}")
+        cmd = [str(py), "-m", "rsmllm.serve",
+               "--model", model, "--port", port,
+               "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
     subprocess.run(cmd, check=False, env=env)
 
 
