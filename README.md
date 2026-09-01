@@ -164,20 +164,16 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 
 ### 3.3 模型推理
 
-**推荐：WebUI 网页推理**（上传遥感图片 + 文字对话，多模态真实推理）
+**唯一入口：交互式控制台**（菜单选择功能，模型自动从 ModelScope 拉取）
 
 ```bash
-# 建评测环境后（bash evaluation/vllm_eval/setup_env.sh）:
-cd evaluation/vllm_eval
-PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.webui --model <模型路径或别名>
-# 浏览器打开 http://127.0.0.1:7860 上传图片/输入文字进行推理
+./rsmllm.sh
 ```
 
-**交互式控制台**（统一入口，菜单选择功能）：
-
-```bash
-./rsmllm.sh             # 菜单 [1]评测 / [2]推理(默认WebUI) / 其他工具
-```
+菜单：
+- `[1]` 模型评测（选模型/清单/profile，跑测试集出准确率）
+- `[2]` 推理服务（默认 **WebUI 网页推理**：浏览器 http://127.0.0.1:7860 上传图片/文字对话；也可 CLI）
+- `[3]` 训练 / `[4]` 量化 / `[5]` 数据预处理 / `[7]` 容错探针
 
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
 `w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等 15 个），
@@ -186,43 +182,21 @@ PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.webui --model <模型路径或
 
 ### 3.4 模型评测
 
-评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384），
+评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384）。
 统一入口（首次建环境，之后直接评测，无需手动 export）：
 
 ```bash
-# 1) 一次性建环境(vllm 0.26 + torch 2.11 cu129, 独立于训练环境):
+# 一次性建环境(vllm 0.26 + torch 2.11 cu129, 独立于训练环境):
 bash evaluation/vllm_eval/setup_env.sh
 
-# 2) vLLM 评测器(环境变量自动设置, 三pass + clean_correct 计分):
-cd evaluation/vllm_eval
-.venv/bin/python vision_opd_vllm_eval.py \
-  --manifest /path/to/testset.jsonl \
-  --model /path/to/model_dir \
-  --model-profile mmerestore_bf16 \
-  --min-pixels 200704 --max-pixels 2097152 --batch-size 128
-
+# 评测(菜单 [1], 交互选模型/清单/profile; 模型自动拉取, 结果自动写 clean_summary.json):
+./rsmllm.sh
 ```
 
 > 说明：`--model-profile` 选 `model_policy.py` 中的可信 profile（如 `mmerestore_bf16`），
 > 或改用 `--derived-profile /path/to/profile.json`（二选一）。
 > `--output-dir` 省略时默认为 `results/<manifest文件名>_<profile>`。
 > 评分结果自动写入输出目录：`clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
-
-**转录评测（Transformers 路径，不依赖 vLLM）**：
-
-```bash
-./rsmllm.sh           # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
-# 或脚本直接调用:
-python -m evaluation.main --model_path w8a8 --datasets vrsbench mme xlrs levircc \
-  --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
-  --data_path_overrides '{"vrsbench":"/path/950/vrsbench_eval.jsonl","mme":"/path/950/mme_rs.jsonl","xlrs":"/path/950/xlrs.jsonl","levircc":"/path/950/levircc_test.jsonl"}' \
-  --output results/950.json
-```
-
-评测子集（`950` 量化部署 / `770` 量化对比 / `590` 运行时配对 / `400` 离散精度）
-通过 `--data_path_overrides` 把清单路径改到对应子集文件实现（`--data_root` 是
-结果的输出目录，默认 `output/`），与报告附录的说明一致；
-像素上下限与报告评测设置一致（200,704 - 2,097,152）。
 
 **量化转换**（与报告同链路）：
 
