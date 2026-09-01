@@ -116,9 +116,18 @@ def _cmd_quantize() -> None:
 
 
 def _cmd_data() -> None:
-    ds = _ask("数据集 (vrsbench/mme/xlrs/levircc)", "vrsbench")
-    cmd = [TRAIN_PY, f"scripts/preprocess_{ds}.py"]
-    subprocess.run(cmd, check=False)
+    action = _ask("操作 (download=下载评测图片 / preprocess=数据清洗)", "download")
+    if action == "download":
+        ds = _ask("数据集(all / vrsbench / mme / xlrs / xlrs_caption / xlrs_grounding / levircc)", "all")
+        print("  → 下载评测图片(ModelScope 清洗包, ~8.8GB; --source hf 走官方源)")
+        cmd = [EVAL_PY, "scripts/fetch_benchmark_data.py"]
+        if ds != "all":
+            cmd += ["--dataset", ds]
+        subprocess.run(cmd, check=False)
+    else:
+        ds = _ask("数据集 (vrsbench/mme/xlrs/levircc)", "vrsbench")
+        cmd = [TRAIN_PY, f"scripts/preprocess_{ds}.py"]
+        subprocess.run(cmd, check=False)
 
 
 def _cmd_simple(name: str, script: str) -> None:
