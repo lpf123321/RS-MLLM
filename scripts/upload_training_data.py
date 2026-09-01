@@ -25,6 +25,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", default=None, help="逗号分隔的相对路径子集（可选）")
     ap.add_argument("--skip-existing", action="store_true")
+    ap.add_argument("--flatten", action="store_true",
+                    help="去掉 finetune_framework/VRSbench 前缀，VRSbench 顶层文件上传到根目录，"
+                         "expert_data/expert_data_v2 子目录保留（避免同名覆盖）")
+    ap.add_argument("--clean-nested", action="store_true",
+                    help="删除远程 finetune_framework/ 旧嵌套结构（配合 --flatten 使用）")
     args = ap.parse_args()
 
     token = args.token or os.environ.get("MODELSCOPE_API_TOKEN")
@@ -39,21 +44,40 @@ def main():
     files = sorted(p for p in root.rglob("*") if p.is_file())
     only = set(args.only.split(",")) if args.only else None
 
-    print(f"将上传 {len(files)} 个文件到 dataset: {args.repo}")
+    if args.clean_nested:
+        # 删除远程旧嵌套结构（finetune_framework/VRSbench/...）
+        old_pairs = []
+        for f in files:
+            s = str(f.relative_to(root))
+            if s.startswith("finetune_framework/VRSbench/"):
+                old_pairs.append(s)
+        if old_pairs:
+            print(f"[clean] 删除远程旧嵌套 {len(old_pairs)} 个文件", flush=True)
+            api.delete_files(repo_id=args.repo, repo_type="dataset",
+                             file_paths=old_pairs)
+            print("[clean] 完成", flush=True)
+        return
+
+    print(f"将上传 {len(files)} 个文件到 dataset: {args.repo}"
+          + ("（根目录拍平）" if args.flatten else ""))
     for f in files:
         rel = str(f.relative_to(root))
         if only is not None and rel not in only:
             continue
+        target = rel
+        if args.flatten:
+            # 去掉 finetune_framework/VRSbench/ 前缀，保留 expert_data 等子目录层级
+            target = rel.removeprefix("finetune_framework/VRSbench/")
         size = f.stat().st_size / 1e6
         if args.dry_run:
-            print(f"[dry-run] {rel}  ({size:.1f} MB)")
+            print(f"[dry-run] -> {target}  ({size:.1f} MB)  <{rel}>")
             continue
-        print(f"[upload] {rel}  ({size:.1f} MB)", flush=True)
+        print(f"[upload] -> {target}  ({size:.1f} MB)", flush=True)
         api.upload_file(
             repo_id=args.repo,
             repo_type="dataset",
             path_or_fileobj=str(f),
-            path_in_repo=rel,
+            path_in_repo=target,
         )
     print("== 上传完成 ==")
 
