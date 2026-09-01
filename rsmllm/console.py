@@ -46,6 +46,8 @@ def _cmd_eval() -> None:
     profile = _ask("模型 profile(mmerestore_bf16 / mmerestore_w8a8 / mmerestore_gptq / 或自定义路径)",
                    "mmerestore_bf16")
     print(f"  → 评测 model={model} datasets={datasets} profile={profile}")
+    # 标准 ModelScope 用法: 别名/ID 走 snapshot_download, 缓存命中复用, 返回真实缓存路径
+    model_dir = get_model(model)
     # vLLM 评测器(评测环境, 报告一致): manifest 取仓库默认清单
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
@@ -65,7 +67,7 @@ def _cmd_eval() -> None:
     profile_arg = "--derived-profile" if profile_path.is_file() else "--model-profile"
     cmd = [str(py), str(eval_dir / "vision_opd_vllm_eval.py"),
            "--manifest", str(manifest),
-           "--model", model,
+           "--model", model_dir,
            profile_arg, profile,
            "--min-pixels", str(REPORT_CONF["min_pixels"]),
            "--max-pixels", str(REPORT_CONF["max_pixels"]),
@@ -76,19 +78,20 @@ def _cmd_eval() -> None:
 def _cmd_serve() -> None:
     model = _ask_model()
     mode = _ask("模式 (webui=网页界面 / cli=命令行对话)", "webui")
+    model_dir = get_model(model)  # 标准 ModelScope 用法: 缓存复用, 返回真实路径
     # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     if mode == "webui":
-        print(f"  → WebUI 推理 model={model} (浏览器打开 http://127.0.0.1:7860)")
-        cmd = [str(py), "-m", "rsmllm.webui", "--model", model]
+        print(f"  → WebUI 推理 model={model_dir} (浏览器打开 http://127.0.0.1:7860)")
+        cmd = [str(py), "-m", "rsmllm.webui", "--model", model_dir]
     else:
         port = _ask("端口", "8001")
-        print(f"  → CLI 推理 model={model} port={port}")
+        print(f"  → CLI 推理 model={model_dir} port={port}")
         cmd = [str(py), "-m", "rsmllm.serve",
-               "--model", model, "--port", port,
+               "--model", model_dir, "--port", port,
                "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
     subprocess.run(cmd, check=False, env=env)
 
