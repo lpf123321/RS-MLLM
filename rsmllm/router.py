@@ -51,6 +51,7 @@ def start_expert(name: str, model_dir: str, port: int, lora: str | None = None,
     cmd = [
         python, "-m", "vllm.entrypoints.openai.api_server",
         "--model", model_dir,
+        "--served-model-name", "default",
         "--port", str(port),
         "--dtype", "bfloat16",
         "--trust-remote-code",
@@ -80,9 +81,9 @@ def route_request(prompt: str, ports: dict[str, int]) -> tuple[str, int]:
     return expert, ports.get(expert, ports["general"])
 
 
-def chat(expert_port: int, messages: list[dict]) -> str:
+def chat(expert_name: str, expert_port: int, messages: list[dict]) -> str:
     """调用专家实例 OpenAI 兼容接口."""
-    body = json.dumps({"model": "default", "messages": messages, "max_tokens": 1024}).encode()
+    body = json.dumps({"model": expert_name, "messages": messages, "max_tokens": 1024}).encode()
     req = urllib.request.Request(
         f"http://127.0.0.1:{expert_port}/v1/chat/completions",
         data=body, headers={"Content-Type": "application/json"})
@@ -139,7 +140,7 @@ def main() -> int:
             expert, port = route_request(prompt, DEFAULT_PORTS)
             print(f"  → {expert} (port {port})")
             try:
-                print(chat(port, [{"role": "user", "content": prompt}]))
+                print(chat(expert, port, [{"role": "user", "content": prompt}]))
             except Exception as e:
                 print(f"  ! 调用失败: {e}")
 
