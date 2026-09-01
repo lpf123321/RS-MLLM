@@ -46,6 +46,8 @@ DEFAULT_LORAS = {
 def start_expert(name: str, model_dir: str, port: int, lora: str | None = None,
                  python: str = "evaluation/vllm_eval/.venv/bin/python") -> None:
     """启动一个专家的 vLLM OpenAI 兼容服务."""
+    os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")  # flashinfer JIT 与 cub 不兼容
+    os.environ["PATH"] = str(Path(python).parent) + os.pathsep + os.environ.get("PATH", "")  # ninja
     cmd = [
         python, "-m", "vllm.entrypoints.openai.api_server",
         "--model", model_dir,
@@ -56,7 +58,7 @@ def start_expert(name: str, model_dir: str, port: int, lora: str | None = None,
         "--limit-mm-per-prompt", '{"image": 2}',
     ]
     if lora:
-        cmd += ["--enable-lora", "--lora-modules", f"{name}={lora}"]
+        cmd += ["--enable-lora", "--max-lora-rank", "32", "--lora-modules", f"{name}={lora}"]
     print(f"[router] 启动 {name}: {model_dir} (port {port}{' + LoRA' if lora else ''})", flush=True)
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
