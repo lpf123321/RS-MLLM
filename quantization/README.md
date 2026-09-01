@@ -32,15 +32,16 @@ python scripts/quantize_qwen35_vlm.py \
 
 ## 评测
 ```bash
-# 量化配对评测（报告 770/590 子集 A-B-B-A 交替）：
-sbatch quantization/quant_pair_eval.sbatch
+# 统一入口（rsmllm.sh 菜单 [1] 评测，选量化模型别名 w8a8/gptq 或专家量化变体）：
+./rsmllm.sh
 
-# 独立模型评测入口（evaluation.main，像素/配置与报告一致）：
-python -m evaluation.main --model_path <quantized_model> --datasets vrsbench mme xlrs levircc \
-  --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
-  --data_path_overrides '<json: 子集清单路径>' --output results/<name>.json
+# 或 vLLM 评测器直跑（像素/配置与报告一致）：
+bash evaluation/vllm_eval/.venv/bin/python evaluation/vllm_eval/vision_opd_vllm_eval.py \
+  --manifest <sample-schema清单> --model <量化模型目录> --model-profile mmerestore_w8a8 \
+  --min-pixels 200704 --max-pixels 2097152 --batch-size 128
 ```
-> 注意：`--data_root` 是**输出目录**（默认 `output/`），不是清单根；切换评测子集用 `--data_path_overrides`。
+> 量化配对评测（报告 770/590 子集 A-B-B-A）的原始提交脚本归档于
+> `archive/slurm_experiments/quant_pair_eval.sbatch`（证据保留，集群复跑按归档 README 恢复路径）。
 
 ## 云托管（已上传 ModelScope）
 - 8 个量化专家（general/ground/change/caption × w8a8-int8/w4a16-gptq）已上传：

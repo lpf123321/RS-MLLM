@@ -7,7 +7,8 @@
 
 ## 1. 训练侧脚本（四专家 SFT + delta 构建）
 
-**归属**：`slurm_scripts/`（训练提交脚本）、`scripts/`（数据构建与 delta 工具）
+**归属**：`scripts/training/`（训练阶段脚本，已就位）、`scripts/`（数据构建与 delta 工具）；
+历史 SLURM 提交脚本已归档 `archive/slurm_experiments/`
 
 本地旧仓库 `~/RS-MLLM/` 已有这些脚本，但 release 分支未包含，需整理后上传：
 

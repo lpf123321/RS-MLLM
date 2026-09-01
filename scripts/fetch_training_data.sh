@@ -5,7 +5,7 @@
 # 说明:
 #   - 四专家训练所需的 12 个清洗 json 数据已打包上传至 ModelScope。
 #   - 下载后自动放置到 finetune_framework/VRSbench/ 对应位置，
-#     与训练脚本（scripts/training/*.slurm）的 DATA_PATH 一致。
+#     与训练脚本（scripts/training/）的 DATA_PATH 一致。
 #   - 图片（assets/<hash>.png）不在此包内，见 scripts/fetch_raw_images.sh
 #
 # 用法:

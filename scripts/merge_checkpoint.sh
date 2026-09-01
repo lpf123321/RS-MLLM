@@ -15,7 +15,7 @@
 #     bash scripts/merge_checkpoint.sh \
 #         outputs/checkpoints/ga2_general/checkpoint-451 ga2_general_checkpoint-451
 #
-#   SLURM 环境也适用（本脚本可直接 sbatch，见 scripts/training/merge.slurm）
+#   本地/集群环境均适用（train.sh 在训练阶段后自动调用）
 # ============================================================
 set -euo pipefail
 
