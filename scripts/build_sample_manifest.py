@@ -99,8 +99,7 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
     mcq_choices: dict[str, str] = {}
     if task_type == "single_choice":
         mcq_choices, _ = parse_mcq(prompt)  # 先解析选项(题干+选项完整文本)
-        if mcq_choices:
-            prompt = prompt.split("\n(")[0]  # 再去掉选项行, 只留题干
+        # 保留选项行: 模型需要看到 A/B/C/D 选项才能作答(评测器不加回选项)
     assistant = next((m for m in msgs if m.get("role") == "assistant"), None)
     answer = ""
     if assistant:
