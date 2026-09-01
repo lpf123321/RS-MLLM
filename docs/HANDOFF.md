@@ -69,7 +69,7 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 - `--enforce-eager`（router_eval 当前稳定配置；graph 模式的启动与编译可能耗时，不能仅凭中途无输出判定挂起）
 - vLLM 错误中的 `cuda:0` 是进程内可见设备序号；`CUDA_VISIBLE_DEVICES=1` 时它对应物理 GPU 1，须用 `nvidia-smi` 的 GPU index/UUID 核对，不能据此断言落在物理 GPU 0。
 - 评测器在创建 `LLM` 前用 NVML 解析物理 GPU UUID、做显存预检并持有进程锁；同一物理 GPU 的重复评测会快速失败，不会再启动冲突的 EngineCore；不同物理 GPU 仍可并行。
-- `router_eval` 的子评测返回非零时立即停止，不继续启动后续任务，避免把一次启动失败扩散成多个残缺结果目录。
+- `router_eval` 保留原有断点续跑语义：记录子评测失败后继续其余任务，最终以非零退出；GPU 资源冲突在 `LLM` 前由 guard 快速拒绝，不会启动冲突的 EngineCore。
 - 时间戳输出目录 + resume 保护（code_sha256 校验）
 
 **known issues**：

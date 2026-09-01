@@ -120,7 +120,7 @@ def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -
     if result.returncode:
         print(
             f"  ✗ 评测子进程失败 (exit={result.returncode}); "
-            "停止当前路由，避免在同一块 GPU 上继续启动后续任务。",
+            "记录失败并继续其余任务，最终返回非零。",
             file=sys.stderr,
             flush=True,
         )
@@ -148,6 +148,7 @@ def main() -> int:
             print(f"{expert}: " + ", ".join(t[0] for t in tasks))
         return 0
 
+    rc = 0
     experts = args.experts or list(ROUTE_PLAN)
     for expert in experts:
         tasks = ROUTE_PLAN[expert]
@@ -162,10 +163,9 @@ def main() -> int:
             print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
             r = run_eval(model_path, profile, manifest, args.limit)
-            if r:
-                return r
+            rc = max(rc, r)
     print(f"\n[router-eval] 完成. 结果在 evaluation/vllm_eval/results/ (按任务独立时间戳目录)")
-    return 0
+    return rc
 
 
 if __name__ == "__main__":
