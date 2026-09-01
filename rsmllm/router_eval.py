@@ -50,13 +50,15 @@ ROUTE_PLAN = {
     ],
 }
 
-# 模型: 量化方式 + 专家 -> get_model 别名 (expert_* 单专家评测)
+# 模型: 量化方式 + 专家 -> 模型引用(本地路径或 get_model 别名)
+# general/ground 用 full 版(含 LoRA); change/caption 无 LoRA(架构如此)。full 优先本地 models/。
+_M = REPO_ROOT / "models"
 QUANT_EXPERTS = {
-    "bf16": {"general": "expert_general", "grounding": "expert_ground",
+    "bf16": {"general": str(_M / "expert_general_full"), "grounding": str(_M / "expert_ground_full"),
              "change": "expert_change", "caption": "expert_caption"},
-    "w8a8": {"general": "expert_general_w8a8", "grounding": "expert_ground_w8a8",
+    "w8a8": {"general": str(_M / "expert_general_full_w8a8"), "grounding": str(_M / "expert_ground_full_w8a8"),
              "change": "expert_change_w8a8", "caption": "expert_caption_w8a8"},
-    "gptq": {"general": "expert_general_gptq", "grounding": "expert_ground_gptq",
+    "gptq": {"general": str(_M / "expert_general_full_gptq"), "grounding": str(_M / "expert_ground_full_gptq"),
              "change": "expert_change_gptq", "caption": "expert_caption_gptq"},
 }
 
