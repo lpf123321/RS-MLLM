@@ -175,7 +175,9 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 **非交互（脚本）**：
 
 ```bash
-python -m rsmllm.serve --model w8a8 --port 8001   # 模型别名自动解析(本地缓存命中即用)
+# 推理服务需要 vLLM，用评测环境运行：
+cd evaluation/vllm_eval
+PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.serve --model w8a8 --port 8001
 ```
 
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、

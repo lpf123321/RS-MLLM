@@ -9,6 +9,8 @@ from __future__ import annotations
 import subprocess
 import sys
 import json
+import os
+from pathlib import Path
 
 from rsmllm.config import REPORT_CONF, SUBSETS, MANIFESTS
 from rsmllm.models import get_model, MODEL_REGISTRY
@@ -56,10 +58,15 @@ def _cmd_serve() -> None:
     model = _ask_model()
     port = _ask("端口", "8001")
     print(f"  → vLLM serve model={model} port={port}")
-    cmd = [sys.executable, "-m", "rsmllm.serve",
+    # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动推理服务
+    eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
+    py = eval_py if eval_py.exists() else sys.executable
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
+    cmd = [str(py), "-m", "rsmllm.serve",
            "--model", model, "--port", port,
            "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
-    subprocess.run(cmd, check=False)
+    subprocess.run(cmd, check=False, env=env)
 
 
 def _cmd_quantize() -> None:
