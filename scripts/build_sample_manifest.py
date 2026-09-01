@@ -188,7 +188,8 @@ def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
     }
 
 
-def build(dataset: str, subtask_filter: str | None, limit: int | None) -> Path:
+def build(dataset: str, subtask_filter: str | None, limit: int | None,
+          images_root: str | None = None) -> Path:
     name = DATASETS[dataset]
     src = REPO_ROOT / "datasets_data" / f"{name}.jsonl"
     if not src.exists():
@@ -206,6 +207,13 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None) -> Path:
                 continue
             raw = json.loads(line)
             sample = convert(raw, dataset, i)
+            if images_root:
+                # 路径前缀替换: /users/.../shared_datasets/<X> -> <images_root>/<X>
+                marker = "/shared_datasets/"
+                for img in sample["images"]:
+                    p = img["path"]
+                    if marker in p:
+                        img["path"] = str(Path(images_root) / p.split(marker, 1)[1])
             if subtask_filter:
                 # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
                 tag_map = {"vqa": "open_vqa", "caption": "caption", "referring": "bbox",
@@ -227,14 +235,15 @@ def main() -> int:
     ap.add_argument("--dataset", choices=list(DATASETS))
     ap.add_argument("--subtask", help="vqa|caption|referring|change|mcq")
     ap.add_argument("--limit", type=int, help="每个输出最多样本数(调试用)")
+    ap.add_argument("--images-root", help="图片根(替换 /users/.../shared_datasets/ 前缀, 如 assets)")
     args = ap.parse_args()
     if args.all:
         for ds in DATASETS:
-            build(ds, None, args.limit)
+            build(ds, None, args.limit, args.images_root)
         return 0
     if not args.dataset:
         ap.error("需 --dataset 或 --all")
-    build(args.dataset, args.subtask, args.limit)
+    build(args.dataset, args.subtask, args.limit, args.images_root)
     return 0
 
 
