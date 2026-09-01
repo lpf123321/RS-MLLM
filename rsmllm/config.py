@@ -77,6 +77,8 @@ MODEL_REGISTRY = {
     "gptq": "Fun10165/rs-mllm-mmerestore-w4a16-gptq",
     "expert_general": "Fun10165/rs-mllm-expert-general",
     "expert_ground": "Fun10165/rs-mllm-expert-ground",
+    "expert_general_lora": "Fun10165/rs-mllm-expert-general-lora",
+    "expert_ground_lora": "Fun10165/rs-mllm-expert-ground-lora",
     "expert_change": "Fun10165/rs-mllm-expert-change",
     "expert_caption": "Fun10165/rs-mllm-expert-caption",
     "expert_general_w8a8": "Fun10165/rs-mllm-expert-general-w8a8-int8",
