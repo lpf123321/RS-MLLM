@@ -90,7 +90,7 @@ def run(model_dir: str, prompts: list[str], sp: SamplingParams) -> dict:
     llm = LLM(model=model_dir, dtype="bfloat16", trust_remote_code=True,
               limit_mm_per_prompt={"image": 2},
               mm_processor_kwargs={"min_pixels": 200704, "max_pixels": 2097152},
-              gpu_memory_utilization=0.85,
+              gpu_memory_utilization=0.30,
               max_num_seqs=8, max_model_len=16384, enable_lora=False)
     outs = llm.generate(prompts, sp)
     try:

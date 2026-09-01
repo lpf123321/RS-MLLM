@@ -168,6 +168,11 @@ def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
     path = raw.get("image", "")
     w = int(raw.get("image_width", 0) or 0)
     h = int(raw.get("image_height", 0) or 0)
+    bbox = raw.get("bbox") or []
+    # bbox 写入 references(计分层 _bbox_score 读 references[0]); 格式与 parse_bbox 兼容
+    refs = []
+    if len(bbox) >= 4:
+        refs = ["[{:.6f},{:.6f},{:.6f},{:.6f}]".format(*[float(v) for v in bbox[:4]])]
     return {
         "id": str(raw.get("id", f"{dataset}_{index}")),
         "dataset": dataset,
@@ -175,13 +180,13 @@ def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
         "task_type": "bbox",
         "prompt": raw.get("question", ""),
         "images": [{"path": path, "role": "none", "width": w, "height": h, "transform": "none"}],
-        "references": [],
+        "references": refs,
         "choices": {},
         "answer_labels": [],
         "accepted_labels": [],
         "clean_status": "keep",
         "issues": [],
-        "metadata": {"source": f"{dataset}_flat", "bbox": raw.get("bbox", []), "category": raw.get("category", "")},
+        "metadata": {"source": f"{dataset}_flat", "bbox": bbox, "category": raw.get("category", "")},
         "split": "test",
         "source": {"format": "flat_grounding", "index": index},
         "schema_version": "1.0",
@@ -214,6 +219,9 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
                     p = img["path"]
                     if marker in p:
                         img["path"] = str(Path(images_root) / p.split(marker, 1)[1])
+                    # 路径已本地化, 重新探测真实尺寸(转换时用的是原始路径, 探测不到)
+                    w, h = image_size(img["path"])
+                    img["width"], img["height"] = w, h
             if subtask_filter:
                 # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
                 tag_map = {"vqa": "open_vqa", "caption": "caption", "referring": "bbox",

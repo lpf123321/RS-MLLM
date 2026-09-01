@@ -35,10 +35,10 @@ def _max_new_tokens(sample: Sample) -> int:
     return {
         "caption": 384,
         "change_caption": 128,
-        "open_vqa": 64,
-        "bbox": 64,
+        "open_vqa": 128,   # thinking 模型预留思考空间, 防正文截断
+        "bbox": 128,
         "single_choice": 128,
-        "multi_choice": 16,
+        "multi_choice": 64,
     }[sample.task_type]
 
 

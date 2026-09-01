@@ -37,6 +37,10 @@ def setup_runtime_env() -> None:
             os.environ["LD_LIBRARY_PATH"] = ":".join(lib_dirs) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
     os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    # ninja 在 venv bin 下(torch.compile 需要; 非交互 shell PATH 可能不含)
+    venv_bin = Path(__file__).resolve().parent.parent / ".venv" / "bin"
+    if venv_bin.is_dir():
+        os.environ["PATH"] = str(venv_bin) + os.pathsep + os.environ.get("PATH", "")
 
 
 setup_runtime_env()

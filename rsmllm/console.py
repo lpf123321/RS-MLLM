@@ -20,6 +20,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TRAIN_PY = str(REPO_ROOT / ".venv" / "bin" / "python")
 if not Path(TRAIN_PY).exists():
     TRAIN_PY = sys.executable  # uv run 或根 venv 启动时兜底
+# 评测/推理类分支(vllm)依赖评测环境
+EVAL_PY = str(REPO_ROOT / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python")
+if not Path(EVAL_PY).exists():
+    EVAL_PY = sys.executable
 
 MAIN_MENU = {
     "1": ("评测实验", "按子集(950/770/590/400/full)评估指定模型"),
@@ -126,6 +130,12 @@ def _cmd_simple(name: str, script: str) -> None:
         subprocess.run([TRAIN_PY, str(path)], check=False)
 
 
+def _cmd_simple_eval(name: str, script: str) -> None:
+    """评测环境解释器执行(vllm 依赖)."""
+    print(f"  → {name}: {script}")
+    subprocess.run([EVAL_PY, str(REPO_ROOT / script)], check=False)
+
+
 def main() -> int:
     print("=" * 60)
     print("RS-MLLM 交互控制台  (报告功能 ←→ 可执行入口)")
@@ -160,7 +170,7 @@ def main() -> int:
             elif choice == "6":
                 _cmd_simple("Token 剪枝", "evaluation/run_prune_sweep.py")
             elif choice == "7":
-                _cmd_simple("容错探针", "scripts/quant_tol_probe.py")
+                _cmd_simple_eval("容错探针", "scripts/quant_tol_probe.py")
             elif choice == "8":
                 sub = _ask("工具子项: ttft=batch=模型查看").lower()
                 if sub == "ttft":
