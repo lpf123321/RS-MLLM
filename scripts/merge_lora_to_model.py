@@ -37,7 +37,8 @@ def main() -> int:
 
     from rsmllm.models import get_model
     from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    from transformers import AutoProcessor
+    from transformers import Qwen3_5ForConditionalGeneration
     import torch
 
     targets = list(EXPERTS) if args.expert == "all" else [args.expert]
@@ -52,7 +53,8 @@ def main() -> int:
         print(f"[merge] {name}: base+delta={model_dir}")
         print(f"[merge] {name}: LoRA={lora_dir}")
         print(f"[merge] 加载模型 + LoRA ...")
-        model = AutoModelForCausalLM.from_pretrained(
+        # 必须用完整多模态模型类(含视觉编码器); AutoModelForCausalLM 会丢 visual tower
+        model = Qwen3_5ForConditionalGeneration.from_pretrained(
             model_dir, torch_dtype=torch.bfloat16, trust_remote_code=True)
         model = PeftModel.from_pretrained(model, lora_dir)
         print(f"[merge] 合并 LoRA ...")
