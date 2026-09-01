@@ -105,6 +105,10 @@ run_local() {
 
 # --- 主逻辑 ---
 if [ "$STAGE" = "all" ]; then
+  if [ "$DRY" = "1" ]; then
+    echo ">>> 将运行流水线: stage1_clean → ga2_general → a1_grounding → a2b_change → caption"
+    exit 0
+  fi
   if [ "$LOCAL" = "0" ]; then
     echo "== 本地串联流水线(默认; --slurm 走集群) =="
     for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
@@ -147,6 +151,11 @@ if [ -z "$STAGE" ] || [ -z "${SLURM[$STAGE]:-}" ]; then
   usage; exit 1
 fi
 
+if [ "$DRY" = "1" ]; then
+  echo ">>> 将运行: ${SLURM[$STAGE]}  (本地前台直跑; --slurm 走集群)"
+  exit 0
+fi
+
 check_data "$STAGE"
 
 if [ "$LOCAL" = "0" ]; then
@@ -161,7 +170,6 @@ if [ "$LOCAL" = "0" ]; then
 fi
 
 echo ">>> sbatch $SLURM_DIR/${SLURM[$STAGE]}"
-if [ "$DRY" = "1" ]; then exit 0; fi
 out=$(sbatch "$SLURM_DIR/${SLURM[$STAGE]}" 2>&1)
 echo "$out"
 jid=$(echo "$out" | grep -oE '[0-9]+' | tail -1)

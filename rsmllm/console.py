@@ -145,9 +145,14 @@ def main() -> int:
             elif choice == "2":
                 _cmd_serve()
             elif choice == "3":
-                stage = _ask("训练阶段(all / stage1_clean / expert_general / a1_grounding / a2b_change / caption)", "all")
+                stage = _ask("训练阶段(dry 预览 / all / stage1_clean / expert_general / a1_grounding / a2b_change / caption)", "dry")
                 print("  → 训练流程: train.sh", stage)
-                subprocess.run(["bash", str(REPO_ROOT / "scripts/train.sh"), stage], check=False)
+                args = ["bash", str(REPO_ROOT / "scripts/train.sh")]
+                if stage == "dry":
+                    args += ["dry", "stage1_clean"]  # dry 预览默认 stage1_clean
+                else:
+                    args.append(stage)
+                subprocess.run(args, check=False)
             elif choice == "4":
                 _cmd_quantize()
             elif choice == "5":
