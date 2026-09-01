@@ -46,16 +46,36 @@ else
     { echo "git clone 失败，请先 pip install modelscope"; exit 1; }
 fi
 
-# 将下载的 json/jsonl 复制到 DEST（若源是目录则递归）
+# 将下载的文件还原为训练脚本内部名（发布名 -> 内部名，见 training_data_manifest.sh）
+source "$REPO_ROOT/scripts/training_data_manifest.sh"
 mkdir -p "$DEST"
-find "$SRC" -maxdepth 3 \( -name "*.json" -o -name "*.jsonl" \) -exec cp -n {} "$DEST/" \;
 
-# 处理子目录（expert_data / expert_data_v2）
-for sub in expert_data expert_data_v2; do
-  if [ -d "$SRC/$sub" ]; then
-    mkdir -p "$DEST/$sub"
-    find "$SRC/$sub" -maxdepth 1 -name "*.json" -exec cp -n {} "$DEST/$sub/" \;
+# 顶层文件
+for pair in "${DATA_FILES[@]}"; do
+  pub="${pair%%::*}"; int="${pair##*::}"
+  src="$SRC/$pub"
+  [ -f "$src" ] || src="$SRC/finetune_framework/VRSbench/$pub"
+  if [ -f "$src" ]; then
+    cp -n "$src" "$DEST/$int" && echo "  +$int   (<- $pub)"
+  else
+    echo "  !! 未找到 $pub（跳过）"
   fi
+done
+
+# expert_data / expert_data_v2 子目录
+declare -A SUBS=([expert_data]="DATA_FILES_EXPERT" [expert_data_v2]="DATA_FILES_EXPERT_V2")
+for sub in expert_data expert_data_v2; do
+  mkdir -p "$DEST/$sub"
+  var="${SUBS[$sub]}"; eval "list=(\"\${$var[@]}\")"
+  for pair in "${list[@]}"; do
+    pub="${pair%%::*}"; int="${pair##*::}"
+    src="$SRC/$sub/$pub"; [ -f "$src" ] || src="$SRC/finetune_framework/VRSbench/$sub/$pub"
+    if [ -f "$src" ]; then
+      cp -n "$src" "$DEST/$sub/$int" && echo "  +$sub/$int   (<- $pub)"
+    else
+      echo "  !! 未找到 $sub/$pub（跳过）"
+    fi
+  done
 done
 
 echo "[fetch_training_data] 完成。数据位于 $DEST"
