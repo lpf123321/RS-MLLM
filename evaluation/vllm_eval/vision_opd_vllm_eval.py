@@ -234,7 +234,7 @@ class VLLMBatchAdapter:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,
+            # 报告口径: 开 thinking(与 run_delta_task_router force_think=True 一致)
         )
 
     def generate_batch(
@@ -281,9 +281,11 @@ class VLLMBatchAdapter:
             else:
                 elapsed = wall / max(len(items), 1)
             ttft = (first_token - arrival) if (arrival and first_token and first_token > arrival) else 0.0
+            # 剥离 thinking 块(与 qwen35vl/router adapter 一致; thinking 用于推理, 不计入答案)
+            text = re.sub(r"<think(?:ing)?>.*?</think(?:ing)?>\s*", "", completion.text, flags=re.DOTALL)
             results.append(
                 GenerationResult(
-                    text=completion.text.strip(),
+                    text=text.strip(),
                     elapsed_seconds=elapsed,
                     first_token_seconds=ttft,
                     generated_tokens=generated_tokens,
