@@ -28,14 +28,14 @@ cd evaluation/vllm_eval
 .venv/bin/python vision_opd_vllm_eval.py \
   --manifest <testset.jsonl> \
   --model <model_dir> \
-  --model-profile <key>   # 或 --derived-profile <manifest.json> \
-  --output-dir <outdir> \
+  --model-profile <key> \
   --min-pixels 200704 --max-pixels 2097152 \
   --batch-size 128
 ```
 
-- `--model-profile` 取 `model_policy.py` 中可信 profile（如 `mmerestore_bf16`）；
-- 新模型用 `--derived-profile`（结构见 `docs/EXPERIMENT_MAP.md` ⑧）；
+- `--model-profile` 取 `model_policy.py` 中可信 profile（如 `mmerestore_bf16`），
+  或 `--derived-profile /path/to/profile.json`（二选一，不能同时省略）；
+- `--output-dir` 省略时默认 `results/<manifest文件名>_<profile>`；
 - 三 pass 策略（token 倍数 1x/2x/4x），输出 `prediction_attempts.jsonl` + `run_config.json`。
 - 评测器自包含: VLLM_USE_FLASHINFER_SAMPLER/LD_LIBRARY_PATH/WORKER_MULTIPROC 自动设置。
 
