@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+import sys
 from pathlib import Path
 
 from rsmllm.config import DATASETS_CACHE, DATA_REGISTRY
@@ -117,3 +119,95 @@ def restore_training_data(dataset_root: str | None = None, *, dest_root: str | N
                 shutil.copyfile(src, dest_root / sub / int_name)
                 copied += 1
     return dest_root
+
+
+# ============================================================
+# 评测数据懒加载: 保证数据集图片就绪 + 返回可移植(相对路径)评测清单
+# ============================================================
+
+# 评测数据集 -> (ModelScope/HF 下载子目录, 仓库内评测清单)
+BENCH_DATASETS = {
+    "vrsbench": ("VRSBench", "datasets_data/vrsbench_eval.jsonl"),
+    "mme": ("MME-RealWorld-RS", "datasets_data/mme_rs.jsonl"),
+    "xlrs": ("XLRS-Bench-lite", "datasets_data/xlrs.jsonl"),
+    "xlrs_caption": ("XLRS-Bench_caption_en", "datasets_data/xlrs_caption_en.jsonl"),
+    "xlrs_grounding": ("XLRS-Bench_visual_grounding_en",
+                       "datasets_data/xlrs_grounding_test.jsonl"),
+    "levircc": ("LEVIR-CC", "datasets_data/levircc_test.jsonl"),
+}
+
+_OLD_PREFIX = "/users/u2024311136/shared/shared_datasets/"
+
+
+def ensure_benchmark_data(dataset: str, *, refresh: bool = False) -> Path:
+    """确保评测数据集图片就绪, 返回<仓库>/datasets/shared_datasets/<X>目录.
+
+    首次会调用 scripts/fetch_benchmark_data.py 从 ModelScope 或 HF 下载图片。
+    """
+    from rsmllm.config import REPO_ROOT
+    if dataset not in BENCH_DATASETS:
+        raise ValueError(f"未知评测数据集: {dataset} (可选 {list(BENCH_DATASETS)})")
+    subdir, _ = BENCH_DATASETS[dataset]
+    img_dir = REPO_ROOT / "datasets" / "shared_datasets" / subdir
+    # 已有图片则视为就绪(至少 1 个 .png/.jpg)
+    if not refresh and any(t in {".png", ".jpg", ".jpeg", ".webp"}
+                           for t in {p.suffix for p in img_dir.rglob("*") if p.is_file()}):
+        return img_dir
+    # 触发下载
+    import subprocess as sp
+    script = REPO_ROOT / "scripts" / "fetch_benchmark_data.py"
+    cmd = [sys.executable, str(script), "--dataset", dataset]
+    print(f"[data] 下载评测图片: {dataset} -> {img_dir}")
+    sp.run(cmd, check=True)
+    return img_dir
+
+
+def get_eval_manifest(dataset: str) -> Path:
+    """返回可移植评测清单: 图片绝对路径重映射为相对 <datasets>/shared_datasets/<X>.
+
+    输出写入 <仓库>/.tmp_manifests/<dataset>.jsonl, 路径均相对该清单所在目录，
+    评测器(Sample.from_dict manifest_dir 逻辑)可正确解析。
+    """
+    from rsmllm.config import REPO_ROOT
+    if dataset not in BENCH_DATASETS:
+        raise ValueError(f"未知评测数据集: {dataset} (可选 {list(BENCH_DATASETS)})")
+    subdir, rel_manifest = BENCH_DATASETS[dataset]
+    src_manifest = REPO_ROOT / rel_manifest
+    if not src_manifest.exists():
+        raise FileNotFoundError(f"评测清单缺失: {src_manifest}")
+
+    out_dir = REPO_ROOT / ".tmp_manifests"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{dataset}.jsonl"
+
+    # 写入 lead map: 把以旧共享前缀开头的图路径改相对
+    old_lead = f"shared_datasets/{subdir}"
+    written = 0
+    with src_manifest.open(encoding="utf-8") as fh, out_path.open("w", encoding="utf-8") as gh:
+        for line in fh:
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            imgs = []
+            if "messages" in d:
+                for m in d["messages"]:
+                    for c in m.get("content", []):
+                        if c.get("type") == "image" and c.get("image"):
+                            imgs.append(c["image"])
+            elif "image" in d:
+                imgs.append(d["image"])
+            for full in imgs:
+                if full.startswith(_OLD_PREFIX):
+                    new = full[len(_OLD_PREFIX):]
+                    # 相对 manifest_dir: .tmp_manifests 与 datasets/shared_datasets 平级
+                    if "messages" in d:
+                        for m in d["messages"]:
+                            for c in m.get("content", []):
+                                if c.get("image") == full:
+                                    c["image"] = str(Path("../datasets/shared_datasets") / new)
+                    elif d.get("image") == full:
+                        d["image"] = str(Path("../datasets/shared_datasets") / new)
+            gh.write(json.dumps(d, ensure_ascii=False) + "\n")
+            written += 1
+    print(f"[data] 评测清单(相对路径) -> {out_path} ({written} 行)")
+    return out_path

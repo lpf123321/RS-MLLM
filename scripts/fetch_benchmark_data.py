@@ -26,6 +26,9 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+# 显式使用 HF 镜像(国内网络); 可 HF_ENDPOINT=<官方> 覆盖
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEST = REPO_ROOT / "datasets" / "shared_datasets"
 MS_REPO = "Fun10165/rs-mllm-benchmark-data-clean"

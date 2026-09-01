@@ -197,6 +197,9 @@ bash evaluation/vllm_eval/setup_env.sh
 > 或改用 `--derived-profile /path/to/profile.json`（二选一）。
 > `--output-dir` 省略时默认为 `results/<manifest文件名>_<profile>`。
 > 评分结果自动写入输出目录：`clean_summary.json` / `official_summary.json` / `unit_scores.jsonl`。
+> **数据懒加载**：评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像
+> （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
+> 评测清单图片路径自动重映射为相对路径（可移植），见 `rsmllm/data.py::get_eval_manifest`。
 
 **量化转换**（与报告同链路）：
 

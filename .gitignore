@@ -34,3 +34,4 @@ transfer/
 # 懒加载缓存/临时下载（不随仓库分发）
 .models/
 .raw_images/
+.tmp_manifests/

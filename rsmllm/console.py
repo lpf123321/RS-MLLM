@@ -68,20 +68,16 @@ def _cmd_eval() -> None:
     print(f"  → 评测 model={model} datasets={datasets} profile={profile}")
     # 标准 ModelScope 用法: 别名/ID 走 snapshot_download, 缓存命中复用, 返回真实缓存路径
     model_dir = get_model(model)
-    # vLLM 评测器(评测环境, 报告一致): manifest 取仓库默认清单
+    # vLLM 评测器(评测环境, 报告一致): manifest 懒加载(图片就绪 + 相对路径可移植)
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
     py = eval_py if eval_py.exists() else sys.executable
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    manifest_map = {
-        "vrsbench": "vrsbench_eval.jsonl",
-        "mme": "mme_rs.jsonl",
-        "xlrs": "xlrs.jsonl",
-        "levircc": "levircc_test.jsonl",
-    }
+    from rsmllm.data import ensure_benchmark_data, get_eval_manifest
     ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
-    manifest = eval_dir / ".." / ".." / "datasets_data" / manifest_map.get(ds, "vrsbench_eval.jsonl")
+    ensure_benchmark_data(ds)          # 图片就绪(首次自动下载)
+    manifest = get_eval_manifest(ds)   # 可移植(相对路径)评测清单
     # profile 若为本地文件路径 → --derived-profile; 否则按名字 → --model-profile
     profile_path = Path(profile).expanduser()
     profile_arg = "--derived-profile" if profile_path.is_file() else "--model-profile"
