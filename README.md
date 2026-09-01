@@ -180,6 +180,19 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 或直接给 ModelScope id / 本地路径。模型按需下载缓存在 `.models/`（
 `RSMLLM_MODEL_CACHE` 可覆盖），离线时 `MODELSCOPE_OFFLINE=1` 强制本地命中。
 
+**专家模型架构**（与训练口径一致）：
+
+| 别名 | 内容 | 说明 |
+|---|---|---|
+| `expert_general` / `expert_ground` | base + 专家 delta（合并）| 无 LoRA 版 |
+| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32）| 需合并后使用 |
+| `expert_general_full` / `expert_ground_full` | **base + delta + LoRA（完整）** | 推荐评测用 |
+| `expert_change` / `expert_caption` | base + delta（合并）| 无 LoRA（训练口径无）|
+| `expert_*_w8a8` / `expert_*_gptq` | 量化版 | 含 LoRA 版以 `_full` 为源量化 |
+
+`_full` 模型 = 队友完整架构（`basemodel + expert(delta) + expert_lora(PEFT)` 合并），
+评测器离线加载直接使用。合并脚本：`scripts/merge_lora_to_model.py`。
+
 ### 3.4 模型评测
 
 评测走 **vLLM 0.26 离线批量推理**（与报告一致：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384）。

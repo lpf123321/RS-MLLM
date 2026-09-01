@@ -60,6 +60,12 @@ def fetch_ms(dataset: str, subdir: str, tar_name: str) -> int:
     print(f"[{dataset}] 解压到 {out} ...")
     with tarfile.open(cache, "r") as tar:
         tar.extractall(out, filter="data")
+    # 校正: tar 内可能含与子目录同名的顶层(如 LEVIR-CC/LEVIR-CC), 拍平一层
+    nested = out / subdir
+    if nested.is_dir() and subdir != out.name:
+        for item in nested.iterdir():
+            item.replace(out / item.name)
+        nested.rmdir()
     n = sum(1 for _ in out.rglob("*") if _.is_file())
     print(f"[{dataset}] 就绪: {n} 文件 -> {out}")
     return n

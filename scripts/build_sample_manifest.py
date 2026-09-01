@@ -25,7 +25,6 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = REPO_ROOT / "evaluation" / "vllm_eval" / "manifests"
 
-MCQ_RE = re.compile(r"\(([A-D])\)\s")
 PREFIX_RE = re.compile(r"^\s*\[(VQA|CAP|REF|CD|MCQ)\]")
 
 # 数据集 -> 源文件名(datasets_data/ 下)
@@ -56,16 +55,15 @@ def parse_prefix(text: str) -> tuple[str, str]:
 
 
 def parse_mcq(text: str) -> tuple[dict[str, str], list[str]]:
-    """解析 (A) xxx (B) xxx ... -> (choices, answer_labels)."""
-    opts = MCQ_RE.findall(text)
-    if not opts:
-        return {}, []
-    parts = MCQ_RE.split(text)
+    """解析 (A) xxx (B) xxx ... -> (choices, answer_labels).
+
+    逐行显式解析: 每行以 (X) 开头则视为选项, 避免 split/捕获组歧义.
+    """
     choices: dict[str, str] = {}
-    for letter, body in zip(opts, parts[1:]):
-        body = body.strip()
-        if body:
-            choices[letter] = body
+    for line in text.splitlines():
+        s = line.strip()
+        if len(s) >= 4 and s[0] == "(" and s[2] == ")" and s[1] in "ABCD":
+            choices[s[1]] = s[4:].strip()
     return choices, list(choices)
 
 
@@ -113,6 +111,32 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
             answer = str(assistant.get("content", "")).strip()
 
     references = raw.get("references") or ([answer] if answer else [])
+    # 正确答案字母: 从参考答案提取(格式 "D. (D) xxx" 或 "D" 或 "(D) xxx")
+    answer_labels: list[str] = []
+    if task_type == "single_choice" and mcq_choices:
+        for ref in references:
+            m = re.search(r"\(([A-D])\)", ref)
+            if m and m.group(1) in mcq_choices:
+                answer_labels = [m.group(1)]
+                break
+        else:
+            # 兜底: 答案本身是单个字母
+            for ref in references:
+                s = ref.strip().upper()
+                if s in mcq_choices:
+                    answer_labels = [s]
+                    break
+        if not answer_labels:
+            # 回捞: 参考答案文本匹配 choices 文本(如答案 = 选项全文)
+            norm = lambda t: re.sub(r"[^a-z0-9]+", "", t.lower())
+            for ref in references:
+                rn = norm(ref)
+                for label, text in mcq_choices.items():
+                    if rn and rn == norm(text):
+                        answer_labels = [label]
+                        break
+                if answer_labels:
+                    break
     subtask = dataset  # 细粒度子任务由 --subtask 过滤时用提示词关键词细分
     image_refs = []
     for i, p in enumerate(images):
@@ -129,8 +153,8 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
         "images": image_refs,
         "references": references,
         "choices": mcq_choices,
-        "answer_labels": list(mcq_choices) if task_type == "single_choice" else [],
-        "accepted_labels": list(mcq_choices) if task_type == "single_choice" else [],
+        "answer_labels": answer_labels,
+        "accepted_labels": answer_labels,
         "clean_status": "keep",
         "issues": [],
         "metadata": {"source": f"{dataset}_messages"},
@@ -207,12 +231,17 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / f"{name}{'_' + subtask_filter if subtask_filter else ''}.jsonl"
     written = 0
+    dropped = 0
     with src.open(encoding="utf-8") as f, out.open("w", encoding="utf-8") as g:
         for i, line in enumerate(f, start=1):
             if not line.strip():
                 continue
             raw = json.loads(line)
             sample = convert(raw, dataset, i)
+            # 无正确选项答案的 choice 样本直接丢弃(否则评测器校验抛错杀全量)
+            if sample["task_type"] in {"single_choice", "multi_choice"} and not sample["answer_labels"]:
+                dropped += 1
+                continue
             if images_root:
                 # 路径前缀替换: /users/.../shared_datasets/<X> -> <images_root>/<X>
                 marker = "/shared_datasets/"
@@ -234,7 +263,7 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
             written += 1
             if limit and written >= limit:
                 break
-    print(f"OK: {out} ({written} samples)")
+    print(f"OK: {out} ({written} samples, 丢弃 {dropped})")
     return out
 
 

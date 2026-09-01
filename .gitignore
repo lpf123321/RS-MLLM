@@ -35,3 +35,4 @@ transfer/
 .models/
 .raw_images/
 .tmp_manifests/
+evaluation/vllm_eval/manifests/
