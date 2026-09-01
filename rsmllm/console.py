@@ -44,16 +44,26 @@ def _cmd_eval() -> None:
     model = _ask_model()
     datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
     print(f"  → 评测 model={model} datasets={datasets}")
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    cmd = [sys.executable, "-m", "evaluation.main",
-           "--model_path", model, "--datasets"] + datasets.split() + [
-           "--eval_batch_size", str(REPORT_CONF["batch_size"]),
-           "--image_min_pixels", str(REPORT_CONF["min_pixels"]),
-           "--image_max_pixels", str(REPORT_CONF["max_pixels"]),
-           "--data_path_overrides", json.dumps(
-               {k: str(v) for k, v in MANIFESTS.items()})]
-    subprocess.run(cmd, check=False, env=env)
+    # vLLM 评测器(评测环境, 报告一致): manifest 取仓库默认清单
+    eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
+    eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
+    py = eval_py if eval_py.exists() else sys.executable
+    manifest_map = {
+        "vrsbench": "vrsbench_eval.jsonl",
+        "mme": "mme_rs.jsonl",
+        "xlrs": "xlrs.jsonl",
+        "levircc": "levircc_test.jsonl",
+    }
+    ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
+    manifest = eval_dir / ".." / ".." / "datasets_data" / manifest_map.get(ds, "vrsbench_eval.jsonl")
+    cmd = [str(py), str(eval_dir / "vision_opd_vllm_eval.py"),
+           "--manifest", str(manifest),
+           "--model", model,
+           "--model-profile", "mmerestore_bf16",
+           "--min-pixels", str(REPORT_CONF["min_pixels"]),
+           "--max-pixels", str(REPORT_CONF["max_pixels"]),
+           "--batch-size", str(REPORT_CONF["batch_size"])]
+    subprocess.run(cmd, check=False)
 
 
 def _cmd_serve() -> None:
