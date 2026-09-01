@@ -1,4 +1,5 @@
 models/
+.models/
 datasets/
 shared_data/
 *.pt
