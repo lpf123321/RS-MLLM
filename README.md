@@ -176,7 +176,7 @@ PYTHONPATH=<仓库根> .venv/bin/python -m rsmllm.webui --model <模型路径或
 **交互式控制台**（统一入口，菜单选择功能）：
 
 ```bash
-./bin/rsmllm            # 菜单 [1]评测 / [2]推理(默认WebUI) / 其他工具
+./rsmllm.sh             # 菜单 [1]评测 / [2]推理(默认WebUI) / 其他工具
 ```
 
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
@@ -211,7 +211,7 @@ cd evaluation/vllm_eval
 **转录评测（Transformers 路径，不依赖 vLLM）**：
 
 ```bash
-./bin/rsmllm          # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
+./rsmllm.sh           # 菜单 [1] 评测，交互选择 子集(950/770/590/400/full) 与数据集
 # 或脚本直接调用:
 python -m evaluation.main --model_path w8a8 --datasets vrsbench mme xlrs levircc \
   --eval_batch_size 64 --image_min_pixels 200704 --image_max_pixels 2097152 \
