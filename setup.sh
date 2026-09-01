@@ -5,6 +5,8 @@ set -e
 # RS-MLLM 环境安装（懒人回滚路径，自动识别）
 #   source setup.sh  -> 自动安装并激活环境（uv 优先，conda 兜底）
 #   bash setup.sh    -> 只安装，打印激活指引
+#   ⚠️ 本脚本是【训练/推理环境】(torch 2.8 cu128)。
+#   要跑【vLLM 评测/量化模型评测】请用:  bash evaluation/vllm_eval/setup_env.sh  (vllm 0.26 cu129)
 # 推荐直接跑: uv sync --locked && source .venv/bin/activate
 # ============================================================
 
@@ -28,7 +30,12 @@ if command -v uv >/dev/null 2>&1; then
     else
         echo "==> Done. Activate with: source .venv/bin/activate"
     fi
-    return 0 2>/dev/null || exit 0
+    # source 场景: return 即可(不关闭交互 shell); bash 直接跑: exit
+    if [ "$_SOURCED" = "1" ]; then
+        return 0
+    else
+        exit 0
+    fi
 fi
 
 # ---------- 兜底路径: conda ----------
@@ -42,7 +49,13 @@ if [ -z "$CONDA_BASE" ]; then
 fi
 if [ -z "$CONDA_BASE" ]; then
     echo "Conda not found. Install Miniconda first: https://docs.anaconda.com/miniconda/"
-    exit 1
+    echo "📌 注意: 若您是直接 source 本脚本, exit 会关闭当前会话。请改运行:  bash setup.sh"
+    # 防止 source 场景 exit 关闭交互 shell, 改为 return
+    if [ "$_SOURCED" = "1" ]; then
+        return 1
+    else
+        exit 1
+    fi
 fi
 
 . "$CONDA_BASE/etc/profile.d/conda.sh"
