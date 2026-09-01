@@ -18,9 +18,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$REPO_ROOT/finetune_framework/VRSbench"
 TMP="$REPO_ROOT/.data_download"
 
-# ⚠️ 训练数据包(12个清洗json)尚未上传 ModelScope。
-# 上传后在此填写仓库 id 即可一键拉取，例如 "Fun10165/RS-MLLM-training-data"
-MODELSCOPE_REPO="${MODELSCOPE_REPO:-REPLACE_WITH_YOUR_MODELSCOPE_REPO_ID}"
+# 从环境或 modelscope 配置文件读取；未配置时按远端已知 repo 名作为默认值
+# （若仍未上传，给出一键流程指引）
+MODELSCOPE_REPO="${MODELSCOPE_REPO:-}"
+if [ -z "$MODELSCOPE_REPO" ] && [ -f "$REPO_ROOT/.modelscope_repo" ]; then
+  MODELSCOPE_REPO="$(cat "$REPO_ROOT/.modelscope_repo" | tr -d '[:space:]')"
+fi
+if [ -z "$MODELSCOPE_REPO" ] || [ "$MODELSCOPE_REPO" = "REPLACE_WITH_YOUR_MODELSCOPE_REPO_ID" ]; then
+  echo "[fetch_training_data] 尚未配置 ModelScope 数据仓库。"
+  echo "  1) 把 12 个清洗 json（见 scripts/package_training_data.sh 打包）上传到 ModelScope;"
+  echo "  2) 把仓库 id 写入 $REPO_ROOT/.modelscope_repo，"
+  echo "     或 export MODELSCOPE_REPO=<自己的/user/repo-id>。"
+  echo '  提示: 组员侧已知命名为 "Fun10165/RS-MLLM-training-data"（未确认）。'
+  exit 1
+fi
 
 # 若本地已有数据则跳过
 if [ -f "$DEST/manifest_sft_train.json" ] && [ -f "$DEST/expert_data_caption.jsonl" ]; then

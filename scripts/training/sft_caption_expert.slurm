@@ -19,19 +19,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="$REPO_ROOT/outputs/logs"
 mkdir -p "$LOG_DIR"
 
-source /opt/app/anaconda3/etc/profile.d/conda.sh
-conda activate rs_mllm
-
-export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
-export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+source "$REPO_ROOT/scripts/training/env.sh"
+activate_conda
 
 FINETUNE_HOME="$REPO_ROOT/finetune_framework/Qwen-VL-Series-Finetune"
 export PYTHONPATH="$FINETUNE_HOME/src:$PYTHONPATH"
 
 MODEL_PATH="$REPO_ROOT/outputs/merged/ga2_general_checkpoint-451"
 DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/expert_data_caption.jsonl"
-SHR_DATA="/users/u2024311009/team_share/rs-mllm-ready-20260725/data"
+SHR_DATA="$TRAIN_DATA_ROOT"
 
 OUTPUT_DIR="$REPO_ROOT/outputs/checkpoints/caption_expert"
 

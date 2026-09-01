@@ -247,7 +247,8 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 ### 3.5 模型训练
 
 模型训练采用 **统一 SFT 主干 + 多专家（四专家）LoRA 微调** 的流程，全部训练脚本位于
-`scripts/training/`，并可通过 `scripts/train.sh` 一键启动。
+`scripts/training/`，并可通过 `scripts/train.sh` 一键启动。每个训练阶段结束后会自动执行
+**LoRA → 完整模型合并**（`scripts/merge_checkpoint.sh`），为后续续训/量化提供 `outputs/merged/` 起终点。
 
 **前置**：
 1. 训练环境：`bash setup.sh`（torch 2.8 cu128 + deepspeed）
@@ -257,13 +258,13 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 
 **训练流程一览**：
 
-| step | 内容 | 脚本 | 说明 |
+| step | 内容 | 启动命令 | 说明 |
 |------|------|------|------|
-| 1 | 统一 SFT 主干 | `scripts/train.sh stage1_clean` | Qwen3.5-4B 起步（clean 数据），得到统一主干 |
-| 2 | General 专家 | `scripts/train.sh expert_general` | from-base 微调 VQA/Caption/MCQ，得到 v2 |
-| 3 | Grounding 专家续训 | `scripts/train.sh a1_grounding` | 统一主干续训 + XLRS 域对齐（2048） |
-| 4 | Change 专家续训 | `scripts/train.sh a2b_change` | 统一主干续训 + 防遗忘 |
-| 5 | Caption 专家 | `scripts/train.sh caption` | GA2 起点 + 双域（VRS 短/XLRS 长）数据 |
+| 1 | 统一 SFT 主干 | `scripts/train.sh stage1_clean` | Qwen3.5-4B 起步（clean 数据）→ 自动合并 `sft_stage1_clean` |
+| 2 | General 专家 | `scripts/train.sh expert_general` | from-base 微调 VQA/Caption/MCQ，得 v2 → 合并 |
+| 3 | Grounding 专家续训 | `scripts/train.sh a1_grounding` | 统一主干续训 + XLRS 域对齐（2048）→ 合并 |
+| 4 | Change 专家续训 | `scripts/train.sh a2b_change` | 统一主干续训 + 防遗忘 → 合并 |
+| 5 | Caption 专家 | `scripts/train.sh caption` | GA2 起点（`ga2_general_checkpoint-451`）+ 双域数据 → 合并 |
 | 6 | 生成 Delta 权重 | `python scripts/gen_expert_deltas.py --verify` | 输出各专家相对基座的 `delta_model.pt` |
 
 **一键启动示例**：
@@ -271,32 +272,46 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 ```bash
 cd RS-MLLM
 
-# 1) 查看某步将要提交的命令（不实际提交）
-bash scripts/train.sh dry expert_general
+# 1) dry-run 预览某步将要提交的命令（不实际提交）
+bash scripts/train.sh dry stage1_clean
 
-# 2) 提交单个训练步骤（SLURM 集群）
+# 2) SLURM 集群：提交单个训练步骤（训练后自动排队合并）
 bash scripts/train.sh stage1_clean      # 统一 SFT 主干
 bash scripts/train.sh ga2_general       # General 续训（防遗忘）
 bash scripts/train.sh a1_grounding      # Grounding 域对齐续训
 bash scripts/train.sh a2b_change        # Change 防遗忘续训
 bash scripts/train.sh caption           # Caption 双域训练
 
-# 3) 提交完整流水线（顺序: stage1_clean → ga2 → a1 → a2b → caption）
+# 3) SLURM 完整流水线（afterok 依赖链：stage1_clean → ga2 → a1 → a2b → caption，各步间自动合并）
 bash scripts/train.sh all
 
-# 4) 数据构建与 delta 生成
+# 4) 本地无 SLURM 时：顺序前台运行（不依赖调度器；训练需 GPU/multi-GPU，见注意事项）
+bash scripts/train.sh --local stage1_clean
+bash scripts/train.sh --local all
+
+# 5) 数据构建与 delta 生成
 python scripts/build_caption_expert_data.py      # 构建 Caption 双域数据
 python scripts/generate_mcq_data.py              # 合成 MCQ 样本
 python scripts/gen_expert_deltas.py --verify     # 生成四专家 delta 并验证 W0+Δ==merged
 ```
+
+**环境与数据（跨机器可移植）**：
+- conda 位置/数据集图片根目录由 `scripts/training/env.sh` 自动探测，
+  也可用环境变量显式覆盖：`CONDA_HOME`、`CONDA_ENV`、`TRAIN_DATA_ROOT`（图片根，
+  应含 `assets/vrsbench`、`assets/levir_cc`）。运行时没有任何对固定机路径的硬编码。
+- 训练数据 json 从 ModelScope 拉取：运行 `bash scripts/fetch_training_data.sh`，
+  首次需要把仓库 id 写入 `REPO_ROOT/.modelscope_repo`（或 `export MODELSCOPE_REPO=...`）。
 
 **训练配置要点**：所有专家统一采用全参冻结的 LoRA（rank 32 / alpha 64 / dropout 0.05）、
 lr=1e-4、1 epoch、bf16、DeepSpeed ZeRO-2；图像分辨率 262,144 ~ 1,048,576 像素
 （Grounding 域对齐为 2048 分辨率）。训练数据的构建脚本（`split_expert_data.py`、
 `build_caption_expert_data.py`）也在 `scripts/` 下。
 
-> 注：训练数据 json/jsonl 体积较大，不随仓库分发（已 gitignore），
-> 运行训练前请确保数据位于 `finetune_framework/VRSbench/`（可参照 `scripts/` 下构建脚本生成）。
+> 注 1：`--local` 直跑时 slurm 文件中 `deepspeed --num_gpus 2` 需要 2 卡 A100；
+> 若资源少，请自行把对应 slurm 的 `NUM_DEVICES`/`--num_gpus` 调整为可用卡数。
+> 注 2：训练数据 json/jsonl 体积较大，不随仓库分发（gitignore）；运行前请先
+> `bash scripts/fetch_training_data.sh` 拉取（含 ModelScope 清理 json），
+> 图片可用 `bash scripts/fetch_raw_images.sh` 从原始数据集哈希重命名还原。
 
 ---
 

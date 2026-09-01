@@ -20,12 +20,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="$REPO_ROOT/outputs/logs"
 mkdir -p "$LOG_DIR"
 
-source /opt/app/anaconda3/etc/profile.d/conda.sh
-conda activate rs_mllm
-
-export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
-export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+source "$REPO_ROOT/scripts/training/env.sh"
+activate_conda
 
 FINETUNE_HOME="$REPO_ROOT/finetune_framework/Qwen-VL-Series-Finetune"
 export PYTHONPATH="$FINETUNE_HOME/src:$PYTHONPATH"
@@ -37,7 +33,7 @@ DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/a1_domainalign.json"
 # ---- 高分辨率 XLRS train 图目录 ----
 XRS_IMG="${RSMLLM_DATA_ROOT:-$(cd $(dirname $(readlink -f "${BASH_SOURCE[0]:-$0}"))/.. && pwd)/datasets}/XLRS-Bench_visual_grounding_en/images_exported_train_4096"
 # ---- VRS refer 图 root（相对路径 assets/vrsbench/... 拼接）----
-SHR_DATA="/users/u2024311009/team_share/rs-mllm-ready-20260725/data"
+SHR_DATA="$TRAIN_DATA_ROOT"
 
 OUTPUT_DIR="$REPO_ROOT/outputs/checkpoints/a1_full"
 

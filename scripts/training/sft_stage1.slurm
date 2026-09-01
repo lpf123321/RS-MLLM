@@ -18,12 +18,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="$REPO_ROOT/outputs/logs"
 mkdir -p "$LOG_DIR"
 
-source /opt/app/anaconda3/etc/profile.d/conda.sh
-conda activate rs_mllm
-
-export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
-export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+source "$REPO_ROOT/scripts/training/env.sh"
+activate_conda
 
 FINETUNE_HOME="$REPO_ROOT/finetune_framework/Qwen-VL-Series-Finetune"
 export PYTHONPATH="$FINETUNE_HOME/src:$PYTHONPATH"

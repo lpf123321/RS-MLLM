@@ -2,29 +2,34 @@
 # ============================================================
 # RS-MLLM 四专家训练一键启动（统一 SFT 主干 + 专家 / 续训）
 #
-# 用法:
-#   bash scripts/train.sh stage1           # 统一 SFT 主干（Qwen3.5-4B from-base）
-#   bash scripts/train.sh expert_general   # General 专家（v2, from-base）
-#   bash scripts/train.sh expert_grounding # Grounding 专家（from-base, 语义对照）
-#   bash scripts/train.sh expert_change    # Change 专家（from-base, 语义对照）
-#   bash scripts/train.sh ga2_general      # General 续训（防遗忘, 主干起点）
-#   bash scripts/train.sh a1_grounding     # Grounding 域对齐续训（2048）
-#   bash scripts/train.sh a2b_change       # Change 续训（防遗忘 v2）
-#   bash scripts/train.sh caption          # Caption 专家（GA2 起点, 双域）
-#   bash scripts/train.sh all              # 完整流水线（见顺序说明）
-#   bash scripts/train.sh dry [stage]      # 只打印 sbatch 命令不提交
+# 支持:
+#   - 单阶段提交      bash scripts/train.sh stage1_clean
+#   - dry 预览        bash scripts/train.sh dry stage1_clean
+#   - 本地直接运行    bash scripts/train.sh --local stage1_clean   (无需 sbatch)
+#   - 完整流水线      bash scripts/train.sh all                      (SLURM afterok 依赖链)
+#   - 本地串联流水线  bash scripts/train.sh --local all              (顺序前台运行)
+#
+# 每个训练阶段结束后会自动安排 LoRA->merged 合并，满足后续续训起点。
+# 数据缺失时提示先运行 scripts/fetch_training_data.sh。
 # ============================================================
 set -e
 
-STAGE="${1:-}"
-DRY=0
-if [ "$STAGE" = "dry" ]; then
-  DRY=1; STAGE="${2:-}"
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/training" && pwd)"
-SLURM_DIR="$SCRIPT_DIR"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SLURM_DIR="$REPO_ROOT/scripts/training"
+VRS="$REPO_ROOT/finetune_framework/VRSbench"
+
+# 解析参数：--local 与 stage
+LOCAL=0
+ARGS=()
+for a in "$@"; do
+  [ "$a" = "--local" ] && { LOCAL=1; continue; }
+  ARGS+=("$a")
+done
+STAGE="${ARGS[0]:-}"
+DRY=0
+if [ "$STAGE" = "dry" ]; then DRY=1; STAGE="${ARGS[1]:-}"; fi
+
+# 阶段配置：slurm | 所需数据 | 合并命令(lora_ckpt|merged_name)
 declare -A SLURM=(
   [stage1]="sft_stage1.slurm"
   [stage1_clean]="sft_stage1_clean.slurm"
@@ -39,18 +44,101 @@ declare -A SLURM=(
   [a2b_change]="sft_a2b_change.slurm"
   [caption]="sft_caption_expert.slurm"
 )
+declare -A NEED=(
+  [stage1]=combined_train.json
+  [stage1_clean]=manifest_sft_train.json
+  [stage2]=combined_train.json
+  [expert_general]=expert_data_v2/general_understanding.json
+  [expert_grounding]=expert_data/grounding.json
+  [expert_change]=expert_data/change.json
+  [ga2_general]=g_a2_mix.json
+  [ga3_general]=expert_data_v2/general_understanding.json
+  [a1_grounding]=a1_domainalign.json
+  [a2_change]=expert_data/change.json
+  [a2b_change]=a2_change_mix.json
+  [caption]=expert_data_caption.jsonl
+)
+# 合并映射: <stage>=<lora_ckpt>|<merged_name>   （空 = 该阶段不需要合并即可供后续使用）
+declare -A MERGE=(
+  [stage1_clean]="outputs/checkpoints/sft_stage1_clean|sft_stage1_clean"
+  [expert_general]="outputs/checkpoints/expert_general_v2|expert_general_v2"
+  [ga2_general]="outputs/checkpoints/ga2_general|ga2_general_checkpoint-451"
+  [a1_grounding]="outputs/checkpoints/a1_grounding|a1_grounding_checkpoint-latest"
+  [a2b_change]="outputs/checkpoints/a2b_change|a2b_change_checkpoint-latest"
+  [caption]="outputs/checkpoints/caption_expert|caption_expert_checkpoint-latest"
+)
 
 usage() {
-  echo "可用 stage: stage1 stage1_clean stage2 expert_general expert_grounding expert_change"
-  echo "            ga2_general ga3_general a1_grounding a2_change a2b_change caption all"
-  echo "dry:  bash scripts/train.sh dry <stage>"
+  echo "用法: bash scripts/train.sh [--local] <stage|all>   (可选 dry: bash scripts/train.sh dry <stage>)"
+  echo "stages: stage1 stage1_clean stage2 expert_general expert_grounding expert_change"
+  echo "        ga2_general ga3_general a1_grounding a2_change a2b_change caption all"
+  echo "--local: 直接前台运行（不依赖 SLURM 调度器）"
 }
 
-if [ "$STAGE" = "all" ]; then
-  for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
-    echo ">>> 提交: $s"
-    sbatch "$SLURM_DIR/${SLURM[$s]}"
+check_data() {
+  local k="$1" miss="" base
+  for j in ${NEED[$k]}; do
+    base="finetune_framework/VRSbench"
+    # 处理子路径
+    [ -f "$REPO_ROOT/$base/$j" ] || miss="$miss $j"
   done
+  if [ -n "$miss" ]; then
+    echo "[train] 缺少数据:$miss"
+    echo "       请先:  bash scripts/fetch_training_data.sh   （ModelScope 下载）"
+    exit 1
+  fi
+}
+
+run_slurm() {
+  # 提交单阶段 + 依赖属性；若该阶段要合并则一并排队
+  local stage="$1" dep="${2:-}" cmd="" depflag
+  depflag=
+  [ -n "$dep" ] && depflag="--dependency=afterok:$dep"
+  sbatch $depflag "$SLURM_DIR/${SLURM[$stage]}"
+}
+
+run_local() {
+  # 前台运行单阶段（继承 CONDA_HOME/TRAIN_DATA_ROOT 等环境变量）
+  bash "$SLURM_DIR/${SLURM[$stage]}"
+}
+
+# --- 主逻辑 ---
+if [ "$STAGE" = "all" ]; then
+  if [ "$LOCAL" = "1" ]; then
+    echo "== 本地串联流水线 =="
+    for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
+      check_data "$s"
+      echo ">>> 运行: $s (前台)"
+      bash "$SLURM_DIR/${SLURM[$s]}"
+      if [ -n "${MERGE[$s]:-}" ]; then
+        IFS='|' read -r lora name <<< "${MERGE[$s]}"
+        echo ">>> 合并: $s -> $name"
+        bash "$REPO_ROOT/scripts/merge_checkpoint.sh" "$REPO_ROOT/$lora" "$name"
+      fi
+    done
+    echo "== 流水线完成 =="
+    exit 0
+  fi
+
+  echo "== SLURM 依赖链流水线 =="
+  JOB_IDS=()
+  PREV=""
+  for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
+    check_data "$s"
+    # 合并前置步骤：先提交 merge？（此处简化为训练后自动合并）
+    out=$(sbatch ${PREV:+--dependency=afterok:$PREV} "$SLURM_DIR/${SLURM[$s]}" 2>&1)
+    jid=$(echo "$out" | grep -oE '[0-9]+' | tail -1)
+    echo "  + $s  -> job $jid"
+    PREV="$jid"
+    if [ -n "${MERGE[$s]:-}" ]; then
+      IFS='|' read -r lora name <<< "${MERGE[$s]}"
+      mout=$(sbatch --dependency=afterok:$jid "$SLURM_DIR/merge.slurm" "$REPO_ROOT/$lora" "$name" 2>&1)
+      mjid=$(echo "$mout" | grep -oE '[0-9]+' | tail -1)
+      echo "    - merge $s -> job $mjid"
+      PREV="$mjid"
+    fi
+  done
+  echo "== 流水线已提交。依赖链: ${JOB_IDS[*]} =="
   exit 0
 fi
 
@@ -58,31 +146,26 @@ if [ -z "$STAGE" ] || [ -z "${SLURM[$STAGE]:-}" ]; then
   usage; exit 1
 fi
 
-# --- 数据自检：关键训练 json 缺失时提示下载 ---
-VRS="$REPO_ROOT/finetune_framework/VRSbench"
-NEED_JSON=""
-case "$STAGE" in
-  stage1_clean|stage1)    NEED_JSON="manifest_sft_train.json combined_train.json" ;;
-  expert_general|ga3_general) NEED_JSON="expert_data_v2/general_understanding.json" ;;
-  expert_grounding)       NEED_JSON="expert_data/grounding.json" ;;
-  expert_change|a2_change) NEED_JSON="expert_data/change.json" ;;
-  a2b_change)             NEED_JSON="a2_change_mix.json" ;;
-  a1_grounding|a1_full)   NEED_JSON="a1_domainalign.json" ;;
-  ga2_general)            NEED_JSON="g_a2_mix.json" ;;
-  caption)                NEED_JSON="expert_data_caption.jsonl" ;;
-esac
-MISSING=""
-for j in $NEED_JSON; do
-  [ -f "$VRS/$j" ] || MISSING="$MISSING $j"
-done
-if [ -n "$MISSING" ]; then
-  echo "[train] 缺少训练数据:${MISSING}"
-  echo "       请先运行:  bash scripts/fetch_training_data.sh   （从 ModelScope 下载清洗 json）"
-  echo "       或按脚本注释手动放置数据到 $VRS"
-  exit 1
+check_data "$STAGE"
+
+if [ "$LOCAL" = "1" ]; then
+  echo ">>> 本地运行: $STAGE"
+  bash "$SLURM_DIR/${SLURM[$STAGE]}"
+  if [ -n "${MERGE[$STAGE]:-}" ]; then
+    IFS='|' read -r lora name <<< "${MERGE[$STAGE]}"
+    echo ">>> 合并: $STAGE -> $name"
+    bash "$REPO_ROOT/scripts/merge_checkpoint.sh" "$REPO_ROOT/$lora" "$name"
+  fi
+  exit 0
 fi
 
-SBATCH_CMD="sbatch $SLURM_DIR/${SLURM[$STAGE]}"
-echo ">>> $SBATCH_CMD"
+echo ">>> sbatch $SLURM_DIR/${SLURM[$STAGE]}"
 if [ "$DRY" = "1" ]; then exit 0; fi
-eval "$SBATCH_CMD"
+out=$(sbatch "$SLURM_DIR/${SLURM[$STAGE]}" 2>&1)
+echo "$out"
+jid=$(echo "$out" | grep -oE '[0-9]+' | tail -1)
+if [ -n "${MERGE[$STAGE]:-}" ] && [ -n "$jid" ]; then
+  IFS='|' read -r lora name <<< "${MERGE[$STAGE]}"
+  echo ">>> 训练后合并: merge.slurm -> $name (依赖 afterok:$jid)"
+  sbatch --dependency=afterok:$jid "$SLURM_DIR/merge.slurm" "$REPO_ROOT/$lora" "$name"
+fi

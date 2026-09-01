@@ -19,12 +19,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="$REPO_ROOT/outputs/logs"
 mkdir -p "$LOG_DIR"
 
-source /opt/app/anaconda3/etc/profile.d/conda.sh
-conda activate rs_mllm
-
-export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
-export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+source "$REPO_ROOT/scripts/training/env.sh"
+activate_conda
 
 FINETUNE_HOME="$REPO_ROOT/finetune_framework/Qwen-VL-Series-Finetune"
 export PYTHONPATH="$FINETUNE_HOME/src:$PYTHONPATH"
@@ -39,17 +35,10 @@ echo "============================================================"
 
 MODEL_PATH="$REPO_ROOT/models/Qwen3.5-4B"
 DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/expert_data/change.json"
-SHR_DATA="/users/u2024311009/team_share/rs-mllm-ready-20260725/data"
-LOCAL_DATA="$REPO_ROOT/datasets/manifest_data"
+SHR_DATA="$TRAIN_DATA_ROOT"
 OUTPUT_DIR="$REPO_ROOT/outputs/checkpoints/expert_change"
 
-if [ -d "$LOCAL_DATA/assets" ] && [ "$(ls -1 $LOCAL_DATA/assets/vrsbench 2>/dev/null | wc -l)" -gt 29000 ]; then
-    echo "  Using local assets: $LOCAL_DATA"
-    DATA_ROOT="$LOCAL_DATA"
-else
-    echo "  Local assets incomplete or missing, using NFS: $SHR_DATA"
-    DATA_ROOT="$SHR_DATA"
-fi
+DATA_ROOT="$(pick_data_root)"
 
 GLOBAL_BATCH_SIZE=64
 BATCH_PER_DEVICE=2
