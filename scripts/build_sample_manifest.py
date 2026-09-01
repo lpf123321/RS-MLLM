@@ -97,10 +97,11 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
         raise ValueError(f"{dataset} row {index}: empty text/images")
 
     task_type, prompt = parse_prefix(text)
+    mcq_choices: dict[str, str] = {}
     if task_type == "single_choice":
-        choices, _ = parse_mcq(prompt)
-        if choices:
-            prompt = prompt.split("\n(")[0]  # 去掉选项行, 只留题干
+        mcq_choices, _ = parse_mcq(prompt)  # 先解析选项(题干+选项完整文本)
+        if mcq_choices:
+            prompt = prompt.split("\n(")[0]  # 再去掉选项行, 只留题干
     assistant = next((m for m in msgs if m.get("role") == "assistant"), None)
     answer = ""
     if assistant:
@@ -127,9 +128,9 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
         "prompt": prompt,
         "images": image_refs,
         "references": references,
-        "choices": parse_mcq(prompt)[0] if task_type == "single_choice" else {},
-        "answer_labels": list(parse_mcq(prompt)[0]) if task_type == "single_choice" else [],
-        "accepted_labels": list(parse_mcq(prompt)[0]) if task_type == "single_choice" else [],
+        "choices": mcq_choices,
+        "answer_labels": list(mcq_choices) if task_type == "single_choice" else [],
+        "accepted_labels": list(mcq_choices) if task_type == "single_choice" else [],
         "clean_status": "keep",
         "issues": [],
         "metadata": {"source": f"{dataset}_messages"},
