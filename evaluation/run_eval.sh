@@ -6,10 +6,6 @@
 #   1) 交互式运行 (需已在 conda 环境内):
 #        bash run_eval.sh
 #
-#   2) 通过 SLURM 提交 (自动激活 conda 环境):
-#        sbatch run_eval.slurm
-#        sbatch run_eval.slurm --datasets vrsbench levircc --max_samples 500
-#
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

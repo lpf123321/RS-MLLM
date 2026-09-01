@@ -130,8 +130,7 @@ def main():
         required=True,
         choices=["baseline", "uniform", "random", "mmtok", "l2norm", "scope", "divprune", "fourier"],
     )
-    # Kept for compatibility with evaluation/run_memory_smoke.slurm. The
-    # method name is now the single source of truth for selecting an adapter.
+    # --method 是选择适配器的唯一权威来源(--pruner 仅兼容旧脚本参数)
     parser.add_argument("--pruner", choices=["uniform", "random", "mmtok", "l2norm", "scope_l2"], default=None)
     parser.add_argument("--keep_ratio", type=float, default=1.0)
     parser.add_argument("--pruner_seed", type=int, default=2026)

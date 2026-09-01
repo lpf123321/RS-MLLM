@@ -15,7 +15,8 @@
 | `prune/` | 第 6 章 视觉 Token 压缩 | 免训练视觉 token 剪枝方法（L2、SCOPE）与可视化 |
 | `token_compression/` | 第 6 章 视觉 Token 压缩 | 免训练 token 压缩方法集（uniform/random/mmtok/l2norm/scope_l2/divprune/fourier） |
 | `scripts/` | 全部 | 预处理、推理、剪枝推理、delta 生成、工具脚本（与 prune.py 的 `import` 依赖强相关，保留原位） |
-| `slurm_scripts/` | — | SLURM 提交脚本：训练 / 评测 / delta 转换 / 冒烟测试 |
+| `scripts/training/` | 第 5 章 模型训练方法 | 训练阶段脚本（兼容 SLURM 头，`train.sh --local` 前台直跑） |
+| `archive/slurm_experiments/` | — | 历史 SLURM 提交脚本归档（原始实验证据，不参与运行） |
 | `training/` | 第 5 章 模型训练方法（蒸馏/自进化） | `distillation/`（5.2 OPD/OPSD）、`self_evolution/`（5.3 CVSearch）——**待上传** |
 | `quantization/` | 第 6 章 视觉 Token 压缩与轻量化 | 6.2 模型量化（INT8 / GPTQ W4A16，**待上传**）；6.1 剪枝实现见顶层 `prune/`、`token_compression/` |
 | `tolerance/` | 容错与故障恢复 | 星载容错、完整性校验、运行时安全状态机——**待上传** |

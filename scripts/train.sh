@@ -18,11 +18,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SLURM_DIR="$REPO_ROOT/scripts/training"
 VRS="$REPO_ROOT/finetune_framework/VRSbench"
 
-# 解析参数：--local 与 stage
+# 解析参数：默认本地前台直跑；--slurm 显式提交 SLURM（需集群）；--local 兼容旧写法(等价默认)
 LOCAL=0
 ARGS=()
 for a in "$@"; do
-  [ "$a" = "--local" ] && { LOCAL=1; continue; }
+  [ "$a" = "--slurm" ] && { LOCAL=1; continue; }
+  [ "$a" = "--local" ] && continue
   ARGS+=("$a")
 done
 STAGE="${ARGS[0]:-}"
@@ -69,10 +70,10 @@ declare -A MERGE=(
 )
 
 usage() {
-  echo "用法: bash scripts/train.sh [--local] <stage|all>   (可选 dry: bash scripts/train.sh dry <stage>)"
+  echo "用法: bash scripts/train.sh <stage|all>   (默认本地前台直跑; --slurm 提交集群; dry: 预览)"
   echo "stages: stage1 stage1_clean stage2 expert_general expert_grounding expert_change"
   echo "        ga2_general ga3_general a1_grounding a2_change a2b_change caption all"
-  echo "--local: 直接前台运行（不依赖 SLURM 调度器）"
+  echo "--slurm: 显式提交 SLURM 调度器(需集群; 默认本地直跑不依赖 SLURM)"
 }
 
 check_data() {
@@ -104,8 +105,8 @@ run_local() {
 
 # --- 主逻辑 ---
 if [ "$STAGE" = "all" ]; then
-  if [ "$LOCAL" = "1" ]; then
-    echo "== 本地串联流水线 =="
+  if [ "$LOCAL" = "0" ]; then
+    echo "== 本地串联流水线(默认; --slurm 走集群) =="
     for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
       check_data "$s"
       echo ">>> 运行: $s (前台)"
@@ -120,7 +121,7 @@ if [ "$STAGE" = "all" ]; then
     exit 0
   fi
 
-  echo "== SLURM 依赖链流水线 =="
+  echo "== SLURM 依赖链流水线(--slurm) =="
   JOB_IDS=()
   PREV=""
   for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
@@ -148,7 +149,7 @@ fi
 
 check_data "$STAGE"
 
-if [ "$LOCAL" = "1" ]; then
+if [ "$LOCAL" = "0" ]; then
   echo ">>> 本地运行: $STAGE"
   bash "$SLURM_DIR/${SLURM[$STAGE]}"
   if [ -n "${MERGE[$STAGE]:-}" ]; then

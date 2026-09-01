@@ -6,7 +6,6 @@
 #   bash evaluation/run_eval_geoeyes.sh --datasets xlrs --max_samples 50
 #
 # 注意: GeoEyes 需要 GPU 运行, 请确保在 GPU 节点上执行
-#       或通过 sbatch 提交 (见 run_eval_geoeyes.slurm)
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

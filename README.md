@@ -228,7 +228,7 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 1. 训练环境：`bash setup.sh`（torch 2.8 cu128 + deepspeed）
 2. 训练数据：`bash scripts/fetch_training_data.sh`（从 ModelScope 拉取 12 个清洗 json；
    数据包尚未上传，上传后填写 `fetch_training_data.sh` 中仓库 id）
-3. 训练在 SLURM 集群提交（`train.sh` 生成 sbatch 命令）
+3. 训练默认本地前台直跑（`train.sh` 不依赖 SLURM；有集群时可 `--slurm` 提交）
 
 **训练流程一览**：
 
@@ -246,22 +246,22 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 ```bash
 cd RS-MLLM
 
-# 1) dry-run 预览某步将要提交的命令（不实际提交）
+# 1) dry-run 预览（不实际执行）
 bash scripts/train.sh dry stage1_clean
 
-# 2) SLURM 集群：提交单个训练步骤（训练后自动排队合并）
+# 2) 本地前台直跑单个训练步骤（默认；训练后自动合并 LoRA → 完整模型）
 bash scripts/train.sh stage1_clean      # 统一 SFT 主干
 bash scripts/train.sh ga2_general       # General 续训（防遗忘）
 bash scripts/train.sh a1_grounding      # Grounding 域对齐续训
 bash scripts/train.sh a2b_change        # Change 防遗忘续训
 bash scripts/train.sh caption           # Caption 双域训练
 
-# 3) SLURM 完整流水线（afterok 依赖链：stage1_clean → ga2 → a1 → a2b → caption，各步间自动合并）
+# 3) 完整流水线（stage1_clean → ga2 → a1 → a2b → caption，各步间自动合并）
 bash scripts/train.sh all
 
-# 4) 本地无 SLURM 时：顺序前台运行（不依赖调度器；训练需 GPU/multi-GPU，见注意事项）
-bash scripts/train.sh --local stage1_clean
-bash scripts/train.sh --local all
+# 4) 有 SLURM 集群时：显式提交调度器（afterok 依赖链）
+bash scripts/train.sh --slurm stage1_clean
+bash scripts/train.sh --slurm all
 
 # 5) 数据构建与 delta 生成
 python scripts/build_caption_expert_data.py      # 构建 Caption 双域数据
@@ -281,7 +281,7 @@ lr=1e-4、1 epoch、bf16、DeepSpeed ZeRO-2；图像分辨率 262,144 ~ 1,048,57
 （Grounding 域对齐为 2048 分辨率）。训练数据的构建脚本（`split_expert_data.py`、
 `build_caption_expert_data.py`）也在 `scripts/` 下。
 
-> 注 1：`--local` 直跑时 slurm 文件中 `deepspeed --num_gpus 2` 需要 2 卡 A100；
+> 注 1：训练阶段脚本默认 `deepspeed --num_gpus 2` 需要 2 卡 A100；
 > 若资源少，请自行把对应 slurm 的 `NUM_DEVICES`/`--num_gpus` 调整为可用卡数。
 > 注 2：训练数据 json/jsonl 体积较大，不随仓库分发（gitignore）；运行前请先
 > `bash scripts/fetch_training_data.sh` 拉取（含 ModelScope 清理 json），
