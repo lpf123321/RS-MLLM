@@ -119,7 +119,11 @@ def _cmd_data() -> None:
 
 def _cmd_simple(name: str, script: str) -> None:
     print(f"  → {name}: {script}")
-    subprocess.run([TRAIN_PY, script], check=False)
+    path = REPO_ROOT / script
+    if script.endswith(".sh"):
+        subprocess.run(["bash", str(path)], check=False)
+    else:
+        subprocess.run([TRAIN_PY, str(path)], check=False)
 
 
 def main() -> int:
@@ -141,7 +145,9 @@ def main() -> int:
             elif choice == "2":
                 _cmd_serve()
             elif choice == "3":
-                _cmd_simple("训练流程", "scripts/train.sh")
+                stage = _ask("训练阶段(all / stage1_clean / expert_general / a1_grounding / a2b_change / caption)", "all")
+                print("  → 训练流程: train.sh", stage)
+                subprocess.run(["bash", str(REPO_ROOT / "scripts/train.sh"), stage], check=False)
             elif choice == "4":
                 _cmd_quantize()
             elif choice == "5":
