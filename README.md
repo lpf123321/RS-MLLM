@@ -214,14 +214,11 @@ python -m rsmllm.router --chat
 
 ### 3.4 模型评测
 
-评测走 `evaluation/main.py`（vLLM 批处理 + 官方计分，与报告一致：greedy + bf16 + 像素 200,704–2,097,152）。
-数据与模型首次自动懒加载（图片/清单/权重），无需手动准备。
-
 ```bash
 # 一次性建评测环境
 bash evaluation/vllm_eval/setup_env.sh
 
-# 单专家评测（如 Caption 专家评 VRSBench Caption；模型自动从 ModelScope 拉取）
+# 单专家评测，模型自动从 ModelScope 拉取
 evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
     --adapter qwen35vl \
     --model-path <expert_caption路径: 本地目录 或 ModelScope 别名 expert_caption> \
@@ -237,7 +234,7 @@ evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 > 并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，
 > 见 `rsmllm/data.py::prepare_eval`。清单为生成产物不入库，评委首次评测时自动构建。
 
-**从 HuggingFace 官方数据集导入（评委手头是 HF 原始数据时）**：
+**从 HuggingFace 官方数据集导入**：
 
 评测图片也可以直接从 HF 官方源下载，脚本自动解压摆放到评测清单对应的位置：
 
