@@ -66,11 +66,11 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 - **关 thinking**（`enable_thinking=False`，与 qwen35vl 默认一致；多模态评测不需思考）
 - system prompt 按任务前缀（[VQA]/[CAP]/[REF]/[CD]/[MCQ]，报告口径）
 - manifest 保留任务前缀 + MCQ **保留选项行**（模型需看到 A/B/C/D）
-- `--enforce-eager`（**必须**：vllm CUDA graph 在 bbox 任务卡死，eager 规避——router_eval 已内置）
+- `--enforce-eager`（**必须**：观测到 vllm graph 模式下 grounding/bbox 任务启动阶段挂起（无输出、CPU 0%）；eager 规避后跑通。**机制未确认**，router_eval 已内置）
 - 时间戳输出目录 + resume 保护（code_sha256 校验）
 
 **known issues**：
-1. vllm CUDA graph + bbox → 卡死（已用 --enforce-eager 规避）
+1. vllm graph 模式下 grounding/bbox 任务启动挂起（现象，机制未确认；已用 --enforce-eager 规避）
 2. MCQ 无选项行 → 模型答语义 0 分（已修：保留选项行）
 3. `xlrs` 官方无 test split（HF 只有 train 74 分片）——我们用其 index 顺序前 3,080 条；`xlrs_caption_en`(934) / `xlrs_grounding_test`(6,310) 是官方 test
 4. 评测环境勿加 llmcompressor（依赖冲突）
