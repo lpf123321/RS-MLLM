@@ -113,7 +113,8 @@ def run_eval(model_path: str, profile: str, manifest: Path, limit: int | None) -
            "--model-profile", profile,
            "--min-pixels", "200704",
            "--max-pixels", "2097152",
-           "--batch-size", "128"]
+           "--batch-size", "128",
+           "--enforce-eager"]  # vllm CUDA graph 在 bbox 任务卡死; eager 规避
     print(f"  → 评测 {manifest.name} ...", flush=True)
     return subprocess.run(cmd, check=False).returncode
 
