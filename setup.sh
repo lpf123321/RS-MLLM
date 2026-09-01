@@ -18,7 +18,8 @@ else
 fi
 
 # ---------- 主路径: uv ----------
-if command -v uv >/dev/null 2>&1; then
+if command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
+    export PATH="${HOME}/.local/bin:${PATH}"
     echo "==> uv detected, syncing locked env..."
     echo "    (首次需下载 ~4GB: torch cu128 + nvidia 库。若卡住无进度,"
     echo "     请先 export HTTPS_PROXY/HTTP_PROXY 指向代理再重跑)"
