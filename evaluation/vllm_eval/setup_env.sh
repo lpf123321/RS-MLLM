@@ -18,6 +18,5 @@ ${UV} sync --locked
 
 echo ""
 echo "==> 完成。运行评测前:"
-echo "    export VLLM_USE_FLASHINFER_SAMPLER=0   # 必需(flashinfer 0.6.14 与 nvcc12.4 不兼容)"
-echo "    export VLLM_WORKER_MULTIPROC_METHOD=spawn"
 echo "    ${EVAL_DIR}/.venv/bin/python ${EVAL_DIR}/vision_opd_vllm_eval.py --help"
+echo "    (环境变量由评测器自动设置, 无需手动 export)"
