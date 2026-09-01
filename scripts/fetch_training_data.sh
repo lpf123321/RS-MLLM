@@ -41,15 +41,19 @@ fi
 
 echo "[fetch_training_data] 从 ModelScope 下载训练数据: $MODELSCOPE_REPO"
 
-# 优先使用 modelscope SDK；否则尝试 git clone（需安装 git-lfs）
-if python -c "import modelscope" 2>/dev/null; then
+# 优先使用评测环境 python(含 modelscope + 登录凭据); 否则系统 python; 最后 git clone
+EVAL_PY="$REPO_ROOT/evaluation/vllm_eval/.venv/bin/python"
+MS_PY="$EVAL_PY"
+if ! "$MS_PY" -c "import modelscope" 2>/dev/null; then
+  MS_PY="python"
+fi
+if "$MS_PY" -c "import modelscope" 2>/dev/null; then
   mkdir -p "$TMP"
-  python - "$MODELSCOPE_REPO" "$TMP" <<'PY'
+  "$MS_PY" - "$MODELSCOPE_REPO" "$TMP" <<'PY'
 import sys, shutil, os
-from modelscope.hub.api import HubApi
+from modelscope import dataset_snapshot_download
 repo_id, dst = sys.argv[1], sys.argv[2]
-api = HubApi()
-api.snapshot_download(repo_id, cache_dir=dst)
+dataset_snapshot_download(repo_id, local_dir=dst)
 PY
   SRC="$TMP"
 else

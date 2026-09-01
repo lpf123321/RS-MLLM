@@ -107,7 +107,7 @@ def resolve_model(alias: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--quant", choices=list(QUANT_MODELS), default="bf16",
+    ap.add_argument("--quant", choices=list(QUANT_EXPERTS), default="bf16",
                     help="量化方式(只允许选这个, 其余自动分配)")
     ap.add_argument("--limit", type=int, help="每任务最多样本(验证用)")
     ap.add_argument("--list", action="store_true", help="打印映射表")
