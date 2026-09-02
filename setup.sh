@@ -1,10 +1,17 @@
 #!/bin/bash
 set -e
 
-ORIGINAL_CWD="$PWD"
+# 判断是否被 source（懒人模式）；source 时不改变调用者的 cwd。
+if [ -n "${BASH_SOURCE}" ] && [ "${BASH_SOURCE}" != "${0}" ]; then
+    _SOURCED=1
+else
+    _SOURCED=0
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
-cd "$REPO_ROOT"
+if [ "$_SOURCED" = "0" ]; then
+    cd "$REPO_ROOT"
+fi
 
 # ============================================================
 # RS-MLLM 环境安装（懒人回滚路径，自动识别）
@@ -15,35 +22,22 @@ cd "$REPO_ROOT"
 
 ENV_NAME="rs_mllm"
 
-# 判断是否被 source（懒人模式）
-if [ -n "${BASH_SOURCE}" ] && [ "${BASH_SOURCE}" != "${0}" ]; then
-    _SOURCED=1
-else
-    _SOURCED=0
-fi
-restore_cwd() {
-    if [ "$_SOURCED" = "1" ]; then
-        cd "$ORIGINAL_CWD"
-    fi
-}
-
 # ---------- 主路径: uv ----------
 if command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
     export PATH="${HOME}/.local/bin:${PATH}"
     echo "==> uv detected, syncing locked env..."
     echo "    (首次需下载 ~4GB: torch cu128 + nvidia 库。若卡住无进度,"
     echo "     请先 export HTTPS_PROXY/HTTP_PROXY 指向代理再重跑)"
-    uv sync --locked
+    (cd "$REPO_ROOT" && uv sync --locked)
     if [ "$_SOURCED" = "1" ]; then
         # shellcheck disable=SC1091
-        source .venv/bin/activate
+        source "$REPO_ROOT/.venv/bin/activate"
         echo "==> Done. Activated: $(python -V), $(python -c 'import torch; print("torch", torch.__version__)')"
     else
         echo "==> Done. Activate with: source .venv/bin/activate"
     fi
     # source 场景: return 即可(不关闭交互 shell); bash 直接跑: exit
     if [ "$_SOURCED" = "1" ]; then
-        restore_cwd
         return 0
     else
         exit 0
@@ -62,9 +56,8 @@ fi
 if [ -z "$CONDA_BASE" ]; then
     echo "Conda not found. Install Miniconda first: https://docs.anaconda.com/miniconda/"
     echo "📌 注意: 若您是直接 source 本脚本, exit 会关闭当前会话。请改运行:  bash setup.sh"
-    # 防止 source 场景 exit 关闭交互 shell, 改为 return
+    # 防止 source 场景 exit 关闭当前交互 shell, 改为 return
     if [ "$_SOURCED" = "1" ]; then
-        restore_cwd
         return 1
     else
         exit 1
@@ -89,11 +82,10 @@ export CXX="$GCC_BIN/x86_64-conda-linux-gnu-g++"
 export CUDAHOSTCXX="$CXX"
 
 echo "Installing pinned dependencies (requirements.txt)..."
-pip install -r requirements.txt
+pip install -r "$REPO_ROOT/requirements.txt"
 
 if [ "$_SOURCED" = "1" ]; then
     echo "==> Done. Activated: conda $ENV_NAME"
 else
     echo "==> Done. Activate with: conda activate $ENV_NAME"
 fi
-restore_cwd

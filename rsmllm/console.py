@@ -203,13 +203,16 @@ def _cmd_data() -> None:
         _run_repo(cmd)
 
 
-def _cmd_simple(name: str, script: str) -> None:
+def _cmd_simple(
+    name: str, script: str, extra_args: list[str] | None = None
+) -> None:
     print(f"  → {name}: {script}")
     path = REPO_ROOT / script
+    command = [str(path), *(extra_args or [])]
     if script.endswith(".sh"):
-        _run_repo(["bash", str(path)])
+        _run_repo(["bash", *command])
     else:
-        _run_repo([TRAIN_PY, str(path)])
+        _run_repo([TRAIN_PY, *command])
 
 
 def _cmd_simple_eval(name: str, script: str) -> None:
@@ -258,7 +261,12 @@ def main() -> int:
                 if sub == "ttft":
                     _cmd_simple("TTFT 测量", "scripts/ttft_serve_probe.py")
                 elif sub == "batch":
-                    _cmd_simple("batch 扫描", "scripts/run_batch_scan.py")
+                    model = _ask_model()
+                    _cmd_simple(
+                        "batch 扫描",
+                        "scripts/run_batch_scan.py",
+                        ["--model", model],
+                    )
                 else:
                     print("\n".join(f"  {k} → {v}" for k, v in MODEL_REGISTRY.items()))
             else:

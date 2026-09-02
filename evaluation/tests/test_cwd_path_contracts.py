@@ -31,6 +31,28 @@ def test_console_runs_children_from_repository_root(
     assert env["PYTHONPATH"].split(os.pathsep)[0] == str(console.REPO_ROOT)
 
 
+def test_console_simple_forwards_extra_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return 0
+
+    monkeypatch.setattr(console, "_run_repo", fake_run)
+    console._cmd_simple("batch", "scripts/run_batch_scan.py", ["--model", "/m"])
+
+    assert calls == [
+        [
+            console.TRAIN_PY,
+            str(console.REPO_ROOT / "scripts" / "run_batch_scan.py"),
+            "--model",
+            "/m",
+        ]
+    ]
+
+
 def test_quantize_resolves_exec_script_and_defaults_from_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
