@@ -62,8 +62,11 @@ REPORT_CONF = {
     "dtype": "bfloat16",
     "sampling": "greedy",
     "max_model_len": 16384,
-    "batch_size": 64,
+    # Keep more requests in one vLLM offline call so continuous batching can
+    # span prompt-rendering work; max_num_seqs remains the GPU concurrency cap.
+    "batch_size": 128,
     "max_num_seqs": 64,
+    "image_load_workers": 4,
     "min_pixels": 200704,
     "max_pixels": 2097152,
     "gpu_memory_utilization": 0.85,

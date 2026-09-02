@@ -12,6 +12,7 @@ from __future__ import annotations
 import atexit
 import argparse
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import hashlib
 import json
@@ -72,6 +73,14 @@ CODE_FILES = base.CODE_FILES + (
 )
 
 MAX_PASSES = 3  # token multiplier 1x, 2x, 4x -- same policy as the serial evaluator
+
+
+def _load_rgb_image(path: str) -> Any:
+    """Decode one image without retaining an open file descriptor."""
+    from PIL import Image
+
+    with Image.open(path) as image:
+        return image.convert("RGB")
 
 
 def code_sha256() -> str:
@@ -267,6 +276,7 @@ class VLLMBatchAdapter:
         gpu_memory_utilization: float,
         max_num_seqs: int,
         enforce_eager: bool,
+        image_load_workers: int = 4,
         cudagraph_mm_encoder: bool = False,
         mm_encoder_attn_backend: str | None = None,
         skip_content_verification: bool = False,
@@ -278,6 +288,8 @@ class VLLMBatchAdapter:
                 "Unsupported vLLM route quantization: "
                 f"{quantization!r} (expected bf16, w8a8, or gptq)"
             )
+        if image_load_workers < 1:
+            raise ValueError("image_load_workers must be >= 1")
         assert_model_allowed(model_path)
         if not skip_content_verification:
             verify_trusted_model_content(model_path, profile_key=profile_key)
@@ -289,6 +301,7 @@ class VLLMBatchAdapter:
         self.max_model_len = max_model_len
         self.gpu_memory_utilization = gpu_memory_utilization
         self.max_num_seqs = max_num_seqs
+        self.image_load_workers = image_load_workers
         self.enforce_eager = enforce_eager
         self.cudagraph_mm_encoder = cudagraph_mm_encoder
         self.mm_encoder_attn_backend = mm_encoder_attn_backend
@@ -360,6 +373,7 @@ class VLLMBatchAdapter:
             "max_pixels": self.max_pixels,
             "max_model_len": self.max_model_len,
             "max_num_seqs": self.max_num_seqs,
+            "image_load_workers": self.image_load_workers,
             "gpu_memory_utilization": self.gpu_memory_utilization,
             "enforce_eager": self.enforce_eager,
             "cudagraph_mm_encoder": self.cudagraph_mm_encoder,
@@ -445,13 +459,33 @@ class VLLMBatchAdapter:
         """Run one chunk; items are (image_paths, prompt, max_new_tokens)."""
         if self.llm is None or self.processor is None:
             raise RuntimeError("Engine must be loaded before generation")
-        from PIL import Image
         from vllm import SamplingParams
+
+        # Decode on a bounded CPU pool before handing requests to vLLM.  The
+        # old serial loop made the GPU wait at every chunk boundary; the
+        # bounded pool reduces that gap without changing image bytes, pixel
+        # policy, or request order.
+        flat_paths = [
+            path
+            for image_paths, _, _ in items
+            for path in image_paths
+        ]
+        if not flat_paths:
+            raise ValueError("Each generation item must contain at least one image")
+        with ThreadPoolExecutor(
+            max_workers=min(self.image_load_workers, len(flat_paths))
+        ) as pool:
+            decoded_images = list(pool.map(_load_rgb_image, flat_paths))
 
         requests: list[dict[str, Any]] = []
         params: list[Any] = []
+        image_offset = 0
         for image_paths, prompt, max_new_tokens in items:
-            images = [Image.open(path).convert("RGB") for path in image_paths]
+            image_count = len(image_paths)
+            if image_count < 1:
+                raise ValueError("Each generation item must contain at least one image")
+            images = decoded_images[image_offset : image_offset + image_count]
+            image_offset += image_count
             requests.append(
                 {
                     "prompt": self._prompt_text(image_paths, prompt),
@@ -521,6 +555,7 @@ def main() -> None:
     parser.add_argument("--max-model-len", type=int, default=16_384)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--max-num-seqs", type=int, default=64)
+    parser.add_argument("--image-load-workers", type=int, default=4)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument(
         "--quantization",
@@ -554,6 +589,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.batch_size < 1:
         raise ValueError("batch-size must be >= 1")
+    if args.image_load_workers < 1:
+        raise ValueError("image-load-workers must be >= 1")
     # 默认输出目录: results/<manifest文件名>_<profile>_<时间戳>
     # 每次运行独占目录, 多次跑同一模型互不覆盖; 显式 --output-dir 时尊重传入(保留 resume 语义)
     if args.output_dir is None:
@@ -599,6 +636,7 @@ def main() -> None:
         "max_model_len": args.max_model_len,
         "gpu_memory_utilization": args.gpu_memory_utilization,
         "max_num_seqs": args.max_num_seqs,
+        "image_load_workers": args.image_load_workers,
         "enforce_eager": args.enforce_eager,
         "cudagraph_mm_encoder": args.cudagraph_mm_encoder,
         "mm_encoder_attn_backend": args.mm_encoder_attn_backend,
@@ -662,6 +700,7 @@ def main() -> None:
         max_model_len=args.max_model_len,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_num_seqs=args.max_num_seqs,
+        image_load_workers=args.image_load_workers,
         enforce_eager=args.enforce_eager,
         cudagraph_mm_encoder=args.cudagraph_mm_encoder,
         mm_encoder_attn_backend=args.mm_encoder_attn_backend,

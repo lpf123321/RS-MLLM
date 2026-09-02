@@ -38,6 +38,12 @@ cd evaluation/vllm_eval
 - `--output-dir` 省略时默认 `results/<manifest文件名>_<profile>`；
 - 三 pass 策略（token 倍数 1x/2x/4x），输出 `prediction_attempts.jsonl` + `run_config.json`。
 - 评测器自包含: VLLM_USE_FLASHINFER_SAMPLER/LD_LIBRARY_PATH/WORKER_MULTIPROC 自动设置。
+- 统一路由入口使用 `batch_size=128`（request window）与 `max_num_seqs=64`（GPU
+  并发上限）；每个 window 以有界 4-worker CPU 池解码 RGB 图像，保持原始顺序与像素
+  策略不变。可用 `--image-load-workers` 显式覆盖 worker 数。
+- `--enforce-eager` 仍是路由默认稳定配置。关闭 eager 可减少稳态 kernel launch
+  开销，但 vLLM 0.26 的首次编译/graph capture 可能超过 3 分钟，不能把冷启动时间
+  当作稳态吞吐。
 
 ## 运行环境（vllm 0.26 + torch 2.11 cu129）
 

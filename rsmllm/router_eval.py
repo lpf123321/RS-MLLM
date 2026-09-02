@@ -152,6 +152,7 @@ def run_eval(
            "--batch-size", str(REPORT_CONF["batch_size"]),
            "--max-model-len", str(REPORT_CONF["max_model_len"]),
            "--max-num-seqs", str(REPORT_CONF["max_num_seqs"]),
+           "--image-load-workers", str(REPORT_CONF["image_load_workers"]),
            "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
            "--enforce-eager"]  # 当前稳定配置；graph 模式的启动耗时须看完整结果判断
     print(f"  → 评测 {manifest.name} ...", flush=True)

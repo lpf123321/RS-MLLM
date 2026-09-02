@@ -1,7 +1,7 @@
 # RS-MLLM 仓库约定与操作手册（Handoff）
 
 > 给队友的同步文档：仓库当前状态、关键约定、评测/推理/训练怎么跑、已知坑。
-> 最后更新：2026-09-01
+> 最后更新：2026-09-02
 
 ## 0. 仓库定位
 
@@ -75,18 +75,34 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 - 不在离线 vLLM 评测中动态挂 LoRA：vLLM 0.26 的 offline `LLM` 没有经过验证的多模态
   `add_lora_adapter` 路径；canonical 模型已完成一次合并，禁止二次应用
 - `--enforce-eager`（router_eval 当前稳定配置；graph 模式的启动与编译可能耗时，不能仅凭中途无输出判定挂起）
+- 统一入口默认 `batch_size=128` 是一次提交给 vLLM offline engine 的 request window；
+  `max_num_seqs=64` 仍是 GPU 调度并发上限。每个 window 使用有界 4-worker CPU 池解码
+  RGB 图像，并在解码后关闭文件句柄；不改变图像字节、像素策略或请求顺序。
+- GPU 利用率出现 0%--高值交替是当前路径的预期特征：`Rendering prompts`/首轮 Triton
+  JIT 属于 CPU/预热阶段，GPU 随后以短批量 prefill/decode burst 工作。不要用一次
+  `ps`/`nvidia-smi` 快照判定卡死；应结合完整日志和明确的 GPU 进程状态。
 - vLLM 错误中的 `cuda:0` 是进程内可见设备序号；`CUDA_VISIBLE_DEVICES=1` 时它对应物理 GPU 1，须用 `nvidia-smi` 的 GPU index/UUID 核对，不能据此断言落在物理 GPU 0。
 - 评测器在创建 `LLM` 前用 NVML 解析物理 GPU UUID、做显存预检并持有进程锁；同一物理 GPU 的重复评测会快速失败，不会再启动冲突的 EngineCore；不同物理 GPU 仍可并行。
 - `router_eval` 保留原有断点续跑语义：记录子评测失败后继续其余任务，最终以非零退出；GPU 资源冲突在 `LLM` 前由 guard 快速拒绝，不会启动冲突的 EngineCore。
 - 时间戳输出目录 + resume 保护（code_sha256 校验）
 
 **known issues**：
-1. vllm graph 模式下 grounding/bbox 的启动与编译可能持续约 1 分钟；干净的一条样例已完整退出（exit 0），此前的“卡死”判断来自只看启动中途的父进程 CPU/显存快照。`router_eval` 仍保留 `--enforce-eager` 作为当前稳定配置；不要用单次 CPU 快照判定卡死。
+1. vllm graph 模式下 grounding/bbox 的启动与编译可能超过 3 分钟；本次干净的
+   caption/grounding smoke 均 exit 0，但冷启动开销显著，且尚未用完整任务矩阵证明
+   稳定收益。`router_eval` 仍保留 `--enforce-eager` 作为当前稳定配置；不要用单次
+   CPU/GPU 快照判定卡死。
 2. MCQ 无选项行 → 模型答语义 0 分（已修：保留选项行）
 3. `xlrs` 官方无 test split（HF 只有 train 74 分片）——我们用其 index 顺序前 3,080 条；`xlrs_caption_en`(934) / `xlrs_grounding_test`(6,310) 是官方 test
 4. 评测环境勿加 llmcompressor（依赖冲突）
 5. `results/` 中带 `expert_*_full` 的旧目录来自二次 LoRA 合并，不能作为 canonical
    指标；新结果应使用 `expert_general`/`expert_ground` 及其 canonical 量化 profile。
+6. 报告后续 PEFT LoRA 数字与当前 vLLM 结果必须注明计分/清单：canonical BF16
+   VRSBench VQA 当前 exact-match 为 70.91%（37,409 条），与报告
+   `+ LoRA (1 stage)` 的 70.43% 接近；报告多专家行的 77.5% 使用 GPT-4 语义判定，
+   不能直接与 exact-match 相减。当前 Caption/LEVIR 结果中的 `caption_smoke_metrics`
+   是 lexical proxy，不是报告的官方 CIDEr；当前 XLRS Grounding 的 17.59%（6,310
+   条、清单中的 resized 图像）也不能直接替代报告后续 PEFT 域对齐实验的 31.57%→
+   32.77%。
 
 ## 5. 推理（Router，报告 §5.3）
 
@@ -120,3 +136,5 @@ python scripts/quantize_qwen35_vlm.py --method w8a8-int8 --model <完整模型> 
 - 报告 §3：VRS-VQA 0.775 / CIDEr 0.284 / MME 0.541 / XLRS 0.359 / LEVIR 1.344
 - 评测配置：greedy + bf16 + 像素 200,704–2,097,152 + max_len 16,384
 - xlrs 只用 en（zh 未评测）
+- 运行时优化仅改变 request window/CPU 图像解码，不改变上述 PEFT 模型权重；
+  比较精度时优先看同一清单、同一评分实现，报告数字作为标注过协议的参考基线。
