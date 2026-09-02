@@ -10,9 +10,13 @@
 - [三、快速开始](#三快速开始)
   - [3.1 硬件要求](#31-硬件要求)
   - [3.2 环境配置](#32-环境配置)
-  - [3.3 模型推理](#33-模型推理)
-  - [3.4 模型评测](#34-模型评测)
-  - [3.5 模型训练](#35-模型训练)
+  - [3.3 数据与模型准备](#33-数据与模型准备)
+    - [3.3.1 评测图片：已有官方数据放哪里](#331-评测图片已有官方数据放哪里)
+    - [3.3.2 评测图片：从 ModelScope 或 HuggingFace 下载](#332-评测图片从-modelscope-或-huggingface-下载)
+    - [3.3.3 模型：下载到本地（评测前准备好）](#333-模型下载到本地评测前准备好)
+  - [3.4 模型推理](#34-模型推理)
+  - [3.5 模型评测](#35-模型评测)
+  - [3.6 模型训练](#36-模型训练)
 - [四、测试结果](#四测试结果)
 - [五、目录索引](#五目录索引)
 - [六、Acknowledgment](#六acknowledgment)
@@ -168,7 +172,103 @@ python3 -m pip install --user uv
 > 首次安装需下载约 4GB（torch/nvidia/vllm wheel）。若下载卡住无进度，
 > 设置代理后重跑：`export HTTPS_PROXY=http://<代理>:<端口> HTTP_PROXY=http://<代理>:<端口>`。
 
-### 3.3 模型推理
+### 3.3 数据与模型准备
+
+评测 / 路由推理所需的评测图片与模型均采用**本地优先**：放好后不会再重复下载。
+先准备数据与模型，再进入 3.4 推理 / 3.5 评测。
+
+#### 3.3.1 评测图片：已有官方数据放哪里
+
+官方数据集不随仓库重复分发。若已从赛题 / 官方渠道取得原始图片，按下面的**目录契约**
+放到 `datasets/shared_datasets/<数据名>/` 即可；评测入口检测到图片就绪会直接复用，
+不会重新下载：
+
+```
+datasets/shared_datasets/
+├── VRSBench/                          # vrsbench: 官方 Images_val.zip 原文件名直放
+│   └── images/val/P0003_0002.png      #   清单引用名 = 官方 image_id, 解压即用
+├── MME-RealWorld-RS/                  # mme: 官方 images_resized/mme_*.png
+├── XLRS-Bench-lite/                   # xlrs: images_resized/xlrs_00000.png (重编号)
+├── XLRS-Bench_caption_en/             # xlrs_caption: images_exported/xlrs_caption_*.jpg
+├── XLRS-Bench_visual_grounding_en/    # xlrs_grounding: images_exported_test/xlrs_vg_*.jpg
+└── LEVIR-CC/                          # levircc: 官方 zip 原文件名直放
+    └── images/test/A/test_000001.png
+```
+
+**命名规则**：
+- VRSBench / LEVIR-CC：官方文件就是清单引用名（`P0003_0002.png` / `test_000001.png`），
+  zip 解压后文件自然对上，无需改名；
+- XLRS 三件套 / MME：清单引用的是**预处理重编号名**（`images_resized/xlrs_00000.png`、
+  `images_exported/xlrs_caption_00000.jpg`），官方 HF 数据是 arrow 内嵌图；若你拿到的
+  不是与清单同名的文件，建议直接用 3.3.2 的下载脚本从官方源导出（脚本自动按 `index`
+  列顺序导出并重编号），或按上述命名规则手动对齐。
+
+摆放完成后可手动预构建评测清单（可选；不跑也不影响，首次评测会自动构建）：
+
+```bash
+python scripts/build_sample_manifest.py --all --images-root ../../../datasets/shared_datasets
+```
+
+图片放在别处时，不要求一定放 `datasets/shared_datasets/`，用
+`--images-root <你的图片目录>` 重写清单路径前缀即可。
+
+#### 3.3.2 评测图片：从 ModelScope 或 HuggingFace 下载
+
+没有官方数据时，一键下载后自动摆放到 3.3.1 的目录：
+
+```bash
+# 方式一：一键(推荐, 约 8.8GB, 快) —— 从 ModelScope 下载已清洗裁剪的图片包
+python scripts/fetch_benchmark_data.py --all
+#   下载 6 个数据集的图片并自动摆放:
+#   datasets/shared_datasets/VRSBench/        (vrsbench 9,350 张)
+#   datasets/shared_datasets/MME-RealWorld-RS/ (mme 1,264 张)
+#   datasets/shared_datasets/XLRS-Bench-lite/  (xlrs 800 张)
+#   datasets/shared_datasets/LEVIR-CC/         (levircc 3,858 张)
+#   datasets/shared_datasets/XLRS-Bench_caption_en/       (xlrs_caption 934 张)
+#   datasets/shared_datasets/XLRS-Bench_visual_grounding_en/ (xlrs_grounding 844 张)
+
+# 方式二：从 HF 官方源下载(全量, 体积大: XLRS 系列 38~127GB, 慢)
+python scripts/fetch_benchmark_data.py --all --source hf
+#   仅指定数据集:
+python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
+```
+
+评测入口在图片缺失时也会自动执行上述下载（懒加载）；网络不稳时手动跑一次更可控。
+下载完成后，首次评测会自动构建可移植评测清单到 `evaluation/vllm_eval/manifests/`
+（见 `rsmllm/data.py::prepare_eval`）。
+
+菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。
+
+#### 3.3.3 模型：下载到本地（评测前准备好）
+
+面向**评测与单模型推理**（3.5 评测、3.4 的 `rsmllm.sh`/别名入口）本地优先：
+`models/<别名>/`（或 `~/models/<别名>/`）存在完整模型时直接使用，缺失时才从
+ModelScope 拉取并缓存到 `.models/`。为避免现场拉取受网络影响，可先用脚本显式下载
+到约定位置：
+
+```bash
+# 12 个评测模型(4 专家 × bf16 / w8a8 / gptq) → 仓库 models/
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all
+
+# 只做精度演示: bf16 一档即可
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant bf16
+
+# 附带 base 基座 / 指定个别模型 / 自定义目录
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant bf16 --base
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py expert_general expert_general_w8a8
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all --dir /data/models
+```
+
+- **默认位置**：`models/<别名>/`（下载后可 `ls models/` 查看）；自定义 `--dir` 后，
+  后续评测请 `export RSMLLM_MODELS_ROOT=<dir>` 指回；
+- 模型来源：ModelScope `Fun10165/rs-mllm-*`（已公开）；完整别名见
+  `rsmllm/config.py::MODEL_REGISTRY`；
+- canonical 专家（bf16）为 base + delta + PEFT LoRA 的一次合并结果，量化版由
+  canonical 快照导出（专家架构说明见 3.4 推理节）——**不要再叠加 LoRA**；
+- 目标目录已完整（`config.json` + 权重）会跳过，`--force` 强制重下；
+- 完全离线环境：下载完成后 `export MODELSCOPE_OFFLINE=1`，评测只读本地。
+
+### 3.4 模型推理
 
 **唯一入口：交互式控制台**（菜单选择功能，模型自动从 ModelScope 拉取）
 
@@ -184,7 +284,7 @@ python3 -m pip install --user uv
 **多专家路由推理**（报告 §5.3：4 专家按 prompt 规则路由）：
 
 ```bash
-# 1) 一键启动 4 个专家实例(默认模型在 ~/router_models/ 或 ModelScope 自动拉取)
+# 1) 一键启动 4 个专家实例(默认模型目录 ~/router_models/, 可用 --models-dir 指定)
 #    general=8001 grounding=8002 change=8003 caption=8004, 两卡分载
 bash scripts/start_router.sh
 
@@ -222,7 +322,7 @@ python -m rsmllm.router --chat
 直接拒绝，防止再次叠加；量化模型使用 canonical 快照生成的产物，vLLM 离线 API
 不动态挂 LoRA。
 
-### 3.4 模型评测
+### 3.5 模型评测
 
 ```bash
 # 一次性建评测环境
@@ -239,58 +339,8 @@ evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 # 量化方式可选: bf16 / w8a8 / gptq
 ```
 
-评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像（`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，见 `rsmllm/data.py::prepare_eval`。清单为生成产物，首次评测时自动构建。
-
-**从 HuggingFace 官方数据集导入**：
-
-评测图片也可以直接从 HF 官方源下载，脚本自动解压摆放到评测清单对应的位置：
-
-```bash
-# 方式一：一键(推荐, 约 8.8GB, 快) —— 从 ModelScope 下载已清洗裁剪的图片包
-python scripts/fetch_benchmark_data.py --all
-#   下载 6 个数据集的图片并自动摆放:
-#   datasets/shared_datasets/VRSBench/        (vrsbench 9,350 张)
-#   datasets/shared_datasets/MME-RealWorld-RS/ (mme 1,264 张)
-#   datasets/shared_datasets/XLRS-Bench-lite/  (xlrs 800 张)
-#   datasets/shared_datasets/LEVIR-CC/         (levircc 3,858 张)
-#   datasets/shared_datasets/XLRS-Bench_caption_en/       (xlrs_caption 934 张)
-#   datasets/shared_datasets/XLRS-Bench_visual_grounding_en/ (xlrs_grounding 844 张)
-
-# 方式二：从 HF 官方源下载(全量, 体积大: XLRS 系列 38~127GB, 慢)
-python scripts/fetch_benchmark_data.py --all --source hf
-#   仅指定数据集:
-python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
-```
-
-**目录契约**：图片必须位于 `datasets/shared_datasets/<数据名>/`，评测清单中的图片路径
-以此为根（`build_sample_manifest.py` 已按此生成）：
-
-```
-datasets/shared_datasets/
-├── VRSBench/                          # vrsbench: 官方 Images_val.zip 原文件名直放
-│   └── images/val/P0003_0002.png      #   清单引用名 = 官方 image_id, 解压即用
-├── MME-RealWorld-RS/                  # mme: 官方 images_resized/mme_*.png
-├── XLRS-Bench-lite/                   # xlrs: images_resized/xlrs_00000.png (重编号)
-├── XLRS-Bench_caption_en/             # xlrs_caption: images_exported/xlrs_caption_*.jpg
-├── XLRS-Bench_visual_grounding_en/    # xlrs_grounding: images_exported_test/xlrs_vg_*.jpg
-└── LEVIR-CC/                          # levircc: 官方 zip 原文件名直放
-    └── images/test/A/test_000001.png
-```
-
-**命名规则**：
-- VRSBench / LEVIR-CC：官方文件就是清单引用名（`P0003_0002.png` / `test_000001.png`），
-  zip 解压后文件自然对上，无需改名；
-- XLRS 三件套 / MME：清单引用的是**预处理重编号名**（`images_resized/xlrs_00000.png`、
-  `images_exported/xlrs_caption_00000.jpg`），HF 官方是 arrow 内嵌图，脚本按 `index`
-  列顺序导出并重编号（与评测清单一一对应）。
-
-**图片放在别处时**：不要求一定放 `datasets/shared_datasets/`，可用
-`build_sample_manifest.py --images-root <你的图片目录>` 重写清单中的路径前缀：
-```bash
-python scripts/build_sample_manifest.py --all --images-root /path/to/your/images
-```
-
-菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。
+评测图片（已有官方数据摆放 / ModelScope、HF 下载）与模型准备见 3.3；
+图片就绪后清单由入口自动构建（`rsmllm/data.py::prepare_eval`），也可用 3.3.1 的命令手动预构建。
 
 **量化转换**（与报告同链路）：
 
@@ -312,7 +362,7 @@ python scripts/run_batch_scan.py        # 6 档并发吞吐/时延扫描
 python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 ```
 
-### 3.5 模型训练
+### 3.6 模型训练
 
 所有命令从仓库根目录执行；训练默认关闭 thinking。
 
