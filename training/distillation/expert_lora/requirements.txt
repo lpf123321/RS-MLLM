@@ -1,7 +1,7 @@
 # Versions from the environment that produced the retained checkpoints.
-torch==2.10.0
-transformers==5.5.0
-peft==0.18.0
+torch==2.8.0
+transformers==5.13.0
+peft==0.15.2
 qwen-vl-utils==0.0.14
 safetensors>=0.5
 modelscope-hub>=0.3.0

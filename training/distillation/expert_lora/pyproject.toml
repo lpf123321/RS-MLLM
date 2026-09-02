@@ -10,13 +10,13 @@ requires-python = ">=3.10"
 dependencies = [
   "huggingface-hub>=1.0",
   "modelscope-hub>=0.3.0",
-  "peft==0.18.0",
+  "peft==0.15.2",
   "Pillow==12.3.0",
   "pyarrow>=16",
   "qwen-vl-utils==0.0.14",
   "safetensors>=0.5",
-  "torch==2.10.0",
-  "transformers==5.5.0",
+  "torch==2.8.0",
+  "transformers==5.13.0",
 ]
 
 [project.scripts]

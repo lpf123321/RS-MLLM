@@ -342,6 +342,7 @@ models/
 ```bash
 source scripts/training/env.sh
 activate_conda
+python -m pip install 'modelscope==1.39.1' 'modelscope-hub==0.3.0'
 
 # 模型软链和 base + delta 专家
 python scripts/stage_training35_models.py --build-experts
