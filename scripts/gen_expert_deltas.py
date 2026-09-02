@@ -4,10 +4,10 @@
 生成各专家相对原始基座 W0 的完整 delta，并验证 W0+Δ 能精确还原 merged 模型。
 
 四个专家（均可与 W0 同架构对齐，跳过 mtp 层）：
-    grounding : outputs/merged/a1_grounding_checkpoint-1992_2048
-    change    : outputs/merged/a2b_change_checkpoint-581
-    v2 general: outputs/merged/expert_general_v2
-    caption   : outputs/merged/caption_expert_checkpoint-158
+    grounding : models/expert_ground
+    change    : models/expert_change
+    general   : models/expert_general
+    caption   : models/expert_caption
 
 用法:
     python scripts/gen_expert_deltas.py --verify
@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 from collections import OrderedDict
+from pathlib import Path
 
 import torch
 from safetensors import safe_open
@@ -25,16 +26,11 @@ OUT_DIR = "outputs/merged/expert_deltas_rel_W0"
 MTPSKIP = ("mtp.",)  # W0 独有层
 
 EXPERTS = {
-    "grounding": "outputs/merged/a1_grounding_checkpoint-1992_2048",
-    "change": "outputs/merged/a2b_change_checkpoint-581",
-    "general_v2": "outputs/merged/expert_general_v2",
-    "caption": "outputs/merged/caption_expert_checkpoint-158",
+    "grounding": "models/expert_ground",
+    "change": "models/expert_change",
+    "general": "models/expert_general",
+    "caption": "models/expert_caption",
 }
-
-
-def load0(k):
-    with safe_open(f"{W0_DIR}/{bin_of[k]}", framework="pt", device="cpu") as f:
-        return f.get_tensor(k)
 
 
 def slurp(path, device="cpu"):
@@ -58,54 +54,88 @@ def slurp(path, device="cpu"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--base", default=W0_DIR)
+    ap.add_argument("--output", default=OUT_DIR)
+    ap.add_argument("--force", action="store_true", help="覆盖已有 delta")
+    ap.add_argument("--tolerance", type=float, default=1e-2)
     args = ap.parse_args()
 
-    global bin_of
-    w0_idx = json.load(open(f"{W0_DIR}/model.safetensors.index.json"))["weight_map"]
-    bin_of = w0_idx  # key -> filename
-
-    # 统一 key 集：用 一个专家 的 key 为公共集（相对 W0 取交集，跳过 mtp）
-    ref = slurp(EXPERTS["grounding"])
-    common = sorted(k for k in ref if not k.startswith(MTPSKIP))
+    base_dir = args.base
+    out_dir = args.output
+    w0_idx = json.load(open(f"{base_dir}/model.safetensors.index.json"))["weight_map"]
+    base = slurp(base_dir)
+    common = sorted(k for k in w0_idx if not k.startswith(MTPSKIP))
     print(f"expert keys (skipping mtp): {len(common)}")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     summaries = {}
     for name, path in EXPERTS.items():
+        delta_path = f"{out_dir}/{name}_relW0.pt"
+        if os.path.exists(delta_path) and not args.force:
+            print(f"  {name}: reuse existing {delta_path}")
+            continue
         expert = slurp(path)
         delta = OrderedDict()
-        maxdiff = 0.0
         for k in common:
-            dev = expert[k].float()
-            w0 = load0(k).to(dev.dtype)
-            d = dev - w0
-            delta[k] = d
-        torch.save(delta, f"{OUT_DIR}/{name}_relW0.pt")
+            dev = expert[k]
+            w0 = base[k].to(dev.dtype)
+            delta[k] = (dev - w0).contiguous()
+        temporary = f"{delta_path}.tmp"
+        torch.save(delta, temporary)
+        os.replace(temporary, delta_path)
         # 统计非零
         nz = sum(1 for v in delta.values() if torch.count_nonzero(v) > 0)
         summaries[name] = {"tensors": len(delta), "nonzero": nz}
-        print(f"  {name}: delta saved ({nz}/{len(delta)} nonzero tensors)")
+        print(f"  {name}: delta saved ({nz}/{len(delta)} nonzero BF16 tensors)")
+        del expert, delta
 
     print("---")
-    print(f"Deltas written to {OUT_DIR}/  (as .pt state dicts, dtype float32)")
+    print(f"Deltas written to {out_dir}/  (as .pt state dicts, dtype bfloat16)")
 
     if args.verify:
         print("\n=== VERIFY: W0 + delta == expert_merged ===")
+        failed = False
+        verification = {}
         for name, path in EXPERTS.items():
-            delta = torch.load(f"{OUT_DIR}/{name}_relW0.pt", map_location="cpu")
+            delta = torch.load(
+                f"{out_dir}/{name}_relW0.pt",
+                map_location="cpu",
+                weights_only=True,
+                mmap=True,
+            )
             expert = slurp(path)
             maxdiff = 0.0
             bad = 0
             for k in common:
-                w0 = load0(k).float()
-                recon = w0 + delta[k]
+                w0 = base[k].to(delta[k].dtype)
+                recon = (w0 + delta[k]).float()
                 dev = expert[k].float()
-                m = (recon - dev).abs().max().item()
-                maxdiff = max(maxdiff, m)
-                if not torch.allclose(recon, dev, atol=1e-3):
+                error = (recon - dev).abs().max().item()
+                maxdiff = max(maxdiff, error)
+                if error > args.tolerance:
                     bad += 1
-            print(f"  {name}: max|recon-expert|={maxdiff:.2e}  mismatched@1e-3={bad}")
-        print("  (差异应仅来自 fp16 存储舍入，<1e-2 即可认定还原成功)")
+            failed |= bad > 0
+            verification[name] = {
+                "tensors": len(common),
+                "max_abs_reconstruction_error": maxdiff,
+                "mismatched_tensors": bad,
+            }
+            print(f"  {name}: max|recon-expert|={maxdiff:.2e}  mismatched={bad}")
+            del expert, delta
+        print(f"  tolerance={args.tolerance:g}（仅允许 BF16 舍入差异）")
+        report = {
+            "base": str(Path(base_dir).resolve()),
+            "tolerance": args.tolerance,
+            "passed": not failed,
+            "experts": verification,
+        }
+        report_path = Path(out_dir) / "verification.json"
+        report_path.write_text(
+            json.dumps(report, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"  report={report_path}")
+        if failed:
+            raise SystemExit("delta verification failed")
 
 
 if __name__ == "__main__":

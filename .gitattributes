@@ -9,3 +9,6 @@
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.gz filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
+
+# Executable configuration must remain ordinary Git text.
+training/distillation/expert_lora/configs/*.json !filter !diff !merge text

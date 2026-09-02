@@ -17,7 +17,7 @@ XLRS_BOX = re.compile(
     r"^\[((?:0|1)\.\d{5}),((?:0|1)\.\d{5}),"
     r"((?:0|1)\.\d{5}),((?:0|1)\.\d{5})\]$"
 )
-SCHEMAS = {"mcq", "vrs_grounding", "xlrs_grounding", "mixed_grounding"}
+SCHEMAS = {"mcq", "general_mixed", "vrs_grounding", "xlrs_grounding", "mixed_grounding"}
 
 
 def sha256(path: Path) -> str:
@@ -52,9 +52,11 @@ def resolve_image_path(
 
 
 def _validate_answer(answer: str, schema: str) -> None:
-    if schema == "mcq":
+    if schema in {"mcq", "general_mixed"}:
         if not MCQ_ANSWER.fullmatch(answer):
-            raise ValueError(f"invalid MCQ answer: {answer!r}")
+            if schema == "mcq":
+                raise ValueError(f"invalid MCQ answer: {answer!r}")
+            # Exp7 also contains free-form VRSBench VQA answers.
         return
 
     vrs_match = VRS_BOX.fullmatch(answer)

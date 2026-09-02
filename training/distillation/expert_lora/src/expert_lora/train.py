@@ -6,12 +6,21 @@ import argparse
 import json
 import math
 import os
+import platform
 import random
 import time
 from contextlib import nullcontext
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from .data import load_records, resolve_image_path, sha256
+
+
+def package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
 
 
 def main() -> None:
@@ -256,9 +265,9 @@ def main() -> None:
     )
     if total_updates <= 0:
         raise ValueError("training must contain at least one optimizer update")
-    warmup_steps = max(1, round(total_updates * 0.03))
+    warmup_steps = max(1, round(epoch_updates * 0.03))
     scheduler = get_cosine_schedule_with_warmup(
-        optimizer, warmup_steps, total_updates
+        optimizer, warmup_steps, epoch_updates
     )
 
     model.train()
@@ -266,6 +275,7 @@ def main() -> None:
     update = 0
     losses: list[float] = []
     weighted_losses: list[float] = []
+    update_history: list[dict[str, float | int]] = []
     start = time.time()
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
@@ -291,6 +301,10 @@ def main() -> None:
                 batch["labels"] = batch["labels"][:, -logits_to_keep:]
                 output = model(**batch, logits_to_keep=logits_to_keep)
                 raw_loss = output.loss
+                if not torch.isfinite(raw_loss):
+                    raise FloatingPointError(
+                        f"non-finite loss at sample {sample_index}: {float(raw_loss.detach())}"
+                    )
                 weighted_loss = raw_loss * sample_weight
                 (weighted_loss / args.grad_accum).backward()
             losses.append(float(raw_loss.detach()))
@@ -299,31 +313,32 @@ def main() -> None:
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     trainable_parameters, 1.0
                 )
+                if not torch.isfinite(grad_norm):
+                    raise FloatingPointError(
+                        f"non-finite gradient norm at optimizer update {update + 1}: "
+                        f"{float(grad_norm)}")
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 update += 1
                 if rank == 0:
                     recent = losses[-args.grad_accum :]
-                    print(
-                        json.dumps(
-                            {
-                                "update": update,
-                                "total_updates": total_updates,
-                                "loss": sum(recent) / len(recent),
-                                "weighted_loss": sum(
-                                    weighted_losses[-args.grad_accum :]
-                                )
-                                / len(weighted_losses[-args.grad_accum :]),
-                                "sample_weight": sample_weight,
-                                "grad_norm": float(grad_norm),
-                                "lr": scheduler.get_last_lr()[0],
-                                "sample_index": sample_index,
-                                "elapsed_seconds": time.time() - start,
-                            }
-                        ),
-                        flush=True,
-                    )
+                    update_record = {
+                        "update": update,
+                        "total_updates": total_updates,
+                        "loss": sum(recent) / len(recent),
+                        "weighted_loss": sum(
+                            weighted_losses[-args.grad_accum :]
+                        )
+                        / len(weighted_losses[-args.grad_accum :]),
+                        "sample_weight": sample_weight,
+                        "grad_norm": float(grad_norm),
+                        "lr": scheduler.get_last_lr()[0],
+                        "sample_index": sample_index,
+                        "elapsed_seconds": time.time() - start,
+                    }
+                    update_history.append(update_record)
+                    print(json.dumps(update_record), flush=True)
                 if args.max_updates and update >= args.max_updates:
                     break
         if args.max_updates and update >= args.max_updates:
@@ -346,14 +361,28 @@ def main() -> None:
             "runtime_max_pixels": args.max_pixels,
             "optimizer_updates": update,
             "max_updates": args.max_updates,
+            "scheduler_total_updates": epoch_updates,
+            "scheduler_warmup_updates": warmup_steps,
             "init_lora": args.init_lora.name if args.init_lora else None,
+            "init_lora_sha256": (
+                sha256(args.init_lora / "adapter_model.safetensors")
+                if args.init_lora else None),
             "learning_rate": args.lr,
             "rank": args.rank,
             "alpha": args.alpha,
             "dropout": args.dropout,
             "seed": args.seed,
+            "software_versions": {
+                "python": platform.python_version(),
+                "torch": package_version("torch"),
+                "transformers": package_version("transformers"),
+                "peft": package_version("peft"),
+                "qwen-vl-utils": package_version("qwen-vl-utils"),
+                "Pillow": package_version("Pillow"),
+            },
             "mean_micro_loss": sum(losses) / len(losses),
             "mean_weighted_micro_loss": sum(weighted_losses) / len(weighted_losses),
+            "update_history": update_history,
             "loss_weight_mean": dataset.loss_weight_mean,
             "loss_weight_min": min(
                 float(record.get("loss_weight", 1.0)) for record in dataset.records
@@ -361,6 +390,8 @@ def main() -> None:
             "loss_weight_max": max(
                 float(record.get("loss_weight", 1.0)) for record in dataset.records
             ),
+            "adapter_sha256": sha256(
+                args.output / "adapter_model.safetensors"),
             "elapsed_seconds": time.time() - start,
         }
         (args.output / "training_metrics.json").write_text(

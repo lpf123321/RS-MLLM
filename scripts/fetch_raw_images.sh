@@ -88,6 +88,18 @@ fi
 
 echo "  哈希配对: ${RAW_DIRS[*]} ⇢ ${SUBS[*]}"
 PYARGS=()
+# The shared VRSBench extraction contains one known zero-byte member. Recover
+# it from the official ZIP and verify the full digest used by all affected
+# stage1/GA2/A1 records.
+VRS_RECOVER_SHA="26ab63466cc4f113e6b5e446792eef7ecd3e4a0f7e5a708f3b889ec30cacc7e0"
+VRS_RECOVER_OUT="$ASSETS_OUT/vrsbench/${VRS_RECOVER_SHA}.png"
+if [ "$MODE" = shared ] && [ ! -s "$VRS_RECOVER_OUT" ] && [ -f "$SHARED_DATA/VRSBench/Images_train.zip" ]; then
+  [ -L "$VRS_RECOVER_OUT" ] && unlink "$VRS_RECOVER_OUT"
+  python "$REPO_ROOT/scripts/recover_asset_from_zip.py" \
+    --zip "$SHARED_DATA/VRSBench/Images_train.zip" \
+    --member Images_train/P7581_0003.png --sha256 "$VRS_RECOVER_SHA" \
+    --output "$VRS_RECOVER_OUT"
+fi
 for i in "${!RAW_DIRS[@]}"; do
   PYARGS+=(--raw "${RAW_DIRS[$i]}" --sub "${SUBS[$i]}")
 done

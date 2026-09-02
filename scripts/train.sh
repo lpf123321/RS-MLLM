@@ -1,180 +1,118 @@
-#!/bin/bash
-# ============================================================
-# RS-MLLM 四专家训练一键启动（统一 SFT 主干 + 专家 / 续训）
-#
-# 支持:
-#   - 单阶段提交      bash scripts/train.sh stage1_clean
-#   - dry 预览        bash scripts/train.sh dry stage1_clean
-#   - 本地直接运行    bash scripts/train.sh --local stage1_clean   (无需 sbatch)
-#   - 完整流水线      bash scripts/train.sh all                      (SLURM afterok 依赖链)
-#   - 本地串联流水线  bash scripts/train.sh --local all              (顺序前台运行)
-#
-# 每个训练阶段结束后会自动安排 LoRA->merged 合并，满足后续续训起点。
-# 数据缺失时提示先运行 scripts/fetch_training_data.sh。
-# ============================================================
-set -e
-
+#!/usr/bin/env bash
+set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SLURM_DIR="$REPO_ROOT/scripts/training"
-VRS="$REPO_ROOT/finetune_framework/VRSbench"
-
-# 解析参数：默认本地前台直跑；--slurm 显式提交 SLURM（需集群）；--local 兼容旧写法(等价默认)
-LOCAL=0
-ARGS=()
-for a in "$@"; do
-  [ "$a" = "--slurm" ] && { LOCAL=1; continue; }
-  [ "$a" = "--local" ] && continue
-  ARGS+=("$a")
+COMMAND=
+GPUS=1 MAX_UPDATES=0 RUN_ID="${RS_MLLM_RUN_ID:-}" DRY=0 SMOKE=0 SLURM=0
+while (($#)); do
+  case "$1" in
+    --gpus) GPUS="${2:?}"; shift 2;;
+    --max-updates) MAX_UPDATES="${2:?}"; shift 2;;
+    --run-id) RUN_ID="${2:?}"; shift 2;;
+    --dry-run) DRY=1; shift;;
+    --slurm) SLURM=1; shift;;
+    --local) SLURM=0; shift;;
+    *)
+      [[ -z "$COMMAND" ]] || { echo "unexpected argument: $1" >&2; exit 2; }
+      COMMAND="$1"; shift;;
+  esac
 done
-STAGE="${ARGS[0]:-}"
-DRY=0
-if [ "$STAGE" = "dry" ]; then DRY=1; STAGE="${ARGS[1]:-}"; fi
+if [[ "$COMMAND" == smoke-all ]]; then
+  SMOKE=1
+  ((MAX_UPDATES > 0)) || MAX_UPDATES=1
+  COMMAND=all
+fi
+case "$COMMAND" in all|stage1_clean|ga2_general|a1_grounding|a2b_change|caption) ;; *)
+  echo "Usage: bash scripts/train.sh [--slurm] smoke-all|all|STAGE [--gpus N] [--max-updates N] [--run-id ID] [--dry-run]" >&2; exit 2;;
+esac
+if [[ -z "$RUN_ID" ]]; then
+  if ((SMOKE == 1)); then RUN_ID="smoke-$(date +%Y%m%d-%H%M%S)"; else RUN_ID=five-stage; fi
+fi
+RUN_ROOT="$REPO_ROOT/outputs/training35/$RUN_ID/five_stage"
+LORA_ROOT="$RUN_ROOT/lora"; MERGED_ROOT="$RUN_ROOT/merged"
+RUNNER="$REPO_ROOT/scripts/training/run_stage35.sh"
+MERGER="$REPO_ROOT/scripts/merge_checkpoint.sh"
+VERIFY="$REPO_ROOT/scripts/verify_training35_artifacts.py"
+runner_extra=(); merge_extra=(); ((DRY == 1)) && runner_extra+=(--dry-run) && merge_extra+=(--dry-run)
+((SMOKE == 1)) && runner_extra+=(--smoke)
 
-# 阶段配置：slurm | 所需数据 | 合并命令(lora_ckpt|merged_name)
-declare -A SLURM=(
-  [stage1]="sft_stage1.slurm"
-  [stage1_clean]="sft_stage1_clean.slurm"
-  [stage2]="sft_stage2.slurm"
-  [expert_general]="sft_expert_general.slurm"
-  [expert_grounding]="sft_expert_grounding.slurm"
-  [expert_change]="sft_expert_change.slurm"
-  [ga2_general]="sft_ga2_general.slurm"
-  [ga3_general]="sft_ga3_general.slurm"
-  [a1_grounding]="sft_a1_grounding.slurm"
-  [a2_change]="sft_a2_change.slurm"
-  [a2b_change]="sft_a2b_change.slurm"
-  [caption]="sft_caption_expert.slurm"
-)
-declare -A NEED=(
-  [stage1]=combined_train.json
-  [stage1_clean]=manifest_sft_train.json
-  [stage2]=combined_train.json
-  [expert_general]=expert_data_v2/general_understanding.json
-  [expert_grounding]=expert_data/grounding.json
-  [expert_change]=expert_data/change.json
-  [ga2_general]=g_a2_mix.json
-  [ga3_general]=expert_data_v2/general_understanding.json
-  [a1_grounding]=a1_domainalign.json
-  [a2_change]=expert_data/change.json
-  [a2b_change]=a2_change_mix.json
-  [caption]=expert_data_caption.jsonl
-)
-# 合并映射: <stage>=<lora_ckpt>|<merged_name>   （空 = 该阶段不需要合并即可供后续使用）
-declare -A MERGE=(
-  [stage1_clean]="outputs/checkpoints/sft_stage1_clean|sft_stage1_clean"
-  [expert_general]="outputs/checkpoints/expert_general_v2|expert_general_v2"
-  [ga2_general]="outputs/checkpoints/ga2_general|ga2_general_checkpoint-451"
-  [a1_grounding]="outputs/checkpoints/a1_grounding|a1_grounding_checkpoint-latest"
-  [a2b_change]="outputs/checkpoints/a2b_change|a2b_change_checkpoint-latest"
-  [caption]="outputs/checkpoints/caption_expert|caption_expert_checkpoint-latest"
-)
-
-usage() {
-  echo "用法: bash scripts/train.sh <stage|all>   (默认本地前台直跑; --slurm 提交集群; dry: 预览)"
-  echo "stages: stage1 stage1_clean stage2 expert_general expert_grounding expert_change"
-  echo "        ga2_general ga3_general a1_grounding a2_change a2b_change caption all"
-  echo "--slurm: 显式提交 SLURM 调度器(需集群; 默认本地直跑不依赖 SLURM)"
+run_one() {
+  local stage="$1" parent="$2"
+  local lora="$LORA_ROOT/$stage"
+  local merged="$MERGED_ROOT/$stage"
+  if [[ -f "$lora/adapter_config.json" && -f "$merged/config.json" ]]; then
+    python "$VERIFY" --lora "$lora" --merged "$merged"
+    echo "[training35] reuse completed stage: $stage"
+    return
+  fi
+  bash "$RUNNER" "$stage" --model "$parent" --output "$lora" --gpus "$GPUS" --max-updates "$MAX_UPDATES" "${runner_extra[@]}"
+  bash "$MERGER" --base "$parent" --lora "$lora" --output "$merged" "${merge_extra[@]}"
+  ((DRY == 1)) || python "$VERIFY" --lora "$lora" --merged "$merged"
 }
 
-check_data() {
-  local k="$1" miss="" base
-  for j in ${NEED[$k]}; do
-    base="finetune_framework/VRSbench"
-    # 处理子路径
-    [ -f "$REPO_ROOT/$base/$j" ] || miss="$miss $j"
+stage1_parent="$REPO_ROOT/models/Qwen3.5-4B"
+submit_stage() {
+  local stage="$1" parent="$2" dependency="$3"
+  local lora="$LORA_ROOT/$stage" merged="$MERGED_ROOT/$stage"
+  local -a command=(
+    sbatch --parsable
+    --job-name="training35-$stage"
+    --nodes=1 --ntasks=1
+    --cpus-per-task="${TRAINING35_SLURM_CPUS:-12}"
+    --gres="gpu:$GPUS"
+    --output="$REPO_ROOT/outputs/logs/training35_${stage}_%j.log"
+  )
+  [[ -n "${TRAINING35_SLURM_PARTITION:-}" ]] && command+=(--partition="$TRAINING35_SLURM_PARTITION")
+  [[ -n "${TRAINING35_SLURM_TIME:-}" ]] && command+=(--time="$TRAINING35_SLURM_TIME")
+  [[ -n "$dependency" ]] && command+=(--dependency="afterok:$dependency")
+  command+=(
+    "$REPO_ROOT/scripts/training/stage35.slurm"
+    "$stage" "$parent" "$lora" "$merged" "$GPUS" "$MAX_UPDATES" "$SMOKE"
+  )
+  if ((DRY == 1)); then
+    printf '[training35 slurm dry-run]'; printf ' %q' "${command[@]}"; printf '\n'
+    SUBMITTED_JOB_ID="DRY_$stage"
+    return
+  fi
+  mkdir -p "$REPO_ROOT/outputs/logs"
+  local submitted_raw
+  submitted_raw="$("${command[@]}")"
+  SUBMITTED_JOB_ID="${submitted_raw%%;*}"
+  [[ "$SUBMITTED_JOB_ID" =~ ^[0-9]+$ ]] || {
+    echo "sbatch returned an invalid job id: $SUBMITTED_JOB_ID" >&2; exit 1;
+  }
+  echo "[training35 slurm] submitted stage=$stage job=$SUBMITTED_JOB_ID dependency=${dependency:-none}"
+}
+
+if ((SLURM == 1)); then
+  stages=("$COMMAND")
+  [[ "$COMMAND" == all ]] && stages=(stage1_clean ga2_general a1_grounding a2b_change caption)
+  previous_job=
+  for stage in "${stages[@]}"; do
+    case "$stage" in
+      stage1_clean) parent="$stage1_parent";;
+      ga2_general|a1_grounding|a2b_change) parent="$MERGED_ROOT/stage1_clean";;
+      caption) parent="$MERGED_ROOT/ga2_general";;
+    esac
+    submit_stage "$stage" "$parent" "$previous_job"
+    previous_job="$SUBMITTED_JOB_ID"
   done
-  if [ -n "$miss" ]; then
-    echo "[train] 缺少数据:$miss"
-    echo "       请先:  bash scripts/fetch_training_data.sh   （ModelScope 下载）"
-    exit 1
-  fi
-}
-
-run_slurm() {
-  # 提交单阶段 + 依赖属性；若该阶段要合并则一并排队
-  local stage="$1" dep="${2:-}" cmd="" depflag
-  depflag=
-  [ -n "$dep" ] && depflag="--dependency=afterok:$dep"
-  sbatch $depflag "$SLURM_DIR/${SLURM[$stage]}"
-}
-
-run_local() {
-  # 前台运行单阶段（继承 CONDA_HOME/TRAIN_DATA_ROOT 等环境变量）
-  bash "$SLURM_DIR/${SLURM[$stage]}"
-}
-
-# --- 主逻辑 ---
-if [ "$STAGE" = "all" ]; then
-  if [ "$DRY" = "1" ]; then
-    echo ">>> 将运行流水线: stage1_clean → ga2_general → a1_grounding → a2b_change → caption"
-    exit 0
-  fi
-  if [ "$LOCAL" = "0" ]; then
-    echo "== 本地串联流水线(默认; --slurm 走集群) =="
-    for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
-      check_data "$s"
-      echo ">>> 运行: $s (前台)"
-      bash "$SLURM_DIR/${SLURM[$s]}"
-      if [ -n "${MERGE[$s]:-}" ]; then
-        IFS='|' read -r lora name <<< "${MERGE[$s]}"
-        echo ">>> 合并: $s -> $name"
-        bash "$REPO_ROOT/scripts/merge_checkpoint.sh" "$REPO_ROOT/$lora" "$name"
-      fi
-    done
-    echo "== 流水线完成 =="
-    exit 0
-  fi
-
-  echo "== SLURM 依赖链流水线(--slurm) =="
-  JOB_IDS=()
-  PREV=""
-  for s in stage1_clean ga2_general a1_grounding a2b_change caption; do
-    check_data "$s"
-    # 合并前置步骤：先提交 merge？（此处简化为训练后自动合并）
-    out=$(sbatch ${PREV:+--dependency=afterok:$PREV} "$SLURM_DIR/${SLURM[$s]}" 2>&1)
-    jid=$(echo "$out" | grep -oE '[0-9]+' | tail -1)
-    echo "  + $s  -> job $jid"
-    PREV="$jid"
-    if [ -n "${MERGE[$s]:-}" ]; then
-      IFS='|' read -r lora name <<< "${MERGE[$s]}"
-      mout=$(sbatch --dependency=afterok:$jid "$SLURM_DIR/merge.slurm" "$REPO_ROOT/$lora" "$name" 2>&1)
-      mjid=$(echo "$mout" | grep -oE '[0-9]+' | tail -1)
-      echo "    - merge $s -> job $mjid"
-      PREV="$mjid"
-    fi
-  done
-  echo "== 流水线已提交。依赖链: ${JOB_IDS[*]} =="
+  echo "[training35 slurm] final job: $previous_job; run root: $RUN_ROOT"
   exit 0
 fi
 
-if [ -z "$STAGE" ] || [ -z "${SLURM[$STAGE]:-}" ]; then
-  usage; exit 1
-fi
-
-if [ "$DRY" = "1" ]; then
-  echo ">>> 将运行: ${SLURM[$STAGE]}  (本地前台直跑; --slurm 走集群)"
-  exit 0
-fi
-
-check_data "$STAGE"
-
-if [ "$LOCAL" = "0" ]; then
-  echo ">>> 本地运行: $STAGE"
-  bash "$SLURM_DIR/${SLURM[$STAGE]}"
-  if [ -n "${MERGE[$STAGE]:-}" ]; then
-    IFS='|' read -r lora name <<< "${MERGE[$STAGE]}"
-    echo ">>> 合并: $STAGE -> $name"
-    bash "$REPO_ROOT/scripts/merge_checkpoint.sh" "$REPO_ROOT/$lora" "$name"
-  fi
-  exit 0
-fi
-
-echo ">>> sbatch $SLURM_DIR/${SLURM[$STAGE]}"
-out=$(sbatch "$SLURM_DIR/${SLURM[$STAGE]}" 2>&1)
-echo "$out"
-jid=$(echo "$out" | grep -oE '[0-9]+' | tail -1)
-if [ -n "${MERGE[$STAGE]:-}" ] && [ -n "$jid" ]; then
-  IFS='|' read -r lora name <<< "${MERGE[$STAGE]}"
-  echo ">>> 训练后合并: merge.slurm -> $name (依赖 afterok:$jid)"
-  sbatch --dependency=afterok:$jid "$SLURM_DIR/merge.slurm" "$REPO_ROOT/$lora" "$name"
+if [[ "$COMMAND" == all ]]; then
+  run_one stage1_clean "$stage1_parent"
+  run_one ga2_general "$MERGED_ROOT/stage1_clean"
+  run_one a1_grounding "$MERGED_ROOT/stage1_clean"
+  run_one a2b_change "$MERGED_ROOT/stage1_clean"
+  run_one caption "$MERGED_ROOT/ga2_general"
+  if ((DRY == 1)); then echo "[training35] five-stage dry-run complete: $RUN_ROOT";
+  else echo "[training35] five-stage chain passed: $RUN_ROOT"; fi
+else
+  case "$COMMAND" in
+    stage1_clean) parent="$stage1_parent";;
+    ga2_general|a1_grounding|a2b_change) parent="$MERGED_ROOT/stage1_clean";;
+    caption) parent="$MERGED_ROOT/ga2_general";;
+  esac
+  run_one "$COMMAND" "$parent"
 fi

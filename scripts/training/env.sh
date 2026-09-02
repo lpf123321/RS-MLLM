@@ -27,6 +27,9 @@ if [ -z "$CONDA_HOME" ]; then
 fi
 
 activate_conda() {
+  # Conda activation hooks reference optional variables and are not nounset-safe.
+  local restore_nounset=0
+  [[ $- == *u* ]] && restore_nounset=1 && set +u
   . "$CONDA_HOME/etc/profile.d/conda.sh"
   conda activate "$CONDA_ENV"
   if [ -n "$CONDA_PREFIX" ] && [ -x "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc" ]; then
@@ -34,6 +37,9 @@ activate_conda() {
     export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
   fi
   export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+  if ((restore_nounset == 1)); then
+    set -u
+  fi
 }
 
 # --- 数据图片根目录探测 ---

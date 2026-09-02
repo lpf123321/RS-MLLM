@@ -11,7 +11,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from rsmllm.config import MODELS_CACHE, MODEL_REGISTRY
+from rsmllm.config import MODELS_CACHE, MODELS_ROOT, MODEL_REGISTRY
+
+
+LOCAL_MODEL_NAMES = {
+    "base": "Qwen3.5-4B",
+    "expert_general": "expert_general",
+    "expert_ground": "expert_ground",
+    "expert_change": "expert_change",
+    "expert_caption": "expert_caption",
+    "expert_general_lora": "expert_general_lora",
+    "expert_ground_lora": "expert_ground_lora",
+    "expert_general_full": "expert_general_full",
+    "expert_ground_full": "expert_ground_full",
+}
 
 
 def get_model(name: str, *, cache_dir: str | None = None) -> str:
@@ -23,6 +36,18 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
         if p.exists():
             return str(p)
 
+
+    # README 3.5 defines models/ as the canonical offline layout. Prefer it
+    # over the ModelScope cache so a staged checkout cannot pick a different
+    # remote revision by accident.
+    local_name = LOCAL_MODEL_NAMES.get(name)
+    if local_name:
+        local = MODELS_ROOT / local_name
+        marker = (
+            "adapter_config.json" if local_name.endswith("_lora") else "config.json"
+        )
+        if (local / marker).is_file():
+            return str(local.resolve())
     model_id = MODEL_REGISTRY.get(name, name)  # 别名 or 直接 id
     cache = cache_dir or os.environ.get("RSMLLM_MODEL_CACHE") or str(MODELS_CACHE)
     if not os.environ.get("MODELSCOPE_OFFLINE"):

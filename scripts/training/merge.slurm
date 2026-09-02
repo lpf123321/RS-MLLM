@@ -2,8 +2,8 @@
 # ============================================================
 # SLURM 版 LoRA->merged 合并（供 train.sh 流水线依赖链使用）
 #
-# 用法（由 train.sh 生成参数或手动）:
-#   sbatch scripts/training/merge.slurm <lora_checkpoint> <merged_name>
+# 用法:
+#   sbatch scripts/training/merge.slurm <base_model> <lora_checkpoint> <output_dir>
 # ============================================================
 #SBATCH --job-name=merge
 #SBATCH --partition=gpu
@@ -15,8 +15,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LORA_CKPT="${1:?merge.slurm <lora_checkpoint> <merged_name>}"
-MERGED_NAME="${2:?merge.slurm <lora_checkpoint> <merged_name>}"
+BASE_MODEL="${1:?merge.slurm <base_model> <lora_checkpoint> <output_dir>}"
+LORA_CKPT="${2:?merge.slurm <base_model> <lora_checkpoint> <output_dir>}"
+OUTPUT_DIR="${3:?merge.slurm <base_model> <lora_checkpoint> <output_dir>}"
 
-bash "$REPO_ROOT/scripts/merge_checkpoint.sh" "$LORA_CKPT" "$MERGED_NAME"
+bash "$REPO_ROOT/scripts/merge_checkpoint.sh" --base "$BASE_MODEL" --lora "$LORA_CKPT" --output "$OUTPUT_DIR"
 echo "=== MERGE DONE ==="

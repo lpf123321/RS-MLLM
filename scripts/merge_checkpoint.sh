@@ -1,60 +1,39 @@
-#!/bin/bash
-# ============================================================
-# 合并 LoRA checkpoint -> 完整模型（产出 outputs/merged/<name>）
-#
-# 训练产出的是 LoRA checkpoint（含 adapter_model.safetensors）；
-# 后续续训/caption/量化需要完整模型。本脚本把它们合并成
-# outputs/merged/<merged_name> 的完整模型目录。
-#
-# 用法:
-#   bash scripts/merge_checkpoint.sh <lora_checkpoint> <merged_name> [base_model]
-#   例:
-#     bash scripts/merge_checkpoint.sh \
-#         outputs/checkpoints/sft_stage1_clean sft_stage1_clean
-#     # base 默认 $REPO_ROOT/models/Qwen3.5-4B
-#     bash scripts/merge_checkpoint.sh \
-#         outputs/checkpoints/ga2_general/checkpoint-451 ga2_general_checkpoint-451
-#
-#   本地/集群环境均适用（train.sh 在训练阶段后自动调用）
-# ============================================================
+#!/usr/bin/env bash
 set -euo pipefail
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LORA_CKPT="${1:?用法: merge_checkpoint.sh <lora_checkpoint> <merged_name> [base]}"
-MERGED_NAME="${2:?用法: merge_checkpoint.sh <lora_checkpoint> <merged_name> [base]}"
+BASE= LORA= OUTPUT= DRY=0
+while (($#)); do
+  case "$1" in
+    --base) BASE="${2:?--base requires a directory}"; shift 2;;
+    --lora) LORA="${2:?--lora requires a directory}"; shift 2;;
+    --output) OUTPUT="${2:?--output requires a directory}"; shift 2;;
+    --dry-run) DRY=1; shift;;
+    *) echo "Usage: merge_checkpoint.sh --base DIR --lora DIR --output DIR [--dry-run]" >&2; exit 2;;
+  esac
+done
+[[ -n "$BASE" && -n "$LORA" && -n "$OUTPUT" ]] || {
+  echo "--base, --lora and --output are required" >&2; exit 2;
+}
+if ((DRY == 1)); then printf '[merge dry-run] base=%s lora=%s output=%s\n' "$BASE" "$LORA" "$OUTPUT"; exit 0; fi
+[[ -f "$BASE/config.json" ]] || { echo "invalid base model: $BASE" >&2; exit 2; }
 
+lora_src="$LORA"
+if [[ ! -f "$lora_src/adapter_config.json" ]]; then
+  latest="$(find "$LORA" -mindepth 1 -maxdepth 1 -type d -name 'checkpoint-*' -print 2>/dev/null | sort -V | tail -1)"
+  [[ -n "$latest" && -f "$latest/adapter_config.json" ]] || { echo "invalid LoRA: $LORA" >&2; exit 2; }
+  lora_src="$latest"
+fi
+[[ -n "$OUTPUT" ]] || { echo "--output is required" >&2; exit 2; }
+if [[ -e "$OUTPUT" && -n "$(find "$OUTPUT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+  echo "refusing to overwrite non-empty output: $OUTPUT" >&2; exit 2
+fi
+printf '[merge] base=%s lora=%s output=%s\n' "$BASE" "$lora_src" "$OUTPUT"
+((DRY == 1)) && exit 0
 source "$REPO_ROOT/scripts/training/env.sh"
 activate_conda
-
-# base 默认走懒加载（get_model base）；显式传第 3 参则用之
-BASE_MODEL="${3:-$(resolve_model base)}"
-
-MERGED_DIR="$REPO_ROOT/outputs/merged/$MERGED_NAME"
-mkdir -p "$(dirname "$MERGED_DIR")"
-
-echo "== 合并 LoRA -> 完整模型 =="
-echo "  base:   $BASE_MODEL"
-echo "  lora:   $LORA_CKPT"
-echo "  output: $MERGED_DIR"
-
-# 定位 LoRA checkpoint：允许传入 checkpoint 目录或含 checkpoint-N 的父目录
-lora_src="$LORA_CKPT"
-if [ ! -f "$lora_src/adapter_model.safetensors" ]; then
-  if [ -f "$lora_src/adapter_config.json" ]; then
-    lora_src="$LORA_CKPT"
-  elif [ -d "$lora_src" ] && compgen -G "$lora_src/checkpoint-*/adapter_model.safetensors" >/dev/null; then
-    latest=$(ls -d "$lora_src"/checkpoint-*/ 2>/dev/null | sort -V | tail -1)
-    echo "  未指定 sub-checkpoint，使用最新: $latest"
-    lora_src="${latest%/}"
-  else
-    echo "[merge] 无法定位 LoRA checkpoint（缺少 adapter_model.safetensors）: $LORA_CKPT" >&2
-    exit 1
-  fi
-fi
-
-python "$REPO_ROOT/scripts/merge_lora_for_eval.py" \
-  --model-base "$BASE_MODEL" \
-  --lora-path "$lora_src" \
-  --save-path "$MERGED_DIR"
-
-echo "== 合并完成: $MERGED_DIR =="
+export PYTHONPATH="$REPO_ROOT/training/distillation/expert_lora/src${PYTHONPATH:+:$PYTHONPATH}"
+python -m expert_lora.compose \
+  --base "$BASE" \
+  --adapter "$lora_src" \
+  --output "$OUTPUT"
+[[ -f "$OUTPUT/config.json" ]] || { echo "merged output is not reloadable: $OUTPUT" >&2; exit 1; }

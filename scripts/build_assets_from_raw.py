@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build assets/<sub>/<sha256-first48>.png from raw image directories.
+"""Build assets/<sub>/<full-sha256>.png from raw image directories.
 
 训练 json 引用的图片形如 assets/vrsbench/<hash>.png，其中 <hash> 为图片内容
-sha256 的前 48 个十六进制字符。本脚本扫描原始数据集图片目录，对其按内容哈希
+sha256 的完整 64 个十六进制字符。本脚本扫描原始数据集图片目录，对其按内容哈希
 重命名（软链）为 assets 相对结构，从而满足训练脚本的 --image_folder 引用。
 
 用法:
@@ -67,13 +67,15 @@ def build(args):
             missing_subs.discard(sub)
             d = out_root / sub
             d.mkdir(parents=True, exist_ok=True)
-            target = d / f"{h[:48]}.png"
-            if target.exists():
-                dup += 1
-                continue
-            target.symlink_to(p)
-            linked += 1
-
+            # Current manifests use the collision-safe full digest. Keep the
+            # former first-48 alias so older manifests still run.
+            for digest in (h, h[:48]):
+                target = d / f"{digest}.png"
+                if target.exists():
+                    dup += 1
+                    continue
+                target.symlink_to(p)
+                linked += 1
     print(f"linked={linked} dup(existing)={dup}")
     for s in args.sub:
         cnt = len(list((out_root / s).glob("*.png")))

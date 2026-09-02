@@ -145,12 +145,18 @@ def resolve_selected_arrow(
     verify_only: bool,
 ) -> int:
     """Resolve transformed Arrow images by an exact official-record selector."""
-    selected = {
-        str(row["source_selector"]["value"]): (digest, row)
-        for digest, row in pending.items()
-        if isinstance(row.get("source_selector"), dict)
-        and row["source_selector"].get("field") == "question"
-    }
+    selected: dict[tuple[str, str], list[tuple[str, dict[str, object]]]] = defaultdict(list)
+    for digest, row in pending.items():
+        selector = row.get("source_selector")
+        if (
+            isinstance(selector, dict)
+            and selector.get("field") == "question"
+        ):
+            key = ("question", str(selector["value"]))
+        else:
+            basename = Path(str(row["upstream_path"])).name
+            key = ("path_stem", basename.split(".", 1)[0])
+        selected[key].append((digest, row))
     if not selected:
         return 0
     scan_root = root / "train" if (root / "train").is_dir() else root
@@ -166,35 +172,50 @@ def resolve_selected_arrow(
         with pa.memory_map(str(arrow_path), "r") as source:
             reader = pa.ipc.open_stream(source)
             question_index = reader.schema.get_field_index("question")
+            path_index = reader.schema.get_field_index("path")
             image_index = reader.schema.get_field_index("image")
-            if question_index < 0 or image_index < 0:
+            if image_index < 0:
                 continue
             for batch in reader:
-                questions = batch.column(question_index).to_pylist()
+                questions = batch.column(question_index).to_pylist() if question_index >= 0 else []
+                paths = batch.column(path_index).to_pylist() if path_index >= 0 else []
                 images = batch.column(image_index)
-                for row_number, question in enumerate(questions):
-                    match = selected.get(str(question))
-                    if match is None:
+                for row_number in range(len(images)):
+                    keys: list[tuple[str, str]] = []
+                    if question_index >= 0:
+                        keys.append(("question", str(questions[row_number])))
+                    if path_index >= 0:
+                        basename = Path(str(paths[row_number])).name
+                        keys.append(("path_stem", basename.split(".", 1)[0]))
+                    matches = [
+                        item
+                        for key in keys
+                        for item in selected.get(key, ())
+                    ]
+                    if not matches:
                         continue
-                    digest, row = match
                     blobs = list(binary_values(images[row_number].as_py()))
                     if len(blobs) != 1:
-                        raise ValueError(f"selector resolved {len(blobs)} image blobs: {question!r}")
-                    payload = transform_blob(blobs[0], row["transform"])
-                    actual = hashlib.sha256(payload).hexdigest()
-                    if actual != digest or len(payload) != int(row["bytes"]):
-                        raise ValueError(
-                            f"deterministic replay mismatch for {row['path']}: "
-                            f"expected {digest}/{row['bytes']}, got {actual}/{len(payload)}; "
-                            "install the pinned Pillow version from expert_lora/requirements.txt"
-                        )
-                    if not verify_only:
-                        destination = dataset_root / str(row["path"])
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        destination.write_bytes(payload)
-                    del pending[digest]
-                    del selected[str(question)]
-                    created += 1
+                        raise ValueError(f"selector resolved {len(blobs)} image blobs")
+                    blob = blobs[0]
+                    for key in keys:
+                        candidates = selected.get(key)
+                        if not candidates:
+                            continue
+                        for digest, row in list(candidates):
+                            payload = transform_blob(blob, row["transform"])
+                            actual = hashlib.sha256(payload).hexdigest()
+                            if actual != digest or len(payload) != int(row["bytes"]):
+                                continue
+                            if not verify_only:
+                                destination = dataset_root / str(row["path"])
+                                destination.parent.mkdir(parents=True, exist_ok=True)
+                                destination.write_bytes(payload)
+                            pending.pop(digest, None)
+                            candidates.remove((digest, row))
+                            created += 1
+                        if not candidates:
+                            selected.pop(key, None)
     return created
 
 
@@ -211,6 +232,11 @@ def main() -> None:
     )
     parser.add_argument("--copy", action="store_true", help="copy instead of hard-linking when possible")
     parser.add_argument("--verify-only", action="store_true", help="verify sources without materializing files")
+    parser.add_argument(
+        "--resume-verified",
+        action="store_true",
+        help="skip existing files after a prior SHA-verified run; never use for first construction",
+    )
     args = parser.parse_args()
 
     dataset_root = args.dataset_root.expanduser().resolve()
@@ -235,6 +261,9 @@ def main() -> None:
         destination = dataset_root / str(row["path"])
         expected_hash = str(row["sha256"])
         expected_bytes = int(row["bytes"])
+        if args.resume_verified and destination.is_file():
+            reused += 1
+            continue
         if destination.is_file() and destination.stat().st_size == expected_bytes and sha256(destination) == expected_hash:
             reused += 1
             continue
@@ -244,14 +273,25 @@ def main() -> None:
         exact = sources[source_name] / upstream_path
         candidates = [exact, *basename_indexes[source_name].get(upstream_path.name, [])]
         source = verified_candidate(dict.fromkeys(candidates), expected_bytes, expected_hash)
-        if source is None:
+        transformed_payload = None
+        if source is None and "transform" in row:
+            for candidate in dict.fromkeys(candidates):
+                if not candidate.is_file():
+                    continue
+                payload = transform_blob(candidate.read_bytes(), row["transform"])
+                if len(payload) == expected_bytes and hashlib.sha256(payload).hexdigest() == expected_hash:
+                    transformed_payload = payload
+                    break
+        if source is None and transformed_payload is None:
             unresolved[expected_hash] = row
             continue
         if not args.verify_only:
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
                 destination.unlink()
-            if args.copy:
+            if transformed_payload is not None:
+                destination.write_bytes(transformed_payload)
+            elif args.copy:
                 shutil.copy2(source, destination)
             else:
                 try:

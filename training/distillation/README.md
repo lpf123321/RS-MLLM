@@ -7,7 +7,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| `expert_lora/` | 实际保留的 General Exp3、Grounding bootstrap/Exp1/Exp4/Exp5 LoRA 训练、base+delta 合并和 ModelScope 下载入口 |
+| `expert_lora/` | 实际保留的 General Exp7、Grounding bootstrap/Exp5 续训练、base+delta 合并和 ModelScope 数据入口 |
 | `flashopd_mm/` | 轻量多模态 OPD：student rollout、local/API teacher、逐 token KL/JSD、LoRA 与分布式入口 |
 | `opsd/vision_opd/` | 固定上游版本的完整 VERL/Vision-OPD 框架、Region–Global OPSD 改动、配置与训练/合并入口 |
 | `pipeline/` | 正式数据构建、固定 Vision-OPD-9B 教师 on-policy/off-policy 实验及审计脚本 |

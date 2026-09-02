@@ -3,27 +3,35 @@ set -euo pipefail
 
 EXPERIMENT="${1:?usage: run_experiment.sh EXPERIMENT [runner options]}"
 shift
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-ASSET_ROOT="${RS_MLLM_ASSET_ROOT:-${PACKAGE_ROOT}/.artifacts}"
-PYTHON_BIN="${RS_MLLM_PYTHON:-python}"
+REPO_ROOT="$(cd -- "${PACKAGE_ROOT}/../../.." && pwd)"
 CONFIG="${PACKAGE_ROOT}/configs/${EXPERIMENT}.json"
+DATASET_ROOT="${RS_MLLM_TRAINING35_DATA:-${REPO_ROOT}/.models/training35-data}"
+MODELS_ROOT="${RSMLLM_MODELS_ROOT:-${REPO_ROOT}/models}"
 
-[[ -s "${CONFIG}" ]] || {
-  echo "Unknown experiment: ${EXPERIMENT}" >&2
-  echo "Available: general_exp3 grounding_bootstrap_942 grounding_exp1 grounding_exp4 grounding_exp5" >&2
-  exit 2
-}
+# README commands must work from a fresh login shell. Prefer an explicitly
+# selected interpreter, otherwise keep an already usable environment or load
+# the same conda environment as the five-stage launchers.
+if [[ -n "${RS_MLLM_PYTHON:-}" ]]; then
+  PYTHON_BIN="${RS_MLLM_PYTHON}"
+elif python -c 'import torch, transformers' >/dev/null 2>&1; then
+  PYTHON_BIN=python
+else
+  # shellcheck source=../../../scripts/training/env.sh
+  source "${REPO_ROOT}/scripts/training/env.sh"
+  activate_conda
+  PYTHON_BIN=python
+fi
 
-# Public reproductions download from ModelScope automatically.  A developer with
-# an already populated asset root can set RS_MLLM_SKIP_DOWNLOAD=1.
-if [[ "${RS_MLLM_SKIP_DOWNLOAD:-0}" != "1" ]]; then
-  RS_MLLM_ASSET_ROOT="${ASSET_ROOT}" "${SCRIPT_DIR}/download_assets.sh"
+[[ -s "${CONFIG}" ]] || { echo "Unknown experiment: ${EXPERIMENT}" >&2; exit 2; }
+if [[ ! -s "${DATASET_ROOT}/ASSET_MANIFEST.json" && "${RS_MLLM_SKIP_DOWNLOAD:-0}" != "1" ]]; then
+  mkdir -p "${DATASET_ROOT}"
+  command -v ms-hub >/dev/null 2>&1 || { echo "ms-hub is required to download training data" >&2; exit 2; }
+  ms-hub download "${RS_MLLM_DISTILLATION_DATASET_ID:-Uchitachi/RS-MLLM-Distillation-Data}" \
+    --repo-type dataset --local-dir "${DATASET_ROOT}"
 fi
 
 export PYTHONPATH="${PACKAGE_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PYTHON_BIN}" -m expert_lora.runner \
-  --config "${CONFIG}" \
-  --asset-root "${ASSET_ROOT}" \
-  "$@"
+  --config "${CONFIG}" --dataset-root "${DATASET_ROOT}" --models-root "${MODELS_ROOT}" "$@"

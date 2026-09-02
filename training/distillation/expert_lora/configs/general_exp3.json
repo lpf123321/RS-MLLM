@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9f5efbbc84e74792000f6753f4b9ae31a6ee2e5c724ba989a8f7f39ee1dd69af
-size 680
+{
+  "schema_version": 1,
+  "name": "general_exp3",
+  "description": "Effective General Expert run: MME-new 3736 + XLRS-new 3080.",
+  "expert": "general",
+  "model_alias": "expert_general",
+  "data": "general/exp3_mme3736_xlrs3080.json",
+  "data_schema": "mcq",
+  "expected_records": 6816,
+  "init_adapter": null,
+  "world_size": 4,
+  "effective_batch_size": 32,
+  "epochs": 1,
+  "learning_rate": 0.0001,
+  "rank": 32,
+  "alpha": 64,
+  "dropout": 0.05,
+  "workers": 2,
+  "seed": 20260823,
+  "max_pixels": 3211264,
+  "reported_eval": {
+    "mme_new_accuracy": 0.704497,
+    "xlrs_new_accuracy": 0.464610,
+    "vrsbench_vqa_accuracy": 0.695234
+  }
+}

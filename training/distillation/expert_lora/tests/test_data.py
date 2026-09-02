@@ -73,6 +73,7 @@ class ConfigTest(unittest.TestCase):
         config_root = Path(__file__).resolve().parents[1] / "configs"
         names = {
             "general_exp3.json",
+            "general_exp7.json",
             "grounding_bootstrap_942.json",
             "grounding_exp1.json",
             "grounding_exp4.json",

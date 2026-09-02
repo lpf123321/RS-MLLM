@@ -1,5 +1,4 @@
-"""Resolve frozen assets and launch one retained Expert LoRA experiment."""
-
+"""Validate frozen assets and launch one retained Expert LoRA experiment."""
 from __future__ import annotations
 
 import argparse
@@ -7,29 +6,15 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .data import load_records, validate_records
 
-
 REQUIRED_CONFIG_KEYS = {
-    "schema_version",
-    "name",
-    "expert",
-    "expert_delta",
-    "data",
-    "data_schema",
-    "expected_records",
-    "world_size",
-    "effective_batch_size",
-    "epochs",
-    "learning_rate",
-    "rank",
-    "alpha",
-    "dropout",
-    "workers",
-    "seed",
-    "max_pixels",
+    "schema_version", "name", "expert", "model_alias", "data", "data_schema",
+    "expected_records", "world_size", "effective_batch_size", "epochs",
+    "learning_rate", "rank", "alpha", "dropout", "workers", "seed", "max_pixels",
 }
 
 
@@ -45,146 +30,102 @@ def load_config(path: Path) -> dict:
     return config
 
 
-def resolve_init_adapter(config: dict, asset_root: Path, output_root: Path) -> Path | None:
+def resolve_init_adapter(config: dict, override: Path | None, output_root: Path) -> Path | None:
+    if override:
+        candidate = override.expanduser().resolve()
+        if not (candidate / "adapter_config.json").is_file():
+            raise FileNotFoundError(f"invalid --init-lora adapter: {candidate}")
+        return candidate
     name = config.get("init_adapter")
     if not name:
         return None
-    candidates = [
-        output_root / "adapters" / name,
-        asset_root / "expert_models" / "adapters" / name,
-    ]
-    for candidate in candidates:
-        if (candidate / "adapter_config.json").is_file():
-            return candidate
+    candidate = output_root / name
+    if (candidate / "adapter_config.json").is_file():
+        return candidate
     raise FileNotFoundError(
-        f"missing initial adapter {name!r}; checked: "
-        + ", ".join(str(path) for path in candidates)
+        f"missing initial adapter {name!r} under {output_root}; pass --init-lora explicitly"
     )
+
+
+def gpu_ids(value: str | None, retained_world_size: int) -> list[str]:
+    if value is None:
+        return [str(index) for index in range(retained_world_size)]
+    if "," in value:
+        result = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        count = int(value)
+        if count < 1:
+            raise ValueError("--gpus must be a positive GPU count")
+        result = [str(index) for index in range(count)]
+    return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--asset-root", required=True, type=Path)
+    parser.add_argument("--dataset-root", required=True, type=Path)
+    parser.add_argument("--models-root", required=True, type=Path)
     parser.add_argument("--output-root", type=Path)
-    parser.add_argument("--gpus", help="comma-separated visible GPU IDs")
-    parser.add_argument(
-        "--max-updates",
-        type=int,
-        default=0,
-        help="stop after N optimizer updates for a smoke test; 0 keeps the full recipe",
-    )
+    parser.add_argument("--gpus", help="GPU count, e.g. 1 or 4; use --gpu-ids for explicit IDs")
+    parser.add_argument("--gpu-ids", help="comma-separated visible GPU IDs")
+    parser.add_argument("--init-lora", type=Path)
+    parser.add_argument("--max-updates", type=int, default=0)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     if args.max_updates < 0:
         raise ValueError("max_updates must be non-negative")
+    if args.gpus and args.gpu_ids:
+        raise ValueError("use only one of --gpus and --gpu-ids")
 
     config = load_config(args.config)
-    asset_root = args.asset_root.resolve()
-    output_root = (args.output_root or asset_root / "outputs").resolve()
-    base = asset_root / "base" / "Qwen3.5-4B"
-    delta = asset_root / "expert_models" / config["expert_delta"]
-    data = asset_root / "datasets" / config["data"]
-    image_root = asset_root / "datasets"
-    runtime_model = output_root / "runtime_models" / f"{config['expert']}_expert"
-    adapter_output = output_root / "adapters" / config["name"]
+    dataset_root = args.dataset_root.expanduser().resolve()
+    models_root = args.models_root.expanduser().resolve()
+    run_id = os.environ.get("RS_MLLM_RUN_ID") or datetime.now().strftime("%Y%m%d-%H%M%S")
+    default_output = Path.cwd() / "outputs" / "training35" / run_id
+    output_root = (args.output_root or default_output).expanduser().resolve()
+    model = models_root / config["model_alias"]
+    data = dataset_root / config["data"]
+    adapter_output = output_root / config["name"]
 
-    if not (base / "config.json").is_file():
-        raise FileNotFoundError(f"missing Qwen3.5-4B base: {base}")
-    if not delta.is_file():
-        raise FileNotFoundError(f"missing {config['expert']} expert delta: {delta}")
+    if not (model / "config.json").is_file():
+        raise FileNotFoundError(f"missing training start model: {model}")
     if not data.is_file():
         raise FileNotFoundError(f"missing training data: {data}")
 
     records = load_records(data)
-    report = validate_records(
-        records,
-        schema=config["data_schema"],
-        image_root=image_root,
-        check_images=True,
-        allow_absolute=False,
-    )
+    report = validate_records(records, schema=config["data_schema"], image_root=dataset_root, check_images=True, allow_absolute=False)
     if len(records) != int(config["expected_records"]):
         report["passed"] = False
-        report["errors"].append(
-            f"expected {config['expected_records']} records, found {len(records)}"
-        )
+        report["errors"].append(f"expected {config['expected_records']} records, found {len(records)}")
     if not report["passed"]:
         raise ValueError(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps({"dataset_validation": report}, ensure_ascii=False, indent=2))
-
-    if not (runtime_model / "config.json").is_file():
-        compose_command = [
-            sys.executable,
-            "-m",
-            "expert_lora.compose",
-            "--base",
-            str(base),
-            "--delta",
-            str(delta),
-            "--output",
-            str(runtime_model),
-        ]
-        print(json.dumps({"compose_command": compose_command}, indent=2))
-        if not args.dry_run:
-            runtime_model.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run(compose_command, check=True)
-
     if args.prepare_only:
         return
 
-    world_size = int(config["world_size"])
-    gpu_ids = [item.strip() for item in (args.gpus or ",".join(map(str, range(world_size)))).split(",") if item.strip()]
-    if len(gpu_ids) != world_size:
-        raise ValueError(
-            f"{config['name']} retained run requires {world_size} GPUs; got {gpu_ids}"
-        )
+    retained_world_size = int(config["world_size"])
+    ids = [item.strip() for item in args.gpu_ids.split(",") if item.strip()] if args.gpu_ids else gpu_ids(args.gpus, retained_world_size)
+    world_size = len(ids)
     effective_batch = int(config["effective_batch_size"])
     if effective_batch % world_size:
-        raise ValueError("effective_batch_size must be divisible by world_size")
+        raise ValueError(f"effective_batch_size {effective_batch} is not divisible by {world_size} GPUs")
     grad_accum = effective_batch // world_size
-    init_adapter = resolve_init_adapter(config, asset_root, output_root)
+    init_adapter = resolve_init_adapter(config, args.init_lora, output_root)
     if adapter_output.exists() and any(adapter_output.iterdir()):
         raise FileExistsError(f"refusing to overwrite adapter: {adapter_output}")
 
     command = [
-        sys.executable,
-        "-m",
-        "torch.distributed.run",
-        "--standalone",
-        f"--nproc_per_node={world_size}",
-        "-m",
-        "expert_lora.train",
-        "--model",
-        str(runtime_model),
-        "--data",
-        str(data),
-        "--image-root",
-        str(image_root),
-        "--output",
-        str(adapter_output),
-        "--expected-records",
-        str(config["expected_records"]),
-        "--epochs",
-        str(config["epochs"]),
-        "--grad-accum",
-        str(grad_accum),
-        "--lr",
-        str(config["learning_rate"]),
-        "--rank",
-        str(config["rank"]),
-        "--alpha",
-        str(config["alpha"]),
-        "--dropout",
-        str(config["dropout"]),
-        "--workers",
-        str(config["workers"]),
-        "--seed",
-        str(config["seed"]),
-        "--max-pixels",
-        str(config["max_pixels"]),
+        sys.executable, "-m", "torch.distributed.run", "--standalone",
+        f"--nproc_per_node={world_size}", "-m", "expert_lora.train",
+        "--model", str(model), "--data", str(data), "--image-root", str(dataset_root),
+        "--output", str(adapter_output), "--expected-records", str(config["expected_records"]),
+        "--epochs", str(config["epochs"]), "--grad-accum", str(grad_accum),
+        "--lr", str(config["learning_rate"]), "--rank", str(config["rank"]),
+        "--alpha", str(config["alpha"]), "--dropout", str(config["dropout"]),
+        "--workers", str(config["workers"]), "--seed", str(config["seed"]),
+        "--max-pixels", str(config["max_pixels"]),
     ]
     if init_adapter:
         command.extend(["--init-lora", str(init_adapter)])
@@ -192,23 +133,8 @@ def main() -> None:
         command.extend(["--max-updates", str(args.max_updates)])
 
     env = os.environ.copy()
-    env.update(
-        {
-            "CUDA_VISIBLE_DEVICES": ",".join(gpu_ids),
-            "TOKENIZERS_PARALLELISM": "false",
-            "OMP_NUM_THREADS": env.get("OMP_NUM_THREADS", "4"),
-        }
-    )
-    print(
-        json.dumps(
-            {
-                "experiment": config["name"],
-                "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"],
-                "command": command,
-            },
-            indent=2,
-        )
-    )
+    env.update({"CUDA_VISIBLE_DEVICES": ",".join(ids), "TOKENIZERS_PARALLELISM": "false", "OMP_NUM_THREADS": env.get("OMP_NUM_THREADS", "4")})
+    print(json.dumps({"experiment": config["name"], "retained_world_size": retained_world_size, "actual_world_size": world_size, "effective_batch_size": effective_batch, "gradient_accumulation": grad_accum, "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "output": str(adapter_output), "command": command}, indent=2))
     if not args.dry_run:
         adapter_output.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(command, check=True, env=env)

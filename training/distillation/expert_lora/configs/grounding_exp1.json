@@ -1,3 +1,25 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:03bae3db5101e8434c78b7690dffbf8413485c4c588eb9d21c5f15b897aa6477
-size 697
+{
+  "schema_version": 1,
+  "name": "grounding_exp1",
+  "description": "Continue the 942 adapter on washed VRSBench-Referring.",
+  "expert": "grounding",
+  "model_alias": "expert_ground",
+  "data": "grounding/exp1_washed_vrs36285.json",
+  "data_schema": "vrs_grounding",
+  "expected_records": 36285,
+  "init_adapter": "grounding_bootstrap_942",
+  "world_size": 8,
+  "effective_batch_size": 32,
+  "epochs": 1,
+  "learning_rate": 0.0001,
+  "rank": 32,
+  "alpha": 64,
+  "dropout": 0.05,
+  "workers": 0,
+  "seed": 20260823,
+  "max_pixels": 3211264,
+  "reported_eval": {
+    "vrsbench_referring_mean_iou": 0.664107,
+    "vrsbench_referring_acc_at_0_5": 0.772573
+  }
+}

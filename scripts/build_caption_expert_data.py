@@ -34,7 +34,12 @@ def build_vrs(short_samples):
 
 
 def load_long_desc(path):
-    return [json.loads(l) for l in open(path)]
+    with open(path) as f:
+        first = f.read(1)
+        f.seek(0)
+        if first == "[":
+            return json.load(f)
+        return [json.loads(line) for line in f if line.strip()]
 
 
 def build_xlrs(long_samples, xlrs_instruction):
@@ -55,9 +60,11 @@ def build_xlrs(long_samples, xlrs_instruction):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--g_a2_mix", default="finetune_framework/VRSbench/g_a2_mix.json")
-    ap.add_argument("--long_desc", default="/users/u2024311149/vrs_caption_long_desc.jsonl")
+    ap.add_argument("--long_desc", default=".models/five-stage-data/caption_dual_domain_train.jsonl",
+                    help="历史长描述 JSON/JSONL；默认读取 ModelScope staging 数据")
     ap.add_argument("--xlrs_prompt", default="evaluation/prompts/xlrs_caption_en.txt")
-    ap.add_argument("--out", default="finetune_framework/VRSbench/expert_data_caption.jsonl")
+    ap.add_argument("--out", default="finetune_framework/VRSbench/expert_data_caption.generated.json",
+                    help="重建结果；不覆盖训练入口当前指向的已校验数据")
     ap.add_argument("--xlrs_ratio", type=float, default=1.0,
                     help="XLRS长样本数 = 该比例 * VRS短样本数（默认1:1）")
     args = ap.parse_args()
@@ -81,6 +88,7 @@ def main():
     long_ds = build_xlrs([long_by_img[s["image"]] for s in vrs_samples[:n_xlrs]], xlrs_inst)
 
     all_data = vrs_ds + long_ds
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(all_data, f, ensure_ascii=False, indent=1)
     print(f"写入 {args.out}: 共 {len(all_data)} 条 (VRS {len(vrs_ds)} + XLRS {len(long_ds)})")
