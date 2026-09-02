@@ -106,7 +106,14 @@ class Sample:
         schema_ver = data.get("schema_version", "1.0")
         if schema_ver == "2.0-full-clean":
             return cls._from_v2_record(data, manifest_dir=manifest_dir)
-        data["images"] = [ImageRef(**image) for image in data["images"]]
+        images = []
+        for raw_image in data["images"]:
+            image = dict(raw_image)
+            image_path = Path(image["path"])
+            if manifest_dir is not None and not image_path.is_absolute():
+                image["path"] = str((manifest_dir / image_path).resolve())
+            images.append(ImageRef(**image))
+        data["images"] = images
         sample = cls(**data)
         sample.validate()
         return sample
