@@ -24,11 +24,17 @@ torch = { index = "pytorch-cu129" }
 torchvision = { index = "pytorch-cu129" }
 torchaudio = { index = "pytorch-cu129" }
 torchcodec = { index = "pytorch-cu129" }
-# vllm 0.26 cu129 wheel 来自官方 GitHub release(仅 Linux x86_64)
-# uv sync 直接从 URL 下载缓存, 队友无需手动下载 wheel
-vllm = { url = "https://github.com/vllm-project/vllm/releases/download/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
+# vllm 0.26 cu129 wheel 使用 SourceForge 的 GitHub release 镜像(仅 Linux x86_64)
+# uv.lock 固定 wheel 的 SHA-256, 同步时会校验镜像内容
+vllm = { url = "https://downloads.sourceforge.net/project/vllm.mirror/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cu129"
-url = "https://download.pytorch.org/whl/cu129"
+url = "https://mirrors.aliyun.com/pytorch-wheels/cu129"
+format = "flat"
 explicit = true
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple"
+default = true
