@@ -351,8 +351,8 @@ python -m rsmllm.router --chat
 # 一次性建评测环境
 bash evaluation/vllm_eval/setup_env.sh
 
-# 单专家评测，模型自动从 ModelScope 拉取
-evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
+# 单专家评测，模型自动从 ModelScope 拉取(需 PYTHONPATH=. 以 import rsmllm 配置)
+PYTHONPATH=. evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
     --adapter qwen35vl \
     --model-path <expert_caption路径: 本地目录 或 ModelScope 别名 expert_caption> \
     --datasets vrsbench --subtask caption
