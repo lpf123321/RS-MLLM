@@ -9,13 +9,17 @@ existing finalize/validate tooling works unchanged.
 
 from __future__ import annotations
 
+import atexit
 import argparse
+import contextlib
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -81,6 +85,154 @@ def code_sha256() -> str:
     return digest.hexdigest()
 
 
+class _GpuReservation:
+    """Reserve the physical GPU selected by this evaluator process.
+
+    vLLM reports CUDA ordinals after applying ``CUDA_VISIBLE_DEVICES``.  The
+    reservation uses NVML's physical GPU identity so a second evaluator cannot
+    race the first one into vLLM's startup memory check.  NVML inspection does
+    not create a CUDA context in the parent process.
+    """
+
+    def __init__(self, gpu_memory_utilization: float) -> None:
+        if not 0.0 < gpu_memory_utilization <= 1.0:
+            raise ValueError("gpu_memory_utilization must be in (0, 1]")
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.physical_gpu_id: int | None = None
+        self.uuid: str | None = None
+        self.free_memory_bytes: int | None = None
+        self.total_memory_bytes: int | None = None
+        self._lock: Any = None
+        self._fcntl: Any = None
+
+    @staticmethod
+    def _visible_token() -> str:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+        token = visible.split(",", 1)[0].strip() if visible else "0"
+        if not token or token in {"-1", "NoDevFiles"}:
+            raise RuntimeError(
+                "CUDA_VISIBLE_DEVICES does not select a usable GPU: "
+                f"{visible!r}"
+            )
+        return token
+
+    @staticmethod
+    def _handle_for_token(pynvml: Any, token: str) -> Any:
+        if token.isdecimal():
+            return pynvml.nvmlDeviceGetHandleByIndex(int(token))
+        try:
+            return pynvml.nvmlDeviceGetHandleByUUID(token)
+        except TypeError:
+            return pynvml.nvmlDeviceGetHandleByUUID(token.encode())
+
+    def _resolve_gpu(self) -> None:
+        try:
+            import pynvml
+        except ImportError as exc:  # pragma: no cover - vLLM supplies this
+            raise RuntimeError("GPU guard requires the vLLM NVML dependency") from exc
+
+        token = self._visible_token()
+        initialized = False
+        try:
+            pynvml.nvmlInit()
+            initialized = True
+            handle = self._handle_for_token(pynvml, token)
+            self.physical_gpu_id = int(pynvml.nvmlDeviceGetIndex(handle))
+            uuid = pynvml.nvmlDeviceGetUUID(handle)
+            self.uuid = uuid.decode() if isinstance(uuid, bytes) else str(uuid)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Cannot resolve CUDA_VISIBLE_DEVICES to a physical GPU: "
+                f"{os.environ.get('CUDA_VISIBLE_DEVICES', '')!r}"
+            ) from exc
+        finally:
+            if initialized:
+                with contextlib.suppress(Exception):
+                    pynvml.nvmlShutdown()
+
+    def _refresh_memory(self) -> None:
+        import pynvml
+
+        assert self.physical_gpu_id is not None
+        initialized = False
+        try:
+            pynvml.nvmlInit()
+            initialized = True
+            handle = pynvml.nvmlDeviceGetHandleByIndex(self.physical_gpu_id)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            self.free_memory_bytes = int(info.free)
+            self.total_memory_bytes = int(info.total)
+        finally:
+            if initialized:
+                with contextlib.suppress(Exception):
+                    pynvml.nvmlShutdown()
+
+    def acquire(self) -> "_GpuReservation":
+        import fcntl
+
+        self._resolve_gpu()
+        assert self.physical_gpu_id is not None
+        assert self.uuid is not None
+        uid = getattr(os, "getuid", lambda: 0)()
+        lock_dir = Path(tempfile.gettempdir()) / f"rsmllm-gpu-locks-{uid}"
+        lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        safe_uuid = re.sub(r"[^A-Za-z0-9_.-]", "_", self.uuid)
+        lock_path = lock_dir / f"gpu-{safe_uuid}.lock"
+        self._fcntl = fcntl
+        self._lock = lock_path.open("a+")
+        try:
+            fcntl.flock(self._lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            self.release()
+            raise RuntimeError(
+                "GPU reservation is busy: physical GPU "
+                f"{self.physical_gpu_id} ({self.uuid}) is already used by "
+                "another evaluator. Start this run after that evaluator exits."
+            ) from exc
+
+        try:
+            self._refresh_memory()
+            assert self.free_memory_bytes is not None
+            assert self.total_memory_bytes is not None
+            required = math.ceil(
+                self.total_memory_bytes * self.gpu_memory_utilization
+            )
+            if self.free_memory_bytes < required:
+                free_gib = self.free_memory_bytes / 1024**3
+                total_gib = self.total_memory_bytes / 1024**3
+                required_gib = required / 1024**3
+                raise RuntimeError(
+                    "Selected physical GPU is not available: "
+                    f"GPU {self.physical_gpu_id} ({self.uuid}) has "
+                    f"{free_gib:.2f}/{total_gib:.2f} GiB free, but this "
+                    f"run requires {required_gib:.2f} GiB at "
+                    f"gpu_memory_utilization={self.gpu_memory_utilization}. "
+                    "A previous or external process is still using it."
+                )
+            print(
+                "[gpu-guard] reserved physical GPU "
+                f"{self.physical_gpu_id} ({self.uuid}); "
+                f"free={self.free_memory_bytes / 1024**3:.2f} GiB",
+                flush=True,
+            )
+            return self
+        except BaseException:
+            self.release()
+            raise
+
+    def release(self) -> None:
+        lock, fcntl = self._lock, self._fcntl
+        self._lock = None
+        self._fcntl = None
+        if lock is None:
+            return
+        with contextlib.suppress(Exception):
+            if fcntl is not None:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        with contextlib.suppress(Exception):
+            lock.close()
+
+
 def _check_resume_config(
     previous_config: dict[str, Any], current_config: dict[str, Any]
 ) -> None:
@@ -137,8 +289,20 @@ class VLLMBatchAdapter:
         self.llm: Any = None
         self.processor: Any = None
         self.torch: Any = None
+        self._gpu_reservation: _GpuReservation | None = None
 
     def load(self) -> dict[str, Any]:
+        self._gpu_reservation = _GpuReservation(
+            self.gpu_memory_utilization
+        ).acquire()
+        atexit.register(self.close)
+        try:
+            return self._load_impl()
+        except BaseException:
+            self.close()
+            raise
+
+    def _load_impl(self) -> dict[str, Any]:
         import torch
         from transformers import AutoConfig, AutoProcessor
         from vllm import LLM
@@ -197,7 +361,35 @@ class VLLMBatchAdapter:
             "pruning": {"ratio": 0.0, "modules": 0, "parameters": 0, "zeros": 0},
             "cuda_device": torch.cuda.get_device_name(),
             "cuda_capability": list(torch.cuda.get_device_capability()),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "physical_gpu_id": (
+                self._gpu_reservation.physical_gpu_id
+                if self._gpu_reservation is not None
+                else None
+            ),
+            "physical_gpu_uuid": (
+                self._gpu_reservation.uuid
+                if self._gpu_reservation is not None
+                else None
+            ),
         }
+
+    def close(self) -> None:
+        """Release the vLLM engine and the physical-GPU reservation."""
+        try:
+            llm, self.llm = self.llm, None
+            if llm is not None:
+                del llm
+            gc = __import__("gc")
+            gc.collect()
+            if self.torch is not None:
+                self.torch.cuda.empty_cache()
+        except Exception as exc:  # noqa: BLE001
+            print(f"==> 清理警告(不影响结果): {exc}", flush=True)
+        finally:
+            if self._gpu_reservation is not None:
+                self._gpu_reservation.release()
+                self._gpu_reservation = None
 
     def _prompt_text(self, image_paths: list[str], prompt: str) -> str:
         # 报告口径 system prompt(与 evaluation/main.py SYSTEM_PROMPTS 一致):
@@ -584,12 +776,7 @@ def main() -> None:
     )
     # 释放 vLLM 引擎(避免 EngineCore 残留占显存, 影响后续评测)
     try:
-        if hasattr(adapter, "llm"):
-            del adapter.llm
-        import gc
-        gc.collect()
-        if adapter.torch is not None:
-            adapter.torch.cuda.empty_cache()
+        adapter.close()
         print("==> vLLM 引擎已释放, 显存已回收", flush=True)
     except Exception as exc:  # noqa: BLE001
         print(f"==> 清理警告(不影响结果): {exc}", flush=True)
