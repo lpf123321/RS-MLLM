@@ -345,6 +345,11 @@ python -m rsmllm.router --chat
 （交互模式与命令行入口同一链路）。结果输出到 `results/<清单>_<profile>_<时间戳>/`
 （每次独立目录，`clean_summary.json` 为正式分）。
 
+**single（指定专家/模型跑特定数据集）**：`[1]` → 输入 `single` → 依次选
+专家(4 选 1：general / grounding / change / caption) → 量化档(bf16 / w8a8 / gptq)
+→ 数据集(默认全部 6 个) → 子任务(可空)。模型自动按「专家 × 量化档」解析
+(本地 `models/` 优先，缺失才从 ModelScope 拉取)。
+
 命令行方式：
 
 ```bash

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from rsmllm.config import REPORT_CONF
 from rsmllm.models import get_model, MODEL_REGISTRY
+from rsmllm.router_eval import QUANT_EXPERTS, resolve_model
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # 训练类分支(deepspeed/trl)依赖根环境; 评测/推理(vllm)依赖评测环境
@@ -25,7 +26,7 @@ if not Path(EVAL_PY).exists():
     EVAL_PY = sys.executable
 
 MAIN_MENU = {
-    "1": ("评测实验", "按子集(950/770/590/400/full)评估指定模型"),
+    "1": ("评测实验", "route 一键路由(4专家×任务) / single 指定专家+量化+数据集"),
     "2": ("推理服务", "按报告配置启动 vLLM 推理"),
     "3": ("训练", "多专家 SFT / 蒸馏流程"),
     "4": ("量化", "W8A8 / GPTQ 转换与部署"),
@@ -67,33 +68,51 @@ def _cmd_eval() -> None:
         if result.returncode:
             print(f"  ✗ 一键路由评测失败 (exit={result.returncode})")
         return
-    model = _ask_model()
-    datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")
-    profile = _ask("模型 profile(mmerestore_bf16 / mmerestore_w8a8 / mmerestore_gptq / 或自定义路径)",
-                   "mmerestore_bf16")
-    print(f"  → 评测 model={model} datasets={datasets} profile={profile}")
-    # 标准 ModelScope 用法: 别名/ID 走 snapshot_download, 缓存命中复用, 返回真实缓存路径
-    model_dir = get_model(model)
-    # 官方评测入口: evaluation.main.py --adapter qwen35vl (完整模型逐专家), 非 vision_opd 遗留器
+    expert = _ask("专家(general=VQA/多选 / grounding=指代定位 / change=变化描述 / caption=图像描述)",
+                  "general")
+    if expert not in QUANT_EXPERTS["bf16"]:
+        print(f"  ✗ 未知专家 {expert!r}, 使用默认 general")
+        expert = "general"
+    quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16")
+    if quant not in QUANT_EXPERTS:
+        print(f"  ✗ 未知量化方式 {quant!r}, 使用默认 bf16")
+        quant = "bf16"
+    alias, _profile = QUANT_EXPERTS[quant][expert]
+    print(f"  → 模型: {alias} ({expert} × {quant}); 本地 models/ 优先, 缺失时 ModelScope 拉取")
+    # 与 route 同一解析: canonical 专家(含 merge_manifest 校验), 量化版由 canonical 导出
+    model_dir = resolve_model(expert, quant)
+    datasets = _ask(
+        "数据集(空格/逗号分隔: vrsbench mme xlrs xlrs_caption xlrs_grounding levircc; all=全部)",
+        "all",
+    )
+    if datasets.strip().lower() == "all":
+        ds_list = ["vrsbench", "mme", "xlrs", "xlrs_caption", "xlrs_grounding", "levircc"]
+    else:
+        ds_list = [d for d in datasets.replace("，", " ").replace(",", " ").split() if d]
+    if not ds_list:
+        print("  ✗ 未识别到数据集, 使用默认 vrsbench")
+        ds_list = ["vrsbench"]
+    subtask = _ask("子任务(留空=全量 / vqa / caption / referring / mcq / change; 仅对含该任务类型的数据集生效)", "")
+    # 官方评测入口: evaluation.main.py --adapter qwen35vl
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
+    main_py = Path(__file__).resolve().parent.parent / "evaluation" / "main.py"
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     from rsmllm.data import prepare_eval
-    ds = datasets.split()[0] if datasets and datasets != "all" else "vrsbench"
-    prepare_eval(ds)   # 首次: 图片下载(评测清单由 main.py 自加载 datasets_data)
-    subtask = _ask("子任务(留空=全量 / vqa / caption / referring / mcq / change)", "")
-    main_py = Path(__file__).resolve().parent.parent / "evaluation" / "main.py"
-    cmd = [str(py), str(main_py),
-           "--adapter", "qwen35vl",
-           "--model-path", model_dir,
-           "--datasets", ds]
-    if subtask:
-        cmd += ["--subtask", subtask]
-    cmd += ["--image_max_pixels", str(REPORT_CONF["max_pixels"]),
-            "--eval_batch_size", str(REPORT_CONF["batch_size"]),
-            "--output", str(Path(__file__).resolve().parent.parent / "results" / f"{ds}_{subtask or 'all'}.json")]
-    subprocess.run(cmd, check=False, env=env)
+    for ds in ds_list:
+        prepare_eval(ds)   # 图片就绪复用; 首次: 下载评测图片 + 自动构建清单
+        cmd = [str(py), str(main_py),
+               "--adapter", "qwen35vl",
+               "--model-path", model_dir,
+               "--datasets", ds]
+        if subtask:
+            cmd += ["--subtask", subtask]
+        cmd += ["--image_max_pixels", str(REPORT_CONF["max_pixels"]),
+                "--eval_batch_size", str(REPORT_CONF["batch_size"]),
+                "--output", str(Path(__file__).resolve().parent.parent / "results" / f"{ds}_{subtask or 'all'}.json")]
+        print(f"  → 评测 {ds} (模型 {model_dir}, subtask={subtask or '全量'})")
+        subprocess.run(cmd, check=False, env=env)
 
 
 def _cmd_serve() -> None:
