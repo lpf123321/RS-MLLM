@@ -60,6 +60,9 @@ else
     exit 1
 fi
 
+echo "==> 校验 Pillow"
+".venv/bin/python" -c 'from PIL import Image; print("    Pillow OK:", Image.__version__)'
+
 echo ""
 echo "==> 完成。运行评测前:"
 echo "    ${EVAL_DIR}/.venv/bin/python ${EVAL_DIR}/vision_opd_vllm_eval.py --help"

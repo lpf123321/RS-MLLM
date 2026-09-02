@@ -48,6 +48,8 @@ cd evaluation/vllm_eval
 ## 运行环境（vllm 0.26 + torch 2.11 cu129）
 
 评测器依赖 **vLLM 0.26**，用本项目独立环境（不与 rs-mllm 主项目共用）。
+评测数据清单的尺寸探测也必须使用该环境：Pillow 是显式依赖，清单构建器在
+Pillow 缺失、图片路径不存在或尺寸无效时会直接失败，不会生成或覆盖不安全的清单。
 **标准可复现**（uv 项目 + uv.lock 精确锁定，已验证干净环境加载 Qwen3.5 成功）：
 
 ```bash
@@ -58,4 +60,6 @@ cd evaluation/vllm_eval && uv sync --locked   # 依 uv.lock 还原(vllm 0.26 + t
 ## 数据/模型
 
 - 清单：`--manifest` 指向 testset.jsonl（pilot_500 / 950 / full 等）；
+- 通过 `./rsmllm.sh` 评测时，程序会在启动 vLLM 前验证基础清单和子任务清单；
+  若发现旧清单含 `0x0` 尺寸或失效路径，会先重建并在构建失败时阻止评测；
 - 模型：预训练权重/量化导出目录（bf16、W8A8、GPTQ）。

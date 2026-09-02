@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -111,17 +112,26 @@ SRC_TO_DATASET = {
 
 def build_subtask_manifest(src_name: str, task_type: str | None, label: str) -> Path:
     """从源 manifest 切出子任务子集(按 task_type), 返回子清单路径."""
+    from rsmllm.data import validate_eval_manifest
+
     src = MANIFESTS / src_name
+    validate_eval_manifest(src)
     if task_type is None:
         return src
     out = MANIFESTS / f"{Path(src_name).stem}__{label}.jsonl"
+    tmp = out.with_name(f".{out.name}.tmp.{os.getpid()}")
     written = 0
-    with src.open(encoding="utf-8") as f, out.open("w", encoding="utf-8") as g:
-        for line in f:
-            d = json.loads(line)
-            if d.get("task_type") == task_type:
-                g.write(line)
-                written += 1
+    try:
+        with src.open(encoding="utf-8") as f, tmp.open("w", encoding="utf-8") as g:
+            for line in f:
+                d = json.loads(line)
+                if d.get("task_type") == task_type:
+                    g.write(line)
+                    written += 1
+        tmp.replace(out)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
     print(f"  子任务清单: {out.name} ({written} samples)")
     return out
 

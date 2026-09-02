@@ -147,6 +147,71 @@ BENCH_MANIFEST_NAME = {
 }
 
 
+def _resolve_manifest_image(manifest: Path, raw_path: object) -> Path:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError("manifest image path is empty")
+    path = Path(raw_path)
+    return path.resolve() if path.is_absolute() else (manifest.parent / path).resolve()
+
+
+def validate_eval_manifest(manifest: Path) -> int:
+    """Validate image metadata before a subtask can reach the evaluator."""
+    manifest = Path(manifest)
+    if not manifest.is_file():
+        raise ValueError(f"evaluation manifest does not exist: {manifest}")
+
+    sample_count = 0
+    with manifest.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"invalid JSON in evaluation manifest {manifest}:{line_number}: {exc}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"manifest row {line_number} is not an object: {manifest}"
+                )
+            images = row.get("images")
+            if not isinstance(images, list) or not images:
+                raise ValueError(
+                    f"manifest row {line_number} has no images: {manifest}"
+                )
+            for image_number, image in enumerate(images, start=1):
+                if not isinstance(image, dict):
+                    raise ValueError(
+                        f"manifest row {line_number} image {image_number} is not an object"
+                    )
+                width = image.get("width")
+                height = image.get("height")
+                if (
+                    isinstance(width, bool)
+                    or isinstance(height, bool)
+                    or not isinstance(width, int)
+                    or not isinstance(height, int)
+                    or width <= 0
+                    or height <= 0
+                ):
+                    raise ValueError(
+                        f"manifest row {line_number} image {image_number} has invalid "
+                        f"dimensions {width!r}x{height!r}: {manifest}"
+                    )
+                image_path = _resolve_manifest_image(manifest, image.get("path"))
+                if not image_path.is_file():
+                    raise ValueError(
+                        f"manifest row {line_number} image {image_number} does not "
+                        f"exist: {image_path}"
+                    )
+            sample_count += 1
+
+    if sample_count == 0:
+        raise ValueError(f"evaluation manifest is empty: {manifest}")
+    return sample_count
+
+
 def ensure_benchmark_data(dataset: str, *, refresh: bool = False) -> Path:
     """确保评测数据集图片就绪, 返回<仓库>/datasets/shared_datasets/<X>目录.
 
@@ -176,9 +241,10 @@ def prepare_eval(dataset: str, *, refresh_images: bool = False,
 
     流程:
       1) ensure_benchmark_data(dataset)  -> 图片就绪(本机已有则复用; 否则 ModelScope/HF 下载)
-      2) 若 evaluation/vllm_eval/manifests/<dataset>.jsonl 缺失(评审机未构建), 调用
-         scripts/build_sample_manifest.py 生成(图片相对路径 ../../../datasets/shared_datasets
-         + 真实尺寸), 供评测器/路由评测直接使用。
+      2) 若 evaluation/vllm_eval/manifests/<dataset>.jsonl 缺失或校验失败, 调用
+         scripts/build_sample_manifest.py 原子重建(图片相对路径
+         ../../../datasets/shared_datasets + 真实尺寸), 供评测器/路由评测直接使用。
+      3) 基础清单通过图片路径和尺寸校验后, 才允许生成子任务清单或启动评测。
 
     返回: 评测清单路径(evaluation/vllm_eval/manifests/<dataset>.jsonl).
     """
@@ -189,11 +255,21 @@ def prepare_eval(dataset: str, *, refresh_images: bool = False,
     ensure_benchmark_data(dataset, refresh=refresh_images)
 
     manifest = REPO_ROOT / "evaluation" / "vllm_eval" / "manifests" / BENCH_MANIFEST_NAME[dataset]
-    if force_build or not manifest.exists():
+    rebuild = force_build or not manifest.exists()
+    if not rebuild:
+        try:
+            validate_eval_manifest(manifest)
+        except (OSError, ValueError) as exc:
+            print(f"[data] 现有评测清单无效, 重新构建: {exc}", flush=True)
+            rebuild = True
+    if rebuild:
         import subprocess as sp
         script = REPO_ROOT / "scripts" / "build_sample_manifest.py"
-        cmd = [sys.executable, str(script), "--dataset", dataset,
+        eval_python = REPO_ROOT / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
+        builder_python = str(eval_python) if eval_python.is_file() else sys.executable
+        cmd = [builder_python, str(script), "--dataset", dataset,
                "--images-root", "../../../datasets/shared_datasets"]
         print(f"[data] 构建评测清单: {dataset}")
         sp.run(cmd, check=True)
+    validate_eval_manifest(manifest)
     return manifest

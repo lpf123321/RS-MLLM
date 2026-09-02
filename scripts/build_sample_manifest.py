@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """将 datasets_data/ 的 messages 格式清单转换为评测器 Sample schema v1.0.
 
+构建是 fail-closed 的: Pillow 缺失、路径解析失败或图片尺寸无效都会
+终止构建，并且不会覆盖已有清单。评测器不得接收 0x0 图片元数据。
+
 用法:
   python scripts/build_sample_manifest.py --all                          # 全部数据集
   python scripts/build_sample_manifest.py --dataset vrsbench --subtask vqa   # 单子任务
@@ -13,19 +16,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 try:
     from PIL import Image
-except ImportError:
-    Image = None  # 无 PIL 时跳过尺寸探测(width/height=0, 评测器不查尺寸可跑)
+except ImportError as exc:
+    Image = None
+    PIL_IMPORT_ERROR = exc
+else:
+    PIL_IMPORT_ERROR = None
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = REPO_ROOT / "evaluation" / "vllm_eval" / "manifests"
 
 PREFIX_RE = re.compile(r"^\s*\[(VQA|CAP|REF|CD|MCQ)\]")
+
+
+class ManifestBuildError(RuntimeError):
+    """Raised when a manifest cannot be made safe for the evaluator."""
+
 
 # 数据集 -> 源文件名(datasets_data/ 下)
 DATASETS = {
@@ -67,17 +79,103 @@ def parse_mcq(text: str) -> tuple[dict[str, str], list[str]]:
     return choices, list(choices)
 
 
-def image_size(path: str) -> tuple[int, int]:
+def _require_pillow() -> None:
     if Image is None:
-        return 0, 0
+        raise ManifestBuildError(
+            "Pillow is required to build an evaluation manifest with valid image "
+            f"dimensions (Python: {sys.executable}). Run the builder with the "
+            "evaluation venv, or install Pillow in the interpreter used to launch "
+            "the console."
+        ) from PIL_IMPORT_ERROR
+
+
+def image_size(path: str | Path) -> tuple[int, int]:
+    """Read a real image size; never turn a probe failure into ``(0, 0)``."""
+    _require_pillow()
+    image_path = Path(path)
+    if not image_path.is_file():
+        raise ManifestBuildError(f"image file does not exist: {image_path}")
+    if Image is None:
+        raise AssertionError("Pillow availability was not checked")
     try:
-        with Image.open(path) as im:
-            return im.size
-    except Exception:
-        return 0, 0
+        with Image.open(image_path) as im:
+            width, height = im.size
+    except Exception as exc:
+        raise ManifestBuildError(
+            f"cannot read image {image_path}: {type(exc).__name__}: {exc}"
+        ) from exc
+    if width <= 0 or height <= 0:
+        raise ManifestBuildError(
+            f"image has invalid dimensions {width}x{height}: {image_path}"
+        )
+    return width, height
 
 
-def convert_messages(raw: dict, dataset: str, index: int) -> dict:
+def _resolve_image_path(
+    raw_path: str,
+    *,
+    source_dir: Path,
+    images_root: str | None,
+) -> tuple[str, Path]:
+    """Return the stored manifest path and the path used for probing."""
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ManifestBuildError("image path is empty")
+
+    marker = "/shared_datasets/"
+    if images_root and marker in raw_path:
+        suffix = raw_path.split(marker, 1)[1]
+        stored = Path(images_root) / suffix
+        probe = stored if stored.is_absolute() else (OUTPUT_DIR / stored).resolve()
+    else:
+        raw = Path(raw_path)
+        normalized = raw_path.replace("\\", "/")
+        dataset_marker = "datasets/shared_datasets/"
+        if not raw.is_absolute() and dataset_marker in normalized:
+            suffix = normalized.split(dataset_marker, 1)[1]
+            probe = (REPO_ROOT / "datasets" / "shared_datasets" / suffix).resolve()
+        else:
+            probe = raw if raw.is_absolute() else (source_dir / raw).resolve()
+        try:
+            stored = Path(os.path.relpath(probe, OUTPUT_DIR))
+        except ValueError:
+            stored = probe
+
+    if not probe.is_file():
+        raise ManifestBuildError(
+            f"image file does not exist after path resolution: {probe} "
+            f"(source={raw_path!r})"
+        )
+    return stored.as_posix(), probe
+
+
+def _image_ref(
+    raw_path: str,
+    *,
+    role: str,
+    source_dir: Path,
+    images_root: str | None,
+) -> dict[str, object]:
+    stored_path, probe_path = _resolve_image_path(
+        raw_path, source_dir=source_dir, images_root=images_root
+    )
+    width, height = image_size(probe_path)
+    return {
+        "path": stored_path,
+        "role": role,
+        "width": width,
+        "height": height,
+        "transform": "none",
+    }
+
+
+def convert_messages(
+    raw: dict,
+    dataset: str,
+    index: int,
+    *,
+    source_dir: Path,
+    images_root: str | None,
+) -> dict:
     """一条 messages 记录 -> Sample dict (v1.0)."""
     msgs = raw.get("messages", [])
     user = next((m for m in msgs if m.get("role") == "user"), None)
@@ -141,8 +239,14 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
     image_refs = []
     for i, p in enumerate(images):
         role = "before" if (len(images) == 2 and i == 0 and task_type == "change_caption") else ("after" if len(images) == 2 and i == 1 and task_type == "change_caption" else "none")
-        w, h = image_size(p)
-        image_refs.append({"path": p, "role": role, "width": w, "height": h, "transform": "none"})
+        image_refs.append(
+            _image_ref(
+                p,
+                role=role,
+                source_dir=source_dir,
+                images_root=images_root,
+            )
+        )
 
     return {
         "id": f"{dataset}_{index}",
@@ -164,17 +268,29 @@ def convert_messages(raw: dict, dataset: str, index: int) -> dict:
     }
 
 
-def convert_flat_caption(raw: dict, dataset: str, index: int) -> dict:
+def convert_flat_caption(
+    raw: dict,
+    dataset: str,
+    index: int,
+    *,
+    source_dir: Path,
+    images_root: str | None,
+) -> dict:
     """平铺 caption 记录 -> Sample dict (v1.0)."""
     path = raw.get("image", "")
-    w, h = image_size(path)
+    image = _image_ref(
+        path,
+        role="none",
+        source_dir=source_dir,
+        images_root=images_root,
+    )
     return {
         "id": str(raw.get("id", f"{dataset}_{index}")),
         "dataset": dataset,
         "subtask": "caption",
         "task_type": "caption",
         "prompt": raw.get("prompt", "Describe the image in detail."),
-        "images": [{"path": path, "role": "none", "width": w, "height": h, "transform": "none"}],
+        "images": [image],
         "references": raw.get("references", []) or [],
         "choices": {},
         "answer_labels": [],
@@ -188,11 +304,30 @@ def convert_flat_caption(raw: dict, dataset: str, index: int) -> dict:
     }
 
 
-def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
+def convert_flat_grounding(
+    raw: dict,
+    dataset: str,
+    index: int,
+    *,
+    source_dir: Path,
+    images_root: str | None,
+) -> dict:
     """平铺 grounding 记录 -> Sample dict (v1.0, bbox)."""
     path = raw.get("image", "")
-    w = int(raw.get("image_width", 0) or 0)
-    h = int(raw.get("image_height", 0) or 0)
+    image = _image_ref(
+        path,
+        role="none",
+        source_dir=source_dir,
+        images_root=images_root,
+    )
+    # The source annotations express boxes in the declared image coordinate
+    # system (normally 4096x4096).  Probe the file for validity, but preserve
+    # those coordinates when they are present and positive.
+    source_width = int(raw.get("image_width", 0) or 0)
+    source_height = int(raw.get("image_height", 0) or 0)
+    if source_width > 0 and source_height > 0:
+        image["width"] = source_width
+        image["height"] = source_height
     bbox = raw.get("bbox") or []
     # bbox 写入 references(计分层 _bbox_score 读 references[0]); 格式与 parse_bbox 兼容
     refs = []
@@ -204,7 +339,7 @@ def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
         "subtask": "grounding",
         "task_type": "bbox",
         "prompt": raw.get("question", ""),
-        "images": [{"path": path, "role": "none", "width": w, "height": h, "transform": "none"}],
+        "images": [image],
         "references": refs,
         "choices": {},
         "answer_labels": [],
@@ -220,6 +355,7 @@ def convert_flat_grounding(raw: dict, dataset: str, index: int) -> dict:
 
 def build(dataset: str, subtask_filter: str | None, limit: int | None,
           images_root: str | None = None) -> Path:
+    _require_pillow()
     name = DATASETS[dataset]
     src = REPO_ROOT / "datasets_data" / f"{name}.jsonl"
     if not src.exists():
@@ -230,41 +366,46 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
     }.get(dataset, convert_messages)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / f"{name}{'_' + subtask_filter if subtask_filter else ''}.jsonl"
+    tmp = out.with_name(f".{out.name}.tmp.{os.getpid()}")
     written = 0
     dropped = 0
-    with src.open(encoding="utf-8") as f, out.open("w", encoding="utf-8") as g:
-        for i, line in enumerate(f, start=1):
-            if not line.strip():
-                continue
-            raw = json.loads(line)
-            sample = convert(raw, dataset, i)
-            # 无正确选项答案的 choice 样本直接丢弃(否则评测器校验抛错杀全量)
-            if sample["task_type"] in {"single_choice", "multi_choice"} and not sample["answer_labels"]:
-                dropped += 1
-                continue
-            if images_root:
-                # 路径前缀替换: /users/.../shared_datasets/<X> -> <images_root>/<X>
-                marker = "/shared_datasets/"
-                for img in sample["images"]:
-                    p = img["path"]
-                    if marker in p:
-                        img["path"] = str(Path(images_root) / p.split(marker, 1)[1])
-                    # 存储的相对路径是相对 OUTPUT_DIR(评测清单目录)的;
-                    # 尺寸探测必须用该基准 resolve 到真实文件(否则相对路径跑出仓库根 -> 0,0)
-                    abs_path = (OUTPUT_DIR / img["path"]).resolve()
-                    w, h = image_size(str(abs_path))
-                    img["width"], img["height"] = w, h
-            if subtask_filter:
-                # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
-                tag_map = {"vqa": "open_vqa", "caption": "caption", "referring": "bbox",
-                           "change": "change_caption", "mcq": "single_choice"}
-                want = tag_map.get(subtask_filter)
-                if want is None or sample["task_type"] != want:
+    try:
+        with src.open(encoding="utf-8") as f, tmp.open("w", encoding="utf-8") as g:
+            for i, line in enumerate(f, start=1):
+                if not line.strip():
                     continue
-            g.write(json.dumps(sample, ensure_ascii=False) + "\n")
-            written += 1
-            if limit and written >= limit:
-                break
+                raw = json.loads(line)
+                sample = convert(
+                    raw,
+                    dataset,
+                    i,
+                    source_dir=src.parent,
+                    images_root=images_root,
+                )
+                # 无正确选项答案的 choice 样本直接丢弃(否则评测器校验抛错杀全量)
+                if sample["task_type"] in {"single_choice", "multi_choice"} and not sample["answer_labels"]:
+                    dropped += 1
+                    continue
+                if subtask_filter:
+                    # 子任务过滤: vqa/caption/ref/cd/mcq 前缀匹配
+                    tag_map = {"vqa": "open_vqa", "caption": "caption", "referring": "bbox",
+                               "change": "change_caption", "mcq": "single_choice"}
+                    want = tag_map.get(subtask_filter)
+                    if want is None or sample["task_type"] != want:
+                        continue
+                g.write(json.dumps(sample, ensure_ascii=False) + "\n")
+                written += 1
+                if limit and written >= limit:
+                    break
+        if written == 0:
+            raise ManifestBuildError(
+                f"no valid samples were written for dataset={dataset!r}, "
+                f"subtask={subtask_filter!r}"
+            )
+        tmp.replace(out)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
     print(f"OK: {out} ({written} samples, 丢弃 {dropped})")
     return out
 
@@ -277,14 +418,18 @@ def main() -> int:
     ap.add_argument("--limit", type=int, help="每个输出最多样本数(调试用)")
     ap.add_argument("--images-root", help="图片根(替换 /users/.../shared_datasets/ 前缀, 如 assets)")
     args = ap.parse_args()
-    if args.all:
-        for ds in DATASETS:
-            build(ds, None, args.limit, args.images_root)
+    try:
+        if args.all:
+            for ds in DATASETS:
+                build(ds, None, args.limit, args.images_root)
+            return 0
+        if not args.dataset:
+            ap.error("需 --dataset 或 --all")
+        build(args.dataset, args.subtask, args.limit, args.images_root)
         return 0
-    if not args.dataset:
-        ap.error("需 --dataset 或 --all")
-    build(args.dataset, args.subtask, args.limit, args.images_root)
-    return 0
+    except (ManifestBuildError, FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: manifest build failed: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
