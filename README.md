@@ -307,47 +307,15 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 
 ### 3.5 模型训练
 
-本节只说明报告第 5 章的五阶段 SFT、General/Grounding 续训练及四专家 delta。
-所有训练均关闭 thinking，产物写入 `outputs/training35/`，不会覆盖 `models/` 中的正式模型。
+所有命令从仓库根目录执行；训练默认关闭 thinking。
 
-#### 依赖仓库
-
-| 类型 | 仓库 | 用途 |
-|---|---|---|
-| 代码 | GitHub `lpf123321/RS-MLLM` | 训练、合并、数据构建与验收脚本 |
-| 基座模型 | `Qwen/Qwen3.5-4B` | 五阶段训练的原始基座 W0 |
-| 五阶段数据 | ModelScope `yasumi/rs-mllm-datasets` | Stage1、GA2、A1、A2b、Caption JSON |
-| 续训练数据 | ModelScope `Uchitachi/RS-MLLM-Distillation-Data` | General Exp7、Grounding bootstrap/Exp5 JSON 与图片哈希索引 |
-| 官方图片 | HF `yifanzhang114/MME-RealWorld`、`xiang709/VRSBench`、`initiacms/XLRS-Bench-lite`、`initiacms/XLRS-Bench_visual_grounding_en` | 按哈希重建训练图片，不在本仓库重复发布 |
-| 五阶段图片镜像 | HF `lmms-lab/VRSBench`、`chuangao/LEVIR-CC-CN` | 无共享数据盘时的原图来源 |
-| 专家检查点包 | ModelScope `Uchitachi/RS-MLLM-Expert-Checkpoints` | 可选；为续训练提供专家 delta/检查点 |
-| 预构建模型镜像 | ModelScope `Fun10165/rs-mllm-*` | 可选；别名见 `rsmllm/config.py`，本地 `models/` 优先 |
-
-#### 文件放置约定
-
-| 内容 | 仓库内路径 |
-|---|---|
-| 基座、四专家、两个续训练 LoRA/完整模型 | `models/` |
-| ModelScope 模型缓存、组合模型缓存 | `.models/` |
-| 五阶段训练 JSON | `finetune_framework/VRSbench/` |
-| General/Grounding JSON、图片索引及物化图片 | `.models/training35-data/` |
-| 五阶段内容哈希图片软链 | `data/assets/<dataset>/` |
-| 续训练配置与实现 | `training/distillation/expert_lora/` |
-| 五阶段入口 | `scripts/train.sh`、`scripts/training/run_stage35.sh` |
-| General/Grounding 入口 | `training/train_general_expert.sh`、`training/train_grounding_expert.sh` |
-| LoRA、merged model、日志和评测结果 | `outputs/training35/<run-id>/` |
-
-训练脚本实际读取的 JSON 为：
-
-| 训练 | JSON |
-|---|---|
-| Stage1 / GA2 / A1 / A2b / Caption | `finetune_framework/VRSbench/{manifest_sft_train.json,g_a2_mix.json,a1_domainalign.json,a2_change_mix.json,expert_data_caption.jsonl}` |
-| General Exp7 | `.models/training35-data/general/exp7_weighted15480.json` |
-| Grounding bootstrap / Exp5 | `.models/training35-data/grounding/{bootstrap_vrsnew942.json,exp5_all43838.json}` |
-
-标准模型名称如下；`models/` 建议只放软链：
+#### 目录约定
 
 ```text
+datasets/
+├── MME-RealWorld-RS/、VRSBench/、XLRS-*/、LEVIR-CC/  # 上游原数据
+└── training35/                                        # 我们改编的 JSON 与内容哈希图片
+
 models/
 ├── Qwen3.5-4B
 ├── expert_general
@@ -357,114 +325,90 @@ models/
 ├── expert_general_lora
 ├── expert_ground_lora
 ├── expert_general_full
-└── expert_ground_full
+├── expert_ground_full
+└── training35/                                        # delta、训练 LoRA 与 merged 产物
 ```
 
-其中 `expert_general`、`expert_ground` 分别是 `W0 + full-rank delta`，不包含
-Exp7/Exp5 LoRA；`*_lora` 是续训练 adapter，`*_full` 是合并后的完整模型。
+| 名称 | 内容 | 说明 |
+|---|---|---|
+| `expert_general` / `expert_ground` | base + 专家 delta | 无 LoRA 版 |
+| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32） | 需合并后使用 |
+| `expert_general_full` / `expert_ground_full` | base + delta + LoRA | 推荐评测用 |
+| `expert_change` / `expert_caption` | base + delta | 无 LoRA |
+| `expert_*_w8a8` / `expert_*_gptq` | 量化版 | 含 LoRA 时以 `*_full` 为源量化 |
 
-#### 准备模型和数据
+#### 准备
 
 ```bash
 source scripts/training/env.sh
 activate_conda
 
-# 当前集群默认路径可直接执行；其他机器用 --help 指定模型/delta 来源
+# 模型软链和 base + delta 专家
 python scripts/stage_training35_models.py --build-experts
 
-# 五阶段 JSON 与内容哈希图片
+# 五阶段 JSON、原图及 General/Grounding JSON
 bash scripts/fetch_training_data.sh
 bash scripts/fetch_raw_images.sh
-
-# General/Grounding 续训练数据
 ms-hub download Uchitachi/RS-MLLM-Distillation-Data \
-  --repo-type dataset --local-dir .models/training35-data
+  --repo-type dataset --local-dir datasets/training35/.source
 
-# 检查全部模型、配置、记录数和图片路径
-python scripts/preflight_training35.py --expert-data .models/training35-data
+# 统一建立 datasets/ 与 datasets/training35/ 软链并检查
+python scripts/stage_training35_data.py
+python scripts/preflight_training35.py
 ```
 
-新机器若没有共享图片，应把数据仓库与官方图片物化到同一目录；脚本已固定上游 revision：
-
-```bash
-ASSET_ROOT="$PWD/.models/training35-assets"
-ms-hub download Uchitachi/RS-MLLM-Distillation-Data \
-  --repo-type dataset --local-dir "$ASSET_ROOT/datasets"
-RS_MLLM_ASSET_ROOT="$ASSET_ROOT" RS_MLLM_ACCEPT_MME_TERMS=1 \
-  bash training/distillation/expert_lora/scripts/download_official_datasets.sh
-test -e .models/training35-data || \
-  ln -s training35-assets/datasets .models/training35-data
-```
+五阶段 JSON 来自 ModelScope `yasumi/rs-mllm-datasets`；General/Grounding JSON
+来自 `Uchitachi/RS-MLLM-Distillation-Data`。无共享原图时的官方下载方法见
+`training/distillation/expert_lora/README.md`。
 
 #### 五阶段训练
 
-父模型关系为：
-
-| 阶段 | 起点 |
-|---|---|
-| `stage1_clean` | `models/Qwen3.5-4B` |
-| `ga2_general` | Stage1 merged |
-| `a1_grounding` | Stage1 merged |
-| `a2b_change` | Stage1 merged |
-| `caption` | GA2 merged |
-
-单阶段训练结束后会自动保存 LoRA、合并到正确父模型并检查产物可重新加载。
-
 ```bash
-# 本地逐段运行；默认共用 outputs/training35/five-stage/
 bash scripts/train.sh stage1_clean
 bash scripts/train.sh ga2_general
 bash scripts/train.sh a1_grounding
 bash scripts/train.sh a2b_change
 bash scripts/train.sh caption
 
-# 完整流水线
+# 完整流水线或单卡 smoke
 bash scripts/train.sh all
-
-# 单卡结构 smoke：每阶段只做一次 optimizer update
 bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
-```
 
-Slurm 模式为五个 `afterok` 作业，每个作业内执行“训练 → 合并 → 重载检查”：
-
-```bash
-bash scripts/train.sh --slurm stage1_clean
+# Slurm afterok 流水线
 bash scripts/train.sh --slurm all
-
-# 可选：指定分区和时限
-TRAINING35_SLURM_PARTITION=gpu-a30 TRAINING35_SLURM_TIME=02:00:00 bash scripts/train.sh --slurm all
 ```
 
-#### General Exp7 与 Grounding Exp5
-
-单卡会自动调整 gradient accumulation，保持有效 batch size 32。
+#### General / Grounding 续训练
 
 ```bash
-RUN_ID=training35-short
-OUT="outputs/training35/$RUN_ID"
+ARTIFACT_ROOT="$PWD/models/training35/runs/training35-short"
 
-# expert_general → General Exp7 LoRA
-bash training/train_general_expert.sh   --config general_exp7 --gpus 1 --max-updates 30   --output-root "$OUT"
+# expert_general -> expert_general_lora
+bash training/train_general_expert.sh \
+  --gpus 1 --max-updates 30 --output-root "$ARTIFACT_ROOT"
 
-# expert_ground → bootstrap LoRA
-bash training/train_grounding_expert.sh   --config grounding_bootstrap_942 --gpus 1   --output-root "$OUT"
-
-# 在 bootstrap adapter 上继续训练 Exp5
-bash training/train_grounding_expert.sh   --config grounding_exp5 --gpus 1 --max-updates 30   --init-lora "$OUT/grounding_bootstrap_942"   --output-root "$OUT"
+# expert_ground -> bootstrap -> expert_ground_lora
+bash training/train_grounding_expert.sh \
+  --stage bootstrap --gpus 1 --output-root "$ARTIFACT_ROOT"
+bash training/train_grounding_expert.sh \
+  --stage final --gpus 1 --max-updates 30 \
+  --init-lora "$ARTIFACT_ROOT/bootstrap/expert_ground_lora" \
+  --output-root "$ARTIFACT_ROOT"
 ```
 
-Exp5 输出是已经包含 bootstrap 续训状态的单个 adapter；最终只需合并
-`expert_ground + Exp5 LoRA`，不能再次叠加 bootstrap。
+合并成完整模型：
 
-完整历史配置：
+```bash
+bash scripts/merge_checkpoint.sh \
+  --base models/expert_general \
+  --lora "$ARTIFACT_ROOT/expert_general_lora" \
+  --output "$ARTIFACT_ROOT/expert_general_full"
 
-| 配置 | GPU | updates |
-|---|---:|---:|
-| General Exp7 | 4 | 484 |
-| Grounding bootstrap | 4 | 30 |
-| Grounding Exp5 | 8 | 1370 |
-
-完整训练使用同一入口、对应 GPU 数量并去掉 `--max-updates`。
+bash scripts/merge_checkpoint.sh \
+  --base models/expert_ground \
+  --lora "$ARTIFACT_ROOT/expert_ground_lora" \
+  --output "$ARTIFACT_ROOT/expert_ground_full"
+```
 
 #### 数据构建与 delta
 
@@ -474,69 +418,8 @@ python scripts/generate_mcq_data.py
 python scripts/gen_expert_deltas.py --verify
 ```
 
-前两个命令生成 ignored 本地 JSON。最后一个命令从 W0 与四个完整专家计算 BF16 delta，
-并逐 tensor 验证 `W0 + delta ≈ expert`；产物位于
-`outputs/merged/expert_deltas_rel_W0/`。
-
-#### 训练关系
-
-```mermaid
-flowchart LR
-  B["模型：Qwen3.5-4B / W0"]
-  S1L["LoRA：stage1_clean"]
-  S1["模型：Stage1 merged"]
-  G2L["LoRA：ga2_general"]
-  GE["模型：expert_general"]
-  A1L["LoRA：a1_grounding"]
-  GR["模型：expert_ground"]
-  CL["LoRA：a2b_change"]
-  CE["模型：expert_change"]
-  CPL["LoRA：caption"]
-  CPE["模型：expert_caption"]
-
-  B -->|"train.sh stage1_clean"| S1L
-  S1L -->|"merge_checkpoint.sh"| S1
-  S1 -->|"train.sh ga2_general"| G2L
-  G2L -->|"merge_checkpoint.sh"| GE
-  S1 -->|"train.sh a1_grounding"| A1L
-  A1L -->|"merge_checkpoint.sh"| GR
-  S1 -->|"train.sh a2b_change"| CL
-  CL -->|"merge_checkpoint.sh"| CE
-  GE -->|"train.sh caption"| CPL
-  CPL -->|"merge_checkpoint.sh"| CPE
-
-  DG["Delta：general"]
-  DR["Delta：grounding"]
-  DC["Delta：change"]
-  DP["Delta：caption"]
-  GE -->|"gen_expert_deltas.py"| DG
-  GR -->|"gen_expert_deltas.py"| DR
-  CE -->|"gen_expert_deltas.py"| DC
-  CPE -->|"gen_expert_deltas.py"| DP
-
-  GL["LoRA：General Exp7"]
-  GF["模型：expert_general_full"]
-  BL["LoRA：bootstrap 942"]
-  E5["LoRA：Grounding Exp5"]
-  RF["模型：expert_ground_full"]
-  GE -->|"train_general_expert.sh"| GL
-  GL -->|"merge_checkpoint.sh"| GF
-  GR -->|"train_grounding_expert.sh"| BL
-  BL -->|"train_grounding_expert.sh --init-lora"| E5
-  E5 -->|"merge_checkpoint.sh"| RF
-```
-
-#### 已完成的验收
-
-- CPU preflight、Shell/Python 检查和 8 个单元测试通过。
-- 五阶段已在单张 A100 上完成 1-update smoke，五个 LoRA/merged model 均可重新加载。
-- General Exp7、Grounding bootstrap/Exp5 已实际完成 30-update A100 短训。
-- Caption 10064 条、MCQ 5000 条和四个 BF16 delta 均已实际生成；四专家 delta 验证通过。
-- smoke 每阶段只有一个 update，只验证功能与数值有限性，不代表 loss 已形成下降趋势。
-- 两组短训没有超过 3 个百分点的主要指标下降，但“向历史终点距离缩短”的严格趋势条件未通过。
-
-更详细的数据哈希、训练参数和历史指标见
-`training/distillation/expert_lora/README.md`。
+四个 raw delta 写入 `models/training35/deltas/`，文件名为
+`expert_general.pt`、`expert_ground.pt`、`expert_change.pt`、`expert_caption.pt`。
 
 ---
 

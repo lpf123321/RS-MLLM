@@ -83,7 +83,7 @@ def main() -> None:
     dataset_root = args.dataset_root.expanduser().resolve()
     models_root = args.models_root.expanduser().resolve()
     run_id = os.environ.get("RS_MLLM_RUN_ID") or datetime.now().strftime("%Y%m%d-%H%M%S")
-    default_output = Path.cwd() / "outputs" / "training35" / run_id
+    default_output = models_root / "training35" / "runs" / run_id
     output_root = (args.output_root or default_output).expanduser().resolve()
     model = models_root / config["model_alias"]
     data = dataset_root / config["data"]

@@ -2,22 +2,22 @@
 """Load expert model via: base Qwen3.5-4B + expert delta (置换).
 
 单基座 + 完整 delta 置换加载器：
-    model = load_base_with_delta(expert='grounding')
+    model = load_base_with_delta(expert='expert_ground')
     等价于 from_pretrained(outputs/merged/a1_grounding_checkpoint-1992_2048)，
     但共享一份 W0 权重，按任务叠加 full-rank delta。
 
-Delta 文件: outputs/merged/expert_deltas_rel_W0/<expert>_relW0.pt
+Delta 文件: models/training35/deltas/<expert>.pt
 """
 import os
 
 import torch
 
 
-def load_base_with_delta(expert, deltas_dir="outputs/merged/expert_deltas_rel_W0"):
+def load_base_with_delta(expert, deltas_dir="models/training35/deltas"):
     from transformers import Qwen3_5ForConditionalGeneration
 
     base_path = "models/Qwen3.5-4B"
-    delta_path = f"{deltas_dir}/{expert}_relW0.pt"
+    delta_path = f"{deltas_dir}/{expert}.pt"
     if not os.path.exists(delta_path):
         raise FileNotFoundError(delta_path)
 
@@ -50,7 +50,7 @@ def apply_delta(model, delta: dict):
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--expert", required=True, choices=["grounding", "change", "general_v2"])
+    ap.add_argument("--expert", required=True, choices=["expert_ground", "expert_change", "expert_general", "expert_caption"])
     ap.add_argument("--save", default=None, help="save assembled model to dir")
     args = ap.parse_args()
     m = load_base_with_delta(args.expert)

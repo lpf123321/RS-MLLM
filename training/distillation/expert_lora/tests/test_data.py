@@ -72,12 +72,12 @@ class ConfigTest(unittest.TestCase):
     def test_all_retained_configs_load(self):
         config_root = Path(__file__).resolve().parents[1] / "configs"
         names = {
-            "general_exp3.json",
-            "general_exp7.json",
-            "grounding_bootstrap_942.json",
-            "grounding_exp1.json",
-            "grounding_exp4.json",
-            "grounding_exp5.json",
+            "expert_general_lora_mcq.json",
+            "expert_general_lora.json",
+            "expert_ground_lora_bootstrap.json",
+            "expert_ground_lora_vrs.json",
+            "expert_ground_lora_xlrs.json",
+            "expert_ground_lora.json",
         }
         for name in names:
             config = load_config(config_root / name)

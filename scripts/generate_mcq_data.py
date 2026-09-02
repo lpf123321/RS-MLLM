@@ -27,9 +27,9 @@ def asset_index(root: Path) -> dict[str, str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", default="datasets/shared_datasets/VRSBench/VRSBench_train.json")
-    ap.add_argument("--assets", default="data/assets/vrsbench")
-    ap.add_argument("--output", default="finetune_framework/VRSbench/combined_train_stage2.json")
+    ap.add_argument("--input", default="datasets/VRSBench/VRSBench_train.json")
+    ap.add_argument("--assets", default="datasets/training35/assets/vrsbench")
+    ap.add_argument("--output", default="datasets/training35/stage2_mcq.json")
     ap.add_argument("--num-mcq", type=int, default=5000)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()

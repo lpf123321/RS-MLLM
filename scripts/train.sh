@@ -27,7 +27,7 @@ esac
 if [[ -z "$RUN_ID" ]]; then
   if ((SMOKE == 1)); then RUN_ID="smoke-$(date +%Y%m%d-%H%M%S)"; else RUN_ID=five-stage; fi
 fi
-RUN_ROOT="$REPO_ROOT/outputs/training35/$RUN_ID/five_stage"
+RUN_ROOT="$REPO_ROOT/models/training35/runs/$RUN_ID"
 LORA_ROOT="$RUN_ROOT/lora"; MERGED_ROOT="$RUN_ROOT/merged"
 RUNNER="$REPO_ROOT/scripts/training/run_stage35.sh"
 MERGER="$REPO_ROOT/scripts/merge_checkpoint.sh"

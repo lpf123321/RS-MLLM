@@ -18,16 +18,16 @@ done
 ((DRY == 1)) || [[ -f "$MODEL/config.json" ]] || { echo "missing model: $MODEL" >&2; exit 2; }
 
 case "$STAGE" in
-  stage1_clean) DATA=manifest_sft_train.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
-  ga2_general) DATA=g_a2_mix.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
-  a1_grounding) DATA=a1_domainalign.json; GLOBAL_BATCH=16; MAX_PIXELS=4194304;;
-  a2b_change) DATA=a2_change_mix.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
-  caption) DATA=expert_data_caption.jsonl; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
+  stage1_clean) DATA=stage1_clean.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
+  ga2_general) DATA=ga2_general.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
+  a1_grounding) DATA=a1_grounding.json; GLOBAL_BATCH=16; MAX_PIXELS=4194304;;
+  a2b_change) DATA=a2b_change.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
+  caption) DATA=caption.jsonl; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
   *) echo "unknown 3.5 stage: $STAGE" >&2; exit 2;;
 esac
-DATA_PATH="$REPO_ROOT/finetune_framework/VRSbench/$DATA"
-IMAGE_ROOT="${TRAIN_DATA_ROOT:-$REPO_ROOT/data}"
-[[ -f "$DATA_PATH" ]] || { echo "missing data: $DATA_PATH; run scripts/fetch_training_data.sh" >&2; exit 2; }
+DATA_PATH="$REPO_ROOT/datasets/training35/$DATA"
+IMAGE_ROOT="${TRAINING35_DATA_ROOT:-$REPO_ROOT/datasets/training35}"
+[[ -f "$DATA_PATH" ]] || { echo "missing data: $DATA_PATH; run scripts/stage_training35_data.py" >&2; exit 2; }
 [[ -d "$IMAGE_ROOT/assets" ]] || { echo "missing image assets: $IMAGE_ROOT/assets" >&2; exit 2; }
 ((SMOKE == 1)) && GLOBAL_BATCH=$GPUS
 [[ "$GPUS" =~ ^[1-9][0-9]*$ ]] || { echo "--gpus must be a positive count" >&2; exit 2; }

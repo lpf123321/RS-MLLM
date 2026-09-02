@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "name": "general_exp3",
+  "name": "ablations/expert_general_lora_mcq",
   "description": "Effective General Expert run: MME-new 3736 + XLRS-new 3080.",
   "expert": "general",
   "model_alias": "expert_general",
-  "data": "general/exp3_mme3736_xlrs3080.json",
+  "data": "expert_general_lora_mcq.json",
   "data_schema": "mcq",
   "expected_records": 6816,
   "init_adapter": null,

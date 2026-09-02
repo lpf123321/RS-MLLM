@@ -7,7 +7,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd -- "${PACKAGE_ROOT}/../../.." && pwd)"
 CONFIG="${PACKAGE_ROOT}/configs/${EXPERIMENT}.json"
-DATASET_ROOT="${RS_MLLM_TRAINING35_DATA:-${REPO_ROOT}/.models/training35-data}"
+DATASET_ROOT="${RS_MLLM_TRAINING35_DATA:-${REPO_ROOT}/datasets/training35}"
+SOURCE_ROOT="${RS_MLLM_DISTILLATION_CACHE:-${DATASET_ROOT}/.source}"
 MODELS_ROOT="${RSMLLM_MODELS_ROOT:-${REPO_ROOT}/models}"
 
 # README commands must work from a fresh login shell. Prefer an explicitly
@@ -25,12 +26,13 @@ else
 fi
 
 [[ -s "${CONFIG}" ]] || { echo "Unknown experiment: ${EXPERIMENT}" >&2; exit 2; }
-if [[ ! -s "${DATASET_ROOT}/ASSET_MANIFEST.json" && "${RS_MLLM_SKIP_DOWNLOAD:-0}" != "1" ]]; then
-  mkdir -p "${DATASET_ROOT}"
+if [[ ! -s "${SOURCE_ROOT}/ASSET_MANIFEST.json" && "${RS_MLLM_SKIP_DOWNLOAD:-0}" != "1" ]]; then
+  mkdir -p "${SOURCE_ROOT}"
   command -v ms-hub >/dev/null 2>&1 || { echo "ms-hub is required to download training data" >&2; exit 2; }
   ms-hub download "${RS_MLLM_DISTILLATION_DATASET_ID:-Uchitachi/RS-MLLM-Distillation-Data}" \
-    --repo-type dataset --local-dir "${DATASET_ROOT}"
+    --repo-type dataset --local-dir "${SOURCE_ROOT}"
 fi
+"${PYTHON_BIN}" "${REPO_ROOT}/scripts/stage_training35_data.py" --expert-source "${SOURCE_ROOT}" --output "${DATASET_ROOT}"
 
 export PYTHONPATH="${PACKAGE_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PYTHON_BIN}" -m expert_lora.runner \

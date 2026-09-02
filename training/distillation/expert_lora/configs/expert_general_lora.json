@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "name": "general_exp7",
-  "description": "Historical General Exp7: MME 3736 + XLRS 3080 at weight 2, plus VRSBench VQA 8664 at weight 1.",
+  "name": "expert_general_lora",
+  "description": "Retained General LoRA: MME 3736 + XLRS 3080 at weight 2, plus VRSBench VQA 8664 at weight 1.",
   "expert": "general",
   "model_alias": "expert_general",
-  "data": "general/exp7_weighted15480.json",
+  "data": "expert_general_lora.json",
   "data_schema": "general_mixed",
   "expected_records": 15480,
   "init_adapter": null,

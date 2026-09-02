@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "name": "grounding_bootstrap_942",
+  "name": "bootstrap/expert_ground_lora",
   "description": "Initial Grounding Expert LoRA trained on the accepted VRSBench-new 942 set.",
   "expert": "grounding",
   "model_alias": "expert_ground",
-  "data": "grounding/bootstrap_vrsnew942.json",
+  "data": "expert_ground_lora_bootstrap.json",
   "data_schema": "vrs_grounding",
   "expected_records": 942,
   "init_adapter": null,

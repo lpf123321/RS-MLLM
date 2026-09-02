@@ -4,10 +4,10 @@
 生成各专家相对原始基座 W0 的完整 delta，并验证 W0+Δ 能精确还原 merged 模型。
 
 四个专家（均可与 W0 同架构对齐，跳过 mtp 层）：
-    grounding : models/expert_ground
-    change    : models/expert_change
-    general   : models/expert_general
-    caption   : models/expert_caption
+    expert_ground : models/expert_ground
+    expert_change : models/expert_change
+    expert_general: models/expert_general
+    expert_caption: models/expert_caption
 
 用法:
     python scripts/gen_expert_deltas.py --verify
@@ -22,14 +22,14 @@ import torch
 from safetensors import safe_open
 
 W0_DIR = "models/Qwen3.5-4B"
-OUT_DIR = "outputs/merged/expert_deltas_rel_W0"
+OUT_DIR = "models/training35/deltas"
 MTPSKIP = ("mtp.",)  # W0 独有层
 
 EXPERTS = {
-    "grounding": "models/expert_ground",
-    "change": "models/expert_change",
-    "general": "models/expert_general",
-    "caption": "models/expert_caption",
+    "expert_ground": "models/expert_ground",
+    "expert_change": "models/expert_change",
+    "expert_general": "models/expert_general",
+    "expert_caption": "models/expert_caption",
 }
 
 
@@ -70,7 +70,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     summaries = {}
     for name, path in EXPERTS.items():
-        delta_path = f"{out_dir}/{name}_relW0.pt"
+        delta_path = f"{out_dir}/{name}.pt"
         if os.path.exists(delta_path) and not args.force:
             print(f"  {name}: reuse existing {delta_path}")
             continue
@@ -98,7 +98,7 @@ def main():
         verification = {}
         for name, path in EXPERTS.items():
             delta = torch.load(
-                f"{out_dir}/{name}_relW0.pt",
+                f"{out_dir}/{name}.pt",
                 map_location="cpu",
                 weights_only=True,
                 mmap=True,
