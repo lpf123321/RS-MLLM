@@ -104,7 +104,7 @@ def _cmd_eval() -> None:
         prepare_eval(ds)   # 图片就绪复用; 首次: 下载评测图片 + 自动构建清单
         cmd = [str(py), str(main_py),
                "--adapter", "qwen35vl",
-               "--model-path", model_dir,
+               "--model_path", model_dir,
                "--datasets", ds]
         if subtask:
             cmd += ["--subtask", subtask]
