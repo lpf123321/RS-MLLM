@@ -25,6 +25,25 @@ import time
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_cli_path(path: Path) -> Path:
+    """Resolve a CLI path from the repository or evaluator directory."""
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    for base in (REPO_ROOT, Path(__file__).resolve().parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (REPO_ROOT / path).resolve()
+
+
+def _resolve_output_dir(path: Path) -> Path:
+    path = path.expanduser()
+    return path.resolve() if path.is_absolute() else (REPO_ROOT / path).resolve()
+
 
 def setup_runtime_env() -> None:
     """自动设置 vLLM 运行时所需环境变量(用户无需手动 export)。
@@ -591,23 +610,26 @@ def main() -> None:
         raise ValueError("batch-size must be >= 1")
     if args.image_load_workers < 1:
         raise ValueError("image-load-workers must be >= 1")
-    # 默认输出目录: results/<manifest文件名>_<profile>_<时间戳>
+    # 默认输出目录: 仓库根/results/<manifest文件名>_<profile>_<时间戳>
     # 每次运行独占目录, 多次跑同一模型互不覆盖; 显式 --output-dir 时尊重传入(保留 resume 语义)
     if args.output_dir is None:
         manifest_name = Path(args.manifest).stem
         key = args.model_profile or (Path(args.derived_profile).stem if args.derived_profile else "model")
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        args.output_dir = Path("results") / f"{manifest_name}_{key}_{stamp}"
+        args.output_dir = REPO_ROOT / "results" / f"{manifest_name}_{key}_{stamp}"
+    else:
+        args.output_dir = _resolve_output_dir(args.output_dir)
     if args.enforce_eager and args.cudagraph_mm_encoder:
         raise ValueError("--cudagraph-mm-encoder cannot be used with --enforce-eager")
     if (args.model_profile is None) == (args.derived_profile is None):
         parser.error("exactly one of --model-profile / --derived-profile is required")
-    manifest = args.manifest.resolve()
-    model = args.model.resolve()
+    manifest = _resolve_cli_path(args.manifest)
+    model = _resolve_cli_path(args.model)
     profile_key = args.model_profile
     derived_manifest: Path | None = None
     if args.derived_profile is not None:
-        derived = load_derived_profile(args.derived_profile)
+        derived_path = _resolve_cli_path(args.derived_profile)
+        derived = load_derived_profile(derived_path)
         if derived.model_path.resolve() != model:
             raise ValueError(
                 f"--model {model} does not match derived profile model_path "
@@ -616,7 +638,7 @@ def main() -> None:
         verify_derived_model_content(derived)
         register_derived_profile(derived)
         profile_key = derived.key
-        derived_manifest = args.derived_profile.resolve()
+        derived_manifest = derived_path
     samples, raw_rows = base.load_samples(manifest)
     config = base.run_config(
         manifest,

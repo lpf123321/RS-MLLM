@@ -2,20 +2,25 @@
 """One-sample-per-task smoke test for the Delta task Router."""
 
 import json
-from rsmllm.config import MODELS_ROOT as M_ROOT
-import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT, MODELS_ROOT as M_ROOT
 
 from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_grounding
 from evaluation.router import rules
 from evaluation.router.task_prune_config import CANDIDATE_TASK_PRUNE_CONFIG
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHARED = "DATA_ROOT"
-GENERAL = "prune/output/new_experts/general_exp7_delta.pt"
-GROUNDING = "M_ROOT/lora_expert/lora/grounding/delta_model.pt"
-CHANGE = "M_ROOT/lora_expert/lora/change/delta_model.pt"
-CAPTION = "M_ROOT/lora_expert/lora/caption/delta_model.pt"
+SHARED = str(DATA_ROOT)
+GENERAL = str(REPO_ROOT / "prune" / "output" / "new_experts" / "general_exp7_delta.pt")
+GROUNDING = str(M_ROOT / "lora_expert" / "lora" / "grounding" / "delta_model.pt")
+CHANGE = str(M_ROOT / "lora_expert" / "lora" / "change" / "delta_model.pt")
+CAPTION = str(M_ROOT / "lora_expert" / "lora" / "caption" / "delta_model.pt")
 
 
 def first(module, path, task=None):
@@ -33,14 +38,14 @@ def main():
         first(mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),
         first(xlrs, f"{SHARED}/XLRS-Bench-lite/xlrs.jsonl"),
         first(levircc, f"{SHARED}/LEVIR-CC/levircc_test.jsonl"),
-        first(xlrs_grounding, os.path.join(ROOT, "evaluation/data/xlrs_grounding.jsonl")),
+        first(xlrs_grounding, str(REPO_ROOT / "evaluation" / "data" / "xlrs_grounding.jsonl")),
     ]
-    with open(os.path.join(ROOT, "evaluation/prompts/xlrs_caption_en.txt"), encoding="utf-8") as f:
+    with (REPO_ROOT / "evaluation" / "prompts" / "xlrs_caption_en.txt").open(encoding="utf-8") as f:
         caption_instruction = f.read().strip()
     samples[1]["prompt"] = caption_instruction
 
     adapter = DeltaPrunedAdapter(
-        "M_ROOT/lora_expert/base_model",
+        str(M_ROOT / "lora_expert" / "base_model"),
         general_lora=GENERAL, grounding_lora=GROUNDING,
         change_lora=CHANGE, caption_lora=CAPTION,
         prune_method="l2norm", keep_ratio=1.0,

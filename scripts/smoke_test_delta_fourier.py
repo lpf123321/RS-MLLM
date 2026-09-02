@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Smoke test DeltaFourierAdapter on one sample per VRSBench task."""
-from rsmllm.config import MODELS_ROOT as M_ROOT
-from rsmllm.config import DATA_ROOT
-import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 
 from evaluation.adapters.delta_fourier import DeltaFourierAdapter
 from evaluation.evalsets import vrsbench
@@ -22,10 +24,10 @@ def main():
         selected.setdefault(sample["task"], sample)
 
     adapter = DeltaFourierAdapter(
-        "M_ROOT/lora_expert/base_model",
-        general_lora="M_ROOT/lora_expert/lora/general/delta_model.pt",
-        grounding_lora="M_ROOT/lora_expert/lora/grounding/delta_model.pt",
-        change_lora="M_ROOT/lora_expert/lora/change/delta_model.pt",
+        str(M_ROOT / "lora_expert" / "base_model"),
+        general_lora=str(M_ROOT / "lora_expert" / "lora" / "general" / "delta_model.pt"),
+        grounding_lora=str(M_ROOT / "lora_expert" / "lora" / "grounding" / "delta_model.pt"),
+        change_lora=str(M_ROOT / "lora_expert" / "lora" / "change" / "delta_model.pt"),
         keep_ratio=0.5,
     )
     adapter.system_prompt = SYSTEM_PROMPTS["vrsbench"]

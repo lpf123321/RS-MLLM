@@ -8,6 +8,19 @@ import json
 from collections import Counter
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_cli_path(path: Path) -> Path:
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    for base in (REPO_ROOT, Path(__file__).resolve().parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (REPO_ROOT / path).resolve()
+
 from schema import Sample
 
 
@@ -33,8 +46,8 @@ def main() -> None:
     parser.add_argument("--testset-dir", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
-    testset_dir = args.testset_dir.resolve()
-    run_dir = args.run_dir.resolve()
+    testset_dir = _resolve_cli_path(args.testset_dir)
+    run_dir = _resolve_cli_path(args.run_dir)
     report_path = run_dir / "validation_report.json"
     if report_path.exists():
         raise FileExistsError(f"Refusing to overwrite {report_path}")

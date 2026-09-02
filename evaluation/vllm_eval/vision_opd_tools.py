@@ -13,6 +13,19 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_cli_path(path: Path) -> Path:
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    for base in (REPO_ROOT, Path(__file__).resolve().parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (REPO_ROOT / path).resolve()
+
 from sampling import coverage_stratified_sample
 from schema import Sample
 from scoring import prediction_letter_distribution, summarize_predictions
@@ -436,15 +449,15 @@ def main() -> None:
     verify_parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "prepare":
-        prepare(args.source_manifest.resolve(), args.output_root.resolve())
+        prepare(_resolve_cli_path(args.source_manifest), _resolve_cli_path(args.output_root))
     elif args.command == "merge":
         merge(
-            args.testset_dir.resolve(),
-            [path.resolve() for path in args.shard_dir],
-            args.output_dir.resolve(),
+            _resolve_cli_path(args.testset_dir),
+            [_resolve_cli_path(path) for path in args.shard_dir],
+            _resolve_cli_path(args.output_dir),
         )
     else:
-        verify(args.testset_dir.resolve(), args.run_dir.resolve())
+        verify(_resolve_cli_path(args.testset_dir), _resolve_cli_path(args.run_dir))
 
 
 if __name__ == "__main__":

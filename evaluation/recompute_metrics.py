@@ -17,6 +17,11 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from evaluation.evalsets import vrsbench, levircc, mme, xlrs
 
@@ -30,7 +35,7 @@ EVALSETS = {
 
 def recompute(pred_path: str, evalset_name: str):
     module, allowed_tasks = EVALSETS[evalset_name]
-    records = json.load(open(pred_path))
+    records = json.loads(Path(pred_path).expanduser().read_text(encoding="utf-8"))
     grouped = defaultdict(lambda: {"references": [], "predictions": []})
     for rec in records:
         task = rec["task"]
@@ -55,7 +60,10 @@ def main():
     ap.add_argument("--predictions", required=True)
     ap.add_argument("--evalset", required=True, choices=list(EVALSETS.keys()))
     args = ap.parse_args()
-    results = recompute(args.predictions, args.evalset)
+    predictions = Path(args.predictions).expanduser()
+    if not predictions.is_absolute():
+        predictions = REPO_ROOT / predictions
+    results = recompute(str(predictions.resolve()), args.evalset)
     print(json.dumps(results, indent=2, default=float))
 
 

@@ -14,12 +14,15 @@ Usage:
 """
 import argparse
 import json
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT
 
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
 from evaluation.main import SYSTEM_PROMPTS, evaluate
@@ -27,7 +30,7 @@ from evaluation.adapters.router_pruned import RouterPrunedAdapter
 from evaluation.router.task_prune_config import THRESHOLD_TASK_PRUNE_CONFIG
 
 SHARED = DATA_ROOT
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = str(REPO_ROOT)
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),
@@ -63,10 +66,19 @@ def main():
     parser.add_argument("--sample_seed", type=int, default=2026)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--datasets", nargs="+", choices=list(DATASETS), default=DEFAULT_DATASETS)
-    parser.add_argument("--output_dir", default="prune/output/prune_sweep")
+    parser.add_argument(
+        "--output_dir",
+        default=str(REPO_ROOT / "prune" / "output" / "prune_sweep"),
+        help="输出目录(相对路径按仓库根解析)",
+    )
     args = parser.parse_args()
+    os.chdir(REPO_ROOT)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    output_dir = Path(args.output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+    output_dir = output_dir.resolve()
+    os.makedirs(output_dir, exist_ok=True)
 
     print("Loading task-adaptive multi-expert model ...", flush=True)
     adapter = RouterPrunedAdapter(
@@ -101,8 +113,8 @@ def main():
         "random_samples": args.random_samples,
         "sample_seed": args.sample_seed,
     }
-    out = os.path.join(args.output_dir, "task_adaptive_results.json")
-    with open(out, "w", encoding="utf-8") as f:
+    out = output_dir / "task_adaptive_results.json"
+    with out.open("w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2, ensure_ascii=False)
     print(f"\nSaved -> {out}", flush=True)
     print(json.dumps(all_results, indent=2, ensure_ascii=False), flush=True)

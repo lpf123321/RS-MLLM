@@ -14,6 +14,19 @@ import time
 from collections import Counter
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_cli_path(path: Path) -> Path:
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    for base in (REPO_ROOT, Path(__file__).resolve().parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (REPO_ROOT / path).resolve()
+
 from model import QwenAdapter
 from schema import Sample
 from scoring import (
@@ -75,9 +88,9 @@ def main() -> None:
     parser.add_argument("--prune-ratio", type=float, default=0.0)
     args = parser.parse_args()
 
-    manifest_path = args.manifest.resolve()
-    model_path = args.model.resolve()
-    output_dir = args.output_dir.resolve()
+    manifest_path = _resolve_cli_path(args.manifest)
+    model_path = _resolve_cli_path(args.model)
+    output_dir = _resolve_cli_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     samples = _load_samples(manifest_path)
 

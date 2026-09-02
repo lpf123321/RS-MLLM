@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from rsmllm.config import DATASETS_CACHE, DATA_REGISTRY
+from rsmllm.config import DATASETS_CACHE, DATA_REGISTRY, REPO_ROOT
 
 # 训练数据发布名 -> 内部名映射(与 scripts/training_data_manifest.sh 保持一致)
 TRAIN_MAP = {
@@ -47,17 +47,30 @@ TRAIN_MAP = {
 VRSBENCH_DIR = "finetune_framework/VRSbench"
 
 
+def _repo_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
+
+
 def get_dataset(name: str, *, cache_dir: str | None = None) -> str:
     """解析数据集引用到本地目录; 未命中缓存时按需调用 ModelScope snapshot_download."""
     p = Path(name).expanduser()
     # 本地目录优先(复现/离线场景): 仅当名字像是路径(含分隔符/绝对路径)时才检查，
     # 避免把数据集别名(如 "training")误认为是仓库里的同名目录。
-    if p.is_absolute() or ("/" in name or "\\" in name):
+    if p.is_absolute():
         if p.exists():
-            return str(p)
+            return str(p.resolve())
+    elif "/" in name or "\\" in name:
+        for candidate in (_repo_path(p), p):
+            if candidate.exists():
+                return str(candidate.resolve())
 
     dataset_id = DATA_REGISTRY.get(name, name)  # 别名 or 直接 id
-    cache = cache_dir or os.environ.get("RSMLLM_DATASETS_CACHE") or str(DATASETS_CACHE)
+    cache = Path(
+        cache_dir or os.environ.get("RSMLLM_DATASETS_CACHE") or str(DATASETS_CACHE)
+    ).expanduser()
+    if not cache.is_absolute():
+        cache = _repo_path(cache)
     if not os.environ.get("MODELSCOPE_OFFLINE"):
         try:
             from modelscope.hub.snapshot_download import snapshot_download
@@ -65,7 +78,7 @@ def get_dataset(name: str, *, cache_dir: str | None = None) -> str:
             raise RuntimeError(
                 "需要 modelscope: pip install modelscope  (或用本地数据集路径绕过)" ) from e
         path = snapshot_download(
-            model_id=dataset_id, repo_type="dataset", local_dir=cache,
+            model_id=dataset_id, repo_type="dataset", local_dir=str(cache.resolve()),
             token=os.environ.get("MODELSCOPE_API_TOKEN") or None,
         )
         return str(path)
@@ -91,11 +104,11 @@ def restore_training_data(dataset_root: str | None = None, *, dest_root: str | N
     返回: 训练数据目标目录.
     """
     from rsmllm.config import REPO_ROOT
-    root = Path(dataset_root) if dataset_root else Path(get_dataset("training"))
+    root = _repo_path(dataset_root) if dataset_root else Path(get_dataset("training"))
     if not root.exists():
         raise FileNotFoundError(f"数据集目录不存在: {root}")
 
-    dest_root = Path(dest_root) if dest_root else REPO_ROOT / VRSBENCH_DIR
+    dest_root = _repo_path(dest_root) if dest_root else REPO_ROOT / VRSBENCH_DIR
     dest_root.mkdir(parents=True, exist_ok=True)
 
     copied = 0
@@ -231,7 +244,7 @@ def ensure_benchmark_data(dataset: str, *, refresh: bool = False) -> Path:
     script = REPO_ROOT / "scripts" / "fetch_benchmark_data.py"
     cmd = [sys.executable, str(script), "--dataset", dataset]
     print(f"[data] 下载评测图片: {dataset} -> {img_dir}")
-    sp.run(cmd, check=True)
+    sp.run(cmd, check=True, cwd=str(REPO_ROOT))
     return img_dir
 
 
@@ -270,6 +283,6 @@ def prepare_eval(dataset: str, *, refresh_images: bool = False,
         cmd = [builder_python, str(script), "--dataset", dataset,
                "--images-root", "../../../datasets/shared_datasets"]
         print(f"[data] 构建评测清单: {dataset}")
-        sp.run(cmd, check=True)
+        sp.run(cmd, check=True, cwd=str(REPO_ROOT))
     validate_eval_manifest(manifest)
     return manifest

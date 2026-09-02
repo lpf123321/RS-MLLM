@@ -16,10 +16,17 @@ import argparse
 import os
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default="transfer/rs_mllm_training_data")
+    ap.add_argument("--data-dir", default=str(REPO_ROOT / "transfer" / "rs_mllm_training_data"))
     ap.add_argument("--repo", default="yasumi/rs-mllm-datasets")
     ap.add_argument("--token", default=None)
     ap.add_argument("--dry-run", action="store_true")
@@ -40,7 +47,7 @@ def main():
     api = HubApi()
     api.login(token)
 
-    root = Path(args.data_dir)
+    root = resolve_path(args.data_dir)
     files = sorted(p for p in root.rglob("*") if p.is_file())
     only = set(args.only.split(",")) if args.only else None
 

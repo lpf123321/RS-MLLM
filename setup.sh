@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+ORIGINAL_CWD="$PWD"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$SCRIPT_DIR"
+cd "$REPO_ROOT"
+
 # ============================================================
 # RS-MLLM 环境安装（懒人回滚路径，自动识别）
 #   bash setup.sh  -> 安装(训练/推理环境, torch 2.8 cu128)
@@ -16,6 +21,11 @@ if [ -n "${BASH_SOURCE}" ] && [ "${BASH_SOURCE}" != "${0}" ]; then
 else
     _SOURCED=0
 fi
+restore_cwd() {
+    if [ "$_SOURCED" = "1" ]; then
+        cd "$ORIGINAL_CWD"
+    fi
+}
 
 # ---------- 主路径: uv ----------
 if command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
@@ -33,6 +43,7 @@ if command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
     fi
     # source 场景: return 即可(不关闭交互 shell); bash 直接跑: exit
     if [ "$_SOURCED" = "1" ]; then
+        restore_cwd
         return 0
     else
         exit 0
@@ -53,6 +64,7 @@ if [ -z "$CONDA_BASE" ]; then
     echo "📌 注意: 若您是直接 source 本脚本, exit 会关闭当前会话。请改运行:  bash setup.sh"
     # 防止 source 场景 exit 关闭交互 shell, 改为 return
     if [ "$_SOURCED" = "1" ]; then
+        restore_cwd
         return 1
     else
         exit 1
@@ -84,3 +96,4 @@ if [ "$_SOURCED" = "1" ]; then
 else
     echo "==> Done. Activate with: conda activate $ENV_NAME"
 fi
+restore_cwd

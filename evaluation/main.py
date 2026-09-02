@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 import json
-from rsmllm.config import DATA_ROOT
 import os
+import sys
 from pathlib import Path
 import random
 import re
+
+_REPO_ROOT_PATH = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT_PATH) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_PATH))
+
+from rsmllm.config import DATA_ROOT
 
 from PIL import Image
 from tqdm import tqdm
@@ -14,7 +20,7 @@ from evaluation.evalsets import vrsbench, mme, xlrs, levircc, xlrs_caption, xlrs
 
 SHARED = DATA_ROOT
 OLD_DATA_ROOT = os.environ.get("DATA_ROOT_OLD", "")
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = str(_REPO_ROOT_PATH)
 
 
 def _load_prompt(name: str) -> str:
@@ -225,7 +231,12 @@ def main():
     parser.add_argument("--sample_seed", type=int, default=2026,
                         help="Seed for --random_samples")
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output", type=str, default="evaluation/results.json")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=str(_REPO_ROOT_PATH / "evaluation" / "results.json"),
+        help="结果文件(相对路径按仓库根解析)",
+    )
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--pruner", type=str,
                         choices=["uniform", "random", "mmtok", "l2norm", "divprune", "scope_l2"],
@@ -264,6 +275,7 @@ def main():
                              "(vqa / caption / referring / mcq / change); "
                              "e.g. --subtask caption 评 Caption 子任务")
     args = parser.parse_args()
+    os.chdir(_REPO_ROOT_PATH)
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_root = args.data_root if os.path.isabs(args.data_root) else os.path.join(repo_root, args.data_root)

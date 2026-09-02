@@ -16,14 +16,24 @@ Usage:
 """
 import argparse
 import json
-from rsmllm.config import MODELS_ROOT as M_ROOT
 import os
 import re
+import sys
+from pathlib import Path
 
-SPLIT_EVALS = (
-    "M_ROOT/lora_expert/evaluation/split_evals/"
-)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import MODELS_ROOT as M_ROOT
+
+SPLIT_EVALS = M_ROOT / "lora_expert" / "evaluation" / "split_evals"
 PIXEL_DIMS_RE = re.compile(r"Given a \d+ x \d+ pixel")
+
+
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 def bbox_to_text(box):
@@ -54,9 +64,11 @@ def regenerate_grounding(image_dir: str, out: str):
     """Rebuild the 2048 grounding jsonl from the split_evals (0-1 bbox + question)."""
     from PIL import Image
 
-    src = os.path.join(SPLIT_EVALS, "xlrs_grounding_test_4096.jsonl")
+    src = SPLIT_EVALS / "xlrs_grounding_test_4096.jsonl"
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
-    with open(src, encoding="utf-8") as f_in, open(out, "w", encoding="utf-8") as f_out:
+    with src.open(encoding="utf-8") as f_in, out_path.open("w", encoding="utf-8") as f_out:
         for line in f_in:
             line = line.strip()
             if not line:
@@ -92,13 +104,16 @@ def regenerate_grounding(image_dir: str, out: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--caption", default="datasets_data/xlrs_caption.jsonl")
-    ap.add_argument("--grounding_images", default="datasets_data/xlrs_grounding_images")
-    ap.add_argument("--grounding", default="datasets_data/xlrs_grounding.jsonl")
+    ap.add_argument("--caption", default=str(REPO_ROOT / "datasets_data" / "xlrs_caption.jsonl"))
+    ap.add_argument("--grounding_images", default=str(REPO_ROOT / "datasets_data" / "xlrs_grounding_images"))
+    ap.add_argument("--grounding", default=str(REPO_ROOT / "datasets_data" / "xlrs_grounding.jsonl"))
     args = ap.parse_args()
 
-    fix_caption(args.caption)
-    regenerate_grounding(args.grounding_images, args.grounding)
+    fix_caption(str(resolve_path(args.caption)))
+    regenerate_grounding(
+        str(resolve_path(args.grounding_images)),
+        str(resolve_path(args.grounding)),
+    )
 
 
 if __name__ == "__main__":

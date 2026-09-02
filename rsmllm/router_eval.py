@@ -166,7 +166,17 @@ def run_eval(
            "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
            "--enforce-eager"]  # 当前稳定配置；graph 模式的启动耗时须看完整结果判断
     print(f"  → 评测 {manifest.name} ...", flush=True)
-    result = subprocess.run(cmd, check=False)
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(REPO_ROOT) + (
+        os.pathsep + existing if existing else ""
+    )
+    result = subprocess.run(
+        cmd,
+        check=False,
+        cwd=str(REPO_ROOT),
+        env=env,
+    )
     if result.returncode:
         print(
             f"  ✗ 评测子进程失败 (exit={result.returncode}); "

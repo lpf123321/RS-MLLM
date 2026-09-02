@@ -38,6 +38,29 @@ MAIN_MENU = {
 }
 
 
+def _repo_env() -> dict[str, str]:
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(REPO_ROOT) + (
+        os.pathsep + existing if existing else ""
+    )
+    return env
+
+
+def _run_repo(
+    command: list[str], *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    child_env = _repo_env()
+    if env:
+        child_env.update(env)
+    return subprocess.run(
+        command,
+        check=False,
+        cwd=str(REPO_ROOT),
+        env=child_env,
+    )
+
+
 def _ask(prompt: str, default: str = "") -> str:
     r = input(f"rsmllm> {prompt}" + (f" [{default}]" if default else "") + ": ").strip()
     return r or default
@@ -62,9 +85,7 @@ def _cmd_eval() -> None:
         cmd = [EVAL_PY, "-m", "rsmllm.router_eval", "--quant", quant]
         if limit:
             cmd += ["--limit", limit]
-        env = dict(os.environ)
-        env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-        result = subprocess.run(cmd, check=False, env=env)
+        result = _run_repo(cmd)
         if result.returncode:
             print(f"  ✗ 一键路由评测失败 (exit={result.returncode})")
         return
@@ -136,7 +157,7 @@ def _cmd_eval() -> None:
                "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
                "--enforce-eager"]
         print(f"  → 评测 {ds} (model={alias}, profile={profile}, manifest={manifest.name}, subtask={subtask or '全量'})")
-        subprocess.run(cmd, check=False)
+        _run_repo(cmd)
 
 
 def _cmd_serve() -> None:
@@ -146,8 +167,6 @@ def _cmd_serve() -> None:
     # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
     if mode == "webui":
         print(f"  → WebUI 推理 model={model_dir} (浏览器打开 http://127.0.0.1:7860)")
         cmd = [str(py), "-m", "rsmllm.webui", "--model", model_dir]
@@ -157,16 +176,16 @@ def _cmd_serve() -> None:
         cmd = [str(py), "-m", "rsmllm.serve",
                "--model", model_dir, "--port", port,
                "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
-    subprocess.run(cmd, check=False, env=env)
+    _run_repo(cmd)
 
 
 def _cmd_quantize() -> None:
     method = _ask("方法 (w8a8-int8 / w4a16-gptq)", "w8a8-int8")
     model = _ask_model()
     out = _ask("输出目录", "quantized_models/out")
-    cmd = [TRAIN_PY, "rsmllm/quantize.py", "--method", method,
+    cmd = [TRAIN_PY, str(REPO_ROOT / "rsmllm" / "quantize.py"), "--method", method,
            "--model", model, "--output", out]
-    subprocess.run(cmd, check=False)
+    _run_repo(cmd)
 
 
 def _cmd_data() -> None:
@@ -174,29 +193,29 @@ def _cmd_data() -> None:
     if action == "download":
         ds = _ask("数据集(all / vrsbench / mme / xlrs / xlrs_caption / xlrs_grounding / levircc)", "all")
         print("  → 下载评测图片(ModelScope 清洗包, ~8.8GB; --source hf 走官方源)")
-        cmd = [EVAL_PY, "scripts/fetch_benchmark_data.py"]
+        cmd = [EVAL_PY, str(REPO_ROOT / "scripts" / "fetch_benchmark_data.py")]
         if ds != "all":
             cmd += ["--dataset", ds]
-        subprocess.run(cmd, check=False)
+        _run_repo(cmd)
     else:
         ds = _ask("数据集 (vrsbench/mme/xlrs/levircc)", "vrsbench")
-        cmd = [TRAIN_PY, f"scripts/preprocess_{ds}.py"]
-        subprocess.run(cmd, check=False)
+        cmd = [TRAIN_PY, str(REPO_ROOT / "scripts" / f"preprocess_{ds}.py")]
+        _run_repo(cmd)
 
 
 def _cmd_simple(name: str, script: str) -> None:
     print(f"  → {name}: {script}")
     path = REPO_ROOT / script
     if script.endswith(".sh"):
-        subprocess.run(["bash", str(path)], check=False)
+        _run_repo(["bash", str(path)])
     else:
-        subprocess.run([TRAIN_PY, str(path)], check=False)
+        _run_repo([TRAIN_PY, str(path)])
 
 
 def _cmd_simple_eval(name: str, script: str) -> None:
     """评测环境解释器执行(vllm 依赖)."""
     print(f"  → {name}: {script}")
-    subprocess.run([EVAL_PY, str(REPO_ROOT / script)], check=False)
+    _run_repo([EVAL_PY, str(REPO_ROOT / script)])
 
 
 def main() -> int:
@@ -218,14 +237,14 @@ def main() -> int:
             elif choice == "2":
                 _cmd_serve()
             elif choice == "3":
-                stage = _ask("训练阶段(dry 预览 / all / stage1_clean / expert_general / a1_grounding / a2b_change / caption)", "dry")
+                stage = _ask("训练阶段(dry 预览 / all / stage1_clean / ga2_general / a1_grounding / a2b_change / caption)", "dry")
                 print("  → 训练流程: train.sh", stage)
                 args = ["bash", str(REPO_ROOT / "scripts/train.sh")]
                 if stage == "dry":
-                    args += ["dry", "stage1_clean"]  # dry 预览默认 stage1_clean
+                    args += ["stage1_clean", "--dry-run"]  # dry 预览默认 stage1_clean
                 else:
                     args.append(stage)
-                subprocess.run(args, check=False)
+                _run_repo(args)
             elif choice == "4":
                 _cmd_quantize()
             elif choice == "5":

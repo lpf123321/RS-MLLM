@@ -13,20 +13,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _settle(key: str, default_repo: Path, cluster_default: str | None = None) -> Path:
-    """env 优先 -> 仓库本地可用 -> 集群路径(兼容正在运行的链路)"""
+    """env 优先 -> 仓库本地 -> 存在的集群路径 -> 仓库默认路径。"""
     v = os.environ.get(key)
     if v:
-        return Path(v).expanduser().resolve()
+        path = Path(v).expanduser()
+        return path if path.is_absolute() else (REPO_ROOT / path).resolve()
     if default_repo.exists():
         return default_repo
     if cluster_default:
-        return Path(cluster_default)
+        cluster_path = Path(cluster_default).expanduser()
+        if cluster_path.exists():
+            return cluster_path.resolve()
     return default_repo
 
 
 def _env_path(key: str, default: Path) -> Path:
     v = os.environ.get(key)
-    return Path(v).expanduser().resolve() if v else default
+    if not v:
+        return default
+    path = Path(v).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 # 数据根(清洗后清单默认为仓库 datasets/; 图片/其他大数据通过 RSMLLM_*_ROOT 指向)

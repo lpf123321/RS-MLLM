@@ -9,13 +9,20 @@ Outputs:
 
 import json
 import os
-from rsmllm.config import DATA_ROOT
 import random
 from pathlib import Path
+import sys
 
-ANNOT_PATH = Path("$DATA_ROOT/LEVIR-CC/LevirCCcaptions.json")
-IMAGE_ROOT = Path("$DATA_ROOT/LEVIR-CC/images")
-OUTPUT_DIR = Path("REPO_ROOT/output")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT as DATASETS_ROOT
+
+DATASET_ROOT = DATASETS_ROOT / "LEVIR-CC"
+ANNOT_PATH = DATASET_ROOT / "LevirCCcaptions.json"
+IMAGE_ROOT = DATASET_ROOT / "images"
+OUTPUT_DIR = REPO_ROOT / "output"
 
 INSTRUCTION = "[CD] Describe the changes between these two images."
 

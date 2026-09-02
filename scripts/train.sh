@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 COMMAND=
 GPUS=1 MAX_UPDATES=0 RUN_ID="${RS_MLLM_RUN_ID:-}" DRY=0 SMOKE=0 SLURM=0
 while (($#)); do

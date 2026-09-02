@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 KIND="${1:-}"
 [[ "$KIND" = general || "$KIND" = grounding ]] || {
   echo "Usage: bash scripts/evaluate_training35.sh general|grounding --model DIR --tag NAME [--subsets DIR] [--batch-size N]" >&2

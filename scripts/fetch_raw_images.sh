@@ -18,6 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 ASSETS_OUT="${ASSETS_OUT:-$REPO_ROOT/data/assets}"
 SHARED_DATA="${RS_MLLM_RAW_DATASETS_ROOT:-${SHARED_DATA:-$REPO_ROOT/datasets}}"
 JOBS=8

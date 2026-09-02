@@ -15,12 +15,15 @@ Usage:
 
 import argparse
 import json
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT
 
 from evaluation.evalsets import vrsbench
 from evaluation.router import rules
@@ -38,13 +41,23 @@ def main():
     ap.add_argument("--eval_batch_size", type=int, default=4)
     ap.add_argument("--max_samples", type=int, default=0)
     args = ap.parse_args()
+    os.chdir(REPO_ROOT)
+    model_path = Path(args.model_path).expanduser()
+    if not model_path.is_absolute():
+        model_path = REPO_ROOT / model_path
+    output_path = Path(args.output).expanduser()
+    if not output_path.is_absolute():
+        output_path = REPO_ROOT / output_path
+    data_override = Path(args.data_path).expanduser() if args.data_path else None
+    if data_override is not None and not data_override.is_absolute():
+        data_override = REPO_ROOT / data_override
 
     SHARED = DATA_ROOT
-    data_path = args.data_path or f"{SHARED}/VRSBench/vrsbench_eval.jsonl"
+    data_path = str(data_override) if data_override is not None else f"{SHARED}/VRSBench/vrsbench_eval.jsonl"
 
     from evaluation.adapters.router import RouterAdapter
     adapter = RouterAdapter(
-        args.model_path,
+        str(model_path),
         general_lora=args.general_lora,
         grounding_lora=args.grounding_lora,
         change_lora=args.change_lora,
@@ -65,10 +78,10 @@ def main():
         {"task": "caption", "reference": s["references"], "prediction": p}
         for s, p in zip(captions, preds)
     ]
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as f:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=1)
-    print(f"  Saved {len(records)} caption predictions to {args.output}", flush=True)
+    print(f"  Saved {len(records)} caption predictions to {output_path}", flush=True)
 
 
 if __name__ == "__main__":

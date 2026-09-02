@@ -15,6 +15,7 @@ FINETUNE=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 
 RED='\033[0;31m' GRN='\033[0;32m' YLW='\033[1;33m' NC='\033[0m'
 ok()   { echo -e "${GRN}[OK]${NC} $*"; }

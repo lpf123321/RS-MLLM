@@ -5,9 +5,54 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 PY="$REPO_ROOT/evaluation/vllm_eval/.venv/bin/python"
-MODELS="${1:-$HOME/router_models}"
-LORAS="${2:-$HOME/lora_test}"
+MODELS="$HOME/router_models"
+LORAS="$HOME/lora_test"
+MODELS_SET=0
+LORAS_SET=0
+while (($#)); do
+  case "$1" in
+    --models-dir)
+      MODELS="${2:?--models-dir requires a directory}"
+      MODELS_SET=1
+      shift 2
+      ;;
+    --lora-dir)
+      LORAS="${2:?--lora-dir requires a directory}"
+      LORAS_SET=1
+      shift 2
+      ;;
+    --help|-h)
+      printf 'Usage: bash scripts/start_router.sh [--models-dir DIR] [--lora-dir DIR]\n'
+      exit 0
+      ;;
+    *)
+      if ((MODELS_SET == 0)); then
+        MODELS="$1"
+        MODELS_SET=1
+      elif ((LORAS_SET == 0)); then
+        LORAS="$1"
+        LORAS_SET=1
+      else
+        echo "unknown argument: $1" >&2
+        exit 2
+      fi
+      shift
+      ;;
+  esac
+done
+resolve_dir() {
+  local path="${1/#\~\//$HOME/}"
+  if [[ "$path" = /* ]]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s\n' "$REPO_ROOT/$path"
+  fi
+}
+MODELS="$(resolve_dir "$MODELS")"
+LORAS="$(resolve_dir "$LORAS")"
+[[ -x "$PY" ]] || { echo "missing evaluator Python: $PY" >&2; exit 2; }
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PATH="$REPO_ROOT/evaluation/vllm_eval/.venv/bin:$PATH"
 
@@ -21,8 +66,17 @@ EXPERTS=(
 
 start_one() {
   local name="$1" model="$2" port="$3" dev="$4" lora="${5:-}"
+  local model_path="$MODELS/$model"
+  [[ -f "$model_path/config.json" ]] || {
+    echo "missing model config: $model_path/config.json" >&2
+    return 2
+  }
+  if [[ -n "$lora" && ! -d "$lora" ]]; then
+    echo "missing LoRA directory: $lora" >&2
+    return 2
+  fi
   local cmd=("$PY" -m vllm.entrypoints.openai.api_server
-    --model "$MODELS/$model" --served-model-name default --port "$port"
+    --model "$model_path" --served-model-name default --port "$port"
     --dtype bfloat16 --trust-remote-code
     --max-model-len 16384 --limit-mm-per-prompt '{"image": 2}'
     --gpu-memory-utilization 0.45)

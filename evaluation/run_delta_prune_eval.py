@@ -12,13 +12,16 @@ Example:
 """
 import argparse
 import json
-from rsmllm.config import MODELS_ROOT as M_ROOT
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 
 from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
@@ -30,12 +33,8 @@ DATASETS = {
     "mme": (mme, f"{SHARED}/MME-RealWorld-RS/mme_rs.jsonl"),
     "xlrs": (xlrs, f"{SHARED}/XLRS-Bench-lite/xlrs.jsonl"),
     "levircc": (levircc, f"{SHARED}/LEVIR-CC/levircc_test.jsonl"),
-    "xlrs_caption": (xlrs_caption, os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "evaluation/data/xlrs_caption.jsonl")),
-    "xlrs_grounding": (xlrs_grounding, os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "evaluation/data/xlrs_grounding.jsonl")),
+    "xlrs_caption": (xlrs_caption, str(REPO_ROOT / "evaluation" / "data" / "xlrs_caption.jsonl")),
+    "xlrs_grounding": (xlrs_grounding, str(REPO_ROOT / "evaluation" / "data" / "xlrs_grounding.jsonl")),
 }
 METHODS = ["uniform", "random", "mmtok", "l2norm", "divprune", "scope_l2"]
 
@@ -112,7 +111,7 @@ class XLRSSharedCaption:
 
 DATASETS["xlrs_caption_shared"] = (
     XLRSSharedCaption,
-    "M_ROOT/lora_expert/evaluation/split_evals/xlrs_caption_en.jsonl",
+    str(M_ROOT / "lora_expert" / "evaluation" / "split_evals" / "xlrs_caption_en.jsonl"),
 )
 
 
@@ -136,7 +135,7 @@ class XLRSInstructionCaption(XLRSSharedCaption):
 
 DATASETS["xlrs_caption_instruction"] = (
     XLRSInstructionCaption,
-    "M_ROOT/lora_expert/evaluation/split_evals/xlrs_caption_en.jsonl",
+    str(M_ROOT / "lora_expert" / "evaluation" / "split_evals" / "xlrs_caption_en.jsonl"),
 )
 
 
@@ -146,11 +145,11 @@ def label(r):
 
 def main():
     parser = argparse.ArgumentParser(description="Delta token-compression ablation")
-    parser.add_argument("--model_path", default="M_ROOT/lora_expert/base_model")
-    parser.add_argument("--general_lora", default="M_ROOT/lora_expert/lora/general/delta_model.pt")
-    parser.add_argument("--grounding_lora", default="M_ROOT/lora_expert/lora/grounding/delta_model.pt")
-    parser.add_argument("--change_lora", default="M_ROOT/lora_expert/lora/change/delta_model.pt")
-    parser.add_argument("--caption_lora", default="M_ROOT/lora_expert/lora/caption/delta_model.pt")
+    parser.add_argument("--model_path", default=str(M_ROOT / "lora_expert" / "base_model"))
+    parser.add_argument("--general_lora", default=str(M_ROOT / "lora_expert" / "lora" / "general" / "delta_model.pt"))
+    parser.add_argument("--grounding_lora", default=str(M_ROOT / "lora_expert" / "lora" / "grounding" / "delta_model.pt"))
+    parser.add_argument("--change_lora", default=str(M_ROOT / "lora_expert" / "lora" / "change" / "delta_model.pt"))
+    parser.add_argument("--caption_lora", default=str(M_ROOT / "lora_expert" / "lora" / "caption" / "delta_model.pt"))
     parser.add_argument("--methods", nargs="+", default=METHODS, choices=METHODS)
     parser.add_argument("--keep_ratios", nargs="+", type=float, default=[0.5, 0.25])
     parser.add_argument("--datasets", nargs="+", default=list(DATASETS))
@@ -160,10 +159,19 @@ def main():
     parser.add_argument("--caption_max_new_tokens", type=int, default=768)
     parser.add_argument("--grounding_max_new_tokens", type=int, default=64)
     parser.add_argument("--force_think", action="store_true")
-    parser.add_argument("--output_dir", default="prune/output/delta_prune_ablation")
+    parser.add_argument(
+        "--output_dir",
+        default=str(REPO_ROOT / "prune" / "output" / "delta_prune_ablation"),
+        help="输出目录(相对路径按仓库根解析)",
+    )
     args = parser.parse_args()
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.chdir(REPO_ROOT)
+    output_dir = Path(args.output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+    output_dir = output_dir.resolve()
+    os.makedirs(output_dir, exist_ok=True)
     for method in args.methods:
         adapter = DeltaPrunedAdapter(
             args.model_path,
@@ -184,7 +192,7 @@ def main():
                 if not os.path.exists(data_path):
                     raise FileNotFoundError(data_path)
                 adapter.system_prompt = SYSTEM_PROMPTS.get(dataset, "")
-                out = os.path.join(args.output_dir, method, f"{dataset}_{label(keep_ratio)}.json")
+                out = output_dir / method / f"{dataset}_{label(keep_ratio)}.json"
                 if os.path.exists(out):
                     print(f"[SKIP] {out}", flush=True)
                     continue
@@ -199,8 +207,8 @@ def main():
                         if dataset == "xlrs_grounding" else None
                     ),
                 )
-                os.makedirs(os.path.dirname(out), exist_ok=True)
-                with open(out, "w", encoding="utf-8") as f:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with out.open("w", encoding="utf-8") as f:
                     json.dump(results, f, indent=2, ensure_ascii=False)
                 print(f"[DONE] {out}", flush=True)
 

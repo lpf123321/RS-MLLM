@@ -8,11 +8,17 @@ Outputs:
 
 import json
 import os
-from rsmllm.config import DATA_ROOT
 from pathlib import Path
+import sys
 
-DATA_ROOT = Path("$DATA_ROOT/VRSBench")
-OUTPUT_DIR = Path("REPO_ROOT/output")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT as DATASETS_ROOT
+
+DATA_ROOT = DATASETS_ROOT / "VRSBench"
+OUTPUT_DIR = REPO_ROOT / "output"
 
 TASK_PREFIX = {
     "caption": "[CAP]",

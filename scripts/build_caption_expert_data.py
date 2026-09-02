@@ -9,7 +9,14 @@
 """
 import argparse
 import json
-import os
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 VRS_INSTRUCTION = "[CAP] Describe the image in detail"
 
@@ -59,20 +66,20 @@ def build_xlrs(long_samples, xlrs_instruction):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--g_a2_mix", default="datasets/training35/ga2_general.json")
-    ap.add_argument("--long_desc", default=".models/five-stage-data/caption_dual_domain_train.jsonl",
+    ap.add_argument("--g_a2_mix", default=str(REPO_ROOT / "datasets" / "training35" / "ga2_general.json"))
+    ap.add_argument("--long_desc", default=str(REPO_ROOT / ".models" / "five-stage-data" / "caption_dual_domain_train.jsonl"),
                     help="历史长描述 JSON/JSONL；默认读取 ModelScope staging 数据")
-    ap.add_argument("--xlrs_prompt", default="evaluation/prompts/xlrs_caption_en.txt")
-    ap.add_argument("--out", default="datasets/training35/caption.generated.json",
+    ap.add_argument("--xlrs_prompt", default=str(REPO_ROOT / "evaluation" / "prompts" / "xlrs_caption_en.txt"))
+    ap.add_argument("--out", default=str(REPO_ROOT / "datasets" / "training35" / "caption.generated.json"),
                     help="重建结果；不覆盖训练入口当前指向的已校验数据")
     ap.add_argument("--xlrs_ratio", type=float, default=1.0,
                     help="XLRS长样本数 = 该比例 * VRS短样本数（默认1:1）")
     args = ap.parse_args()
 
-    xlrs_inst = open(args.xlrs_prompt).read().strip()
+    xlrs_inst = resolve_path(args.xlrs_prompt).read_text(encoding="utf-8").strip()
 
-    short = load_g_a2_mix_caption(args.g_a2_mix)
-    long = load_long_desc(args.long_desc)
+    short = load_g_a2_mix_caption(str(resolve_path(args.g_a2_mix)))
+    long = load_long_desc(str(resolve_path(args.long_desc)))
     print(f"VRS 短样本: {len(short)}，XLRS 长样本: {len(long)}")
 
     # 对齐：以 image 为 key，保证长短用同一批图（要求完全覆盖）
@@ -88,10 +95,11 @@ def main():
     long_ds = build_xlrs([long_by_img[s["image"]] for s in vrs_samples[:n_xlrs]], xlrs_inst)
 
     all_data = vrs_ds + long_ds
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    with open(args.out, "w") as f:
+    output = resolve_path(args.out)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as f:
         json.dump(all_data, f, ensure_ascii=False, indent=1)
-    print(f"写入 {args.out}: 共 {len(all_data)} 条 (VRS {len(vrs_ds)} + XLRS {len(long_ds)})")
+    print(f"写入 {output}: 共 {len(all_data)} 条 (VRS {len(vrs_ds)} + XLRS {len(long_ds)})")
 
 
 if __name__ == "__main__":

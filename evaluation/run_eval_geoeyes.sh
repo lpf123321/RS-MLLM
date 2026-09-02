@@ -9,6 +9,8 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 MODEL_PATH="$REPO_ROOT/models/GeoEyes"
 DATASETS="all"
@@ -41,7 +43,7 @@ echo "  Output:         $OUTPUT"
 echo "  GPU memory:     $GPU_MEMORY_UTILIZATION"
 echo "============================================"
 
-python "$REPO_ROOT/evaluation/main.py" \
+python -m evaluation.main \
     --adapter geoeyes \
     --model_path "$MODEL_PATH" \
     --datasets $DATASETS \

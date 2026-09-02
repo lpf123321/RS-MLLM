@@ -2,6 +2,12 @@
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 
@@ -36,7 +42,12 @@ def main():
                         choices=list(DATASETS.keys()) + ["all"], default=["all"])
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output", type=str, default="evaluation/results_qwen35vl.json")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=str(REPO_ROOT / "evaluation" / "results_qwen35vl.json"),
+        help="结果文件(相对路径按仓库根解析)",
+    )
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--compile_model", action="store_true", default=False)
     parser.add_argument("--disable_thinking", action="store_true", default=True,
@@ -53,6 +64,7 @@ def main():
     parser.add_argument("--prune_r", type=float, default=0.5,
                         help="Pruning ratio (0.5 = keep 50%% of image tokens)")
     args = parser.parse_args()
+    os.chdir(REPO_ROOT)
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ds_names = list(DATASETS.keys()) if "all" in args.datasets else args.datasets

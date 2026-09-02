@@ -8,20 +8,26 @@ Output: output/mme_rs.jsonl (3,738 lines), output/images/mme_*.png (1,265 max)
 
 import json
 import os
-from rsmllm.config import DATA_ROOT
 import sys
 import time
 import traceback
 from pathlib import Path
 from collections import defaultdict
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT as DATASETS_ROOT
+
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-ANNOT_PATH = Path("$DATA_ROOT/MME-RealWorld-RS/MME_RealWorld.json")
-IMAGE_ROOT = Path("$DATA_ROOT/MME-RealWorld-RS")
-OUTPUT_DIR = Path("$DATA_ROOT/MME-RealWorld-RS")
+DATASET_ROOT = DATASETS_ROOT / "MME-RealWorld-RS"
+ANNOT_PATH = DATASET_ROOT / "MME_RealWorld.json"
+IMAGE_ROOT = DATASET_ROOT
+OUTPUT_DIR = DATASET_ROOT
 IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images_resized"
 MAX_LONG_EDGE = 1024
 LOG_FILE = OUTPUT_DIR / "preprocess_mme.log"

@@ -16,6 +16,19 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_cli_path(path: Path) -> Path:
+    path = path.expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    for base in (REPO_ROOT, Path(__file__).resolve().parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (REPO_ROOT / path).resolve()
+
 from model import QwenAdapter
 from model_policy import TRUSTED_MODEL_PROFILES
 from run_eval import _max_new_tokens
@@ -286,8 +299,8 @@ def main() -> None:
     parser.add_argument("--prune-ratio", type=float, default=0.0)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    manifest = args.manifest.resolve()
-    model = args.model.resolve()
+    manifest = _resolve_cli_path(args.manifest)
+    model = _resolve_cli_path(args.model)
     samples, raw_rows = load_samples(manifest)
     config = run_config(
         manifest,
@@ -311,7 +324,7 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({"status": "dry_run_pass", "plan": plan}, ensure_ascii=False, indent=2))
         return
-    output_dir = args.output_dir.resolve()
+    output_dir = _resolve_cli_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config_path = output_dir / "run_config.json"
     if config_path.exists():

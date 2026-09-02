@@ -13,17 +13,35 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluation.main import SYSTEM_PROMPTS, evaluate  # noqa: E402
 from evaluation.base.adapter import BaseModelAdapter  # noqa: E402
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _repo_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--manifest", default="results/batch_manifest_256.jsonl")
+    ap.add_argument(
+        "--manifest",
+        default=str(REPO_ROOT / "results" / "batch_manifest_256.jsonl"),
+    )
     ap.add_argument("--sizes", default="1,4,16,64,128,192")
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--max-num-seqs", type=int, default=64)
     ap.add_argument("--max-model-len", type=int, default=16384)
-    ap.add_argument("--out", default="results/batch_scan.json")
+    ap.add_argument("--out", default=str(REPO_ROOT / "results" / "batch_scan.json"))
     args = ap.parse_args()
+    manifest_path = _repo_path(args.manifest)
+    output_path = _repo_path(args.out)
+    model_path = _repo_path(args.model)
+    os.chdir(REPO_ROOT)
+    if not model_path.is_dir():
+        raise FileNotFoundError(f"model directory does not exist: {model_path}")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"manifest does not exist: {manifest_path}")
 
     sizes = [int(x) for x in args.sizes.split(",")]
     results = {}
@@ -33,10 +51,10 @@ def main() -> int:
             # 复用评测框架 run batch; 只统计效率(不做评分)
             # 需要模型适配器 —— 见 eval 框架, 用其 LLM 适配器按 batch 档跑
             from evaluation.adapters.qwen3vl import Qwen3VLAdapter
-            adapter = Qwen3VLAdapter(model_path=args.model, max_model_len=args.max_model_len,
+            adapter = Qwen3VLAdapter(model_path=str(model_path), max_model_len=args.max_model_len,
                                      batch_size=bs, max_num_seqs=args.max_num_seqs)
             # 固定样本清单
-            lines = open(args.manifest, encoding="utf-8").read().splitlines()[:256]
+            lines = manifest_path.read_text(encoding="utf-8").splitlines()[:256]
             start = time.time()
             n = 0
             for _ in adapter.stream(lines):
@@ -47,8 +65,9 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             results[bs] = {"error": str(e)[:120]}
             print(f"[batch-scan] B={bs}: FAIL {e}", file=sys.stderr)
-    Path(args.out).write_text(json.dumps(results, indent=2), encoding="utf-8")
-    print(f"saved: {args.out}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"saved: {output_path}")
     return 0
 
 

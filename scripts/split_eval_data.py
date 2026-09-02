@@ -12,10 +12,17 @@ LEVIR-CC 全是 change caption（路由到 Change）。
 """
 import json
 import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from rsmllm.config import DATA_ROOT
 
-SHARED = "$DATA_ROOT"
-OUT = "REPO_ROOT/evaluation/split_evals"
+SHARED = str(DATA_ROOT)
+OUT = str(REPO_ROOT / "evaluation" / "split_evals")
 os.makedirs(OUT, exist_ok=True)
 
 

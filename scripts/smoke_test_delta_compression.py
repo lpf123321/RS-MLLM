@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Smoke test DeltaRouter + token_compression selectors."""
 import argparse
-from rsmllm.config import MODELS_ROOT as M_ROOT
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 
 from evaluation.adapters.delta_pruned import DeltaPrunedAdapter
 from evaluation.evalsets import vrsbench
@@ -18,10 +21,10 @@ SHARED = DATA_ROOT
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", default="M_ROOT/lora_expert/base_model")
-    parser.add_argument("--general_lora", default="M_ROOT/lora_expert/lora/general/delta_model.pt")
-    parser.add_argument("--grounding_lora", default="M_ROOT/lora_expert/lora/grounding/delta_model.pt")
-    parser.add_argument("--change_lora", default="M_ROOT/lora_expert/lora/change/delta_model.pt")
+    parser.add_argument("--model_path", default=str(M_ROOT / "lora_expert" / "base_model"))
+    parser.add_argument("--general_lora", default=str(M_ROOT / "lora_expert" / "lora" / "general" / "delta_model.pt"))
+    parser.add_argument("--grounding_lora", default=str(M_ROOT / "lora_expert" / "lora" / "grounding" / "delta_model.pt"))
+    parser.add_argument("--change_lora", default=str(M_ROOT / "lora_expert" / "lora" / "change" / "delta_model.pt"))
     parser.add_argument("--keep_ratio", type=float, default=0.5)
     parser.add_argument("--batch_size", type=int, default=2)
     args = parser.parse_args()

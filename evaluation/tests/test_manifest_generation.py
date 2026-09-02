@@ -159,8 +159,11 @@ def test_prepare_eval_rebuilds_invalid_existing_manifest(
     )
     commands: list[list[str]] = []
 
-    def fake_run(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], *, check: bool, cwd: str
+    ) -> subprocess.CompletedProcess[str]:
         commands.append(command)
+        assert cwd == str(tmp_path)
         builder.build("vrsbench", None, None, "../../../datasets/shared_datasets")
         return subprocess.CompletedProcess(command, 0)
 

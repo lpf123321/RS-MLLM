@@ -14,7 +14,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from rsmllm.config import MODELS_CACHE, MODELS_ROOT, MODEL_REGISTRY, RETIRED_MODEL_ALIASES
+from rsmllm.config import (
+    MODELS_CACHE,
+    MODELS_ROOT,
+    MODEL_REGISTRY,
+    REPO_ROOT,
+    RETIRED_MODEL_ALIASES,
+)
 
 
 LOCAL_MODEL_NAMES = {
@@ -48,9 +54,13 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
     p = Path(name).expanduser()
     # 本地目录优先(复现/离线场景): 仅当名字像是路径时才检查，
     # 避免把模型别名(如 "base")误认为是仓库里的同名目录。
-    if p.is_absolute() or ("/" in name or "\\" in name):
+    if p.is_absolute():
         if p.exists():
-            return str(p)
+            return str(p.resolve())
+    elif "/" in name or "\\" in name:
+        for candidate in (REPO_ROOT / p, p):
+            if candidate.exists():
+                return str(candidate.resolve())
 
 
     # README 3.3.3 defines models/<local_name>/ as the canonical offline
@@ -65,14 +75,18 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
         if (local / marker).is_file():
             return str(local.resolve())
     model_id = MODEL_REGISTRY.get(name, name)  # 别名 or 直接 id
-    cache = cache_dir or os.environ.get("RSMLLM_MODEL_CACHE") or str(MODELS_CACHE)
+    cache = Path(
+        cache_dir or os.environ.get("RSMLLM_MODEL_CACHE") or str(MODELS_CACHE)
+    ).expanduser()
+    if not cache.is_absolute():
+        cache = REPO_ROOT / cache
     if not os.environ.get("MODELSCOPE_OFFLINE"):
         try:
             from modelscope import snapshot_download
         except ImportError as e:
             raise RuntimeError(
                 "需要 modelscope: uv add modelscope  (或用本地模型路径绕过)" ) from e
-        path = snapshot_download(model_id, cache_dir=cache)
+        path = snapshot_download(model_id, cache_dir=str(cache.resolve()))
         return str(path)
     # 离线守卫: 无缓存时报错而不是误用
     raise FileNotFoundError(f"模型 {name!r} 本地无缓存且 MODELSCOPE_OFFLINE=1")

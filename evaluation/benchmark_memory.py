@@ -11,14 +11,24 @@ import json
 import os
 import random
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 
 from evaluation.evalsets import mme, vrsbench, xlrs, levircc
 from evaluation.main import SYSTEM_PROMPTS
+
+
+def _repo_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 DATASETS = {
@@ -141,6 +151,11 @@ def main():
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
+    model_path = _repo_path(args.model_path)
+    data_path = _repo_path(args.data_path)
+    output_path = _repo_path(args.output)
+    os.chdir(REPO_ROOT)
+
     if args.device != "cuda" or not torch.cuda.is_available():
         raise RuntimeError("This benchmark requires an available CUDA GPU.")
     if args.method == "baseline":
@@ -148,8 +163,9 @@ def main():
     elif not 0 < args.keep_ratio <= 1:
         raise ValueError("--keep_ratio must be in (0, 1].")
 
+    args.model_path = str(model_path)
     module = DATASETS[args.dataset]
-    samples = select_samples(module, args.data_path, args.sample_count, args.sample_seed)
+    samples = select_samples(module, str(data_path), args.sample_count, args.sample_seed)
     batch = [(sample["images"], sample["prompt"]) for sample in samples]
 
     torch.cuda.empty_cache()
@@ -174,8 +190,8 @@ def main():
     result = {
         "method": args.method,
         "dataset": args.dataset,
-        "data_path": os.path.abspath(args.data_path),
-        "model_path": args.model_path,
+        "data_path": str(data_path),
+        "model_path": str(model_path),
         "samples": len(samples),
         "sample_seed": args.sample_seed,
         "pruner": (
@@ -196,11 +212,10 @@ def main():
         "nvidia_smi_process_peak_mib": monitor.peak_mib or None,
         "gpu_name": torch.cuda.get_device_name(),
     }
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2), flush=True)
-    print(f"Results saved to {output}", flush=True)
+    print(f"Results saved to {output_path}", flush=True)
 
 
 if __name__ == "__main__":

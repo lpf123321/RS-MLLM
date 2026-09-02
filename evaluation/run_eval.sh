@@ -9,6 +9,8 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 # --- 数据根目录: 优先用环境变量，回调到 datasets/ ---
 export DATA_ROOT="${DATA_ROOT:-$REPO_ROOT/datasets}"
@@ -46,7 +48,7 @@ echo "  Eval batch size: $EVAL_BATCH_SIZE"
 echo "  Compile model:  $([ -n "$COMPILE_MODEL" ] && echo yes || echo no)"
 echo "============================================"
 
-python "$REPO_ROOT/evaluation/main.py" \
+python -m evaluation.main \
     --model_path "$MODEL_PATH" \
     --datasets $DATASETS \
     --max_samples $MAX_SAMPLES \

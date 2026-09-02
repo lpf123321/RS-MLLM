@@ -18,20 +18,23 @@ Example:
 """
 import argparse
 import json
-from rsmllm.config import MODELS_ROOT as M_ROOT
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import MODELS_ROOT as M_ROOT
+from rsmllm.config import DATA_ROOT
 
 from evaluation.evalsets import levircc, mme, vrsbench, xlrs, xlrs_caption, xlrs_grounding
 from evaluation.main import SYSTEM_PROMPTS, evaluate
 from evaluation.adapters.router_pruned import RouterPrunedAdapter
 
 SHARED = DATA_ROOT
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = str(REPO_ROOT)
 
 DATASETS = {
     "vrsbench": (vrsbench, f"{SHARED}/VRSBench/vrsbench_eval.jsonl"),
@@ -64,10 +67,19 @@ def main():
     parser.add_argument("--sample_seed", type=int, default=2026)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--output_dir", default="prune/output/prune_sweep")
+    parser.add_argument(
+        "--output_dir",
+        default=str(REPO_ROOT / "prune" / "output" / "prune_sweep"),
+        help="输出目录(相对路径按仓库根解析)",
+    )
     args = parser.parse_args()
+    os.chdir(REPO_ROOT)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    output_dir = Path(args.output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+    output_dir = output_dir.resolve()
+    os.makedirs(output_dir, exist_ok=True)
 
     print(f"Loading multi-expert model with pruning: methods={args.methods}", flush=True)
     adapter = RouterPrunedAdapter(
@@ -86,7 +98,7 @@ def main():
             adapter.set_keep_ratio(r)
             label = ratio_label(r)
             for ds_name in args.datasets:
-                out_path = os.path.join(args.output_dir, method, f"{ds_name}_{label}.json")
+                out_path = output_dir / method / f"{ds_name}_{label}.json"
                 if os.path.exists(out_path):
                     print(f"[SKIP] method={method} R={r} {ds_name}", flush=True)
                     continue
@@ -105,12 +117,12 @@ def main():
                     random_samples=args.random_samples, sample_seed=args.sample_seed,
                 )
 
-                os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                with open(out_path, "w", encoding="utf-8") as f:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with out_path.open("w", encoding="utf-8") as f:
                     json.dump(results, f, indent=2, ensure_ascii=False)
                 print(f"  -> saved {out_path}", flush=True)
 
-    print(f"DONE. results under {args.output_dir}", flush=True)
+    print(f"DONE. results under {output_dir}", flush=True)
 
 
 if __name__ == "__main__":

@@ -9,15 +9,18 @@ RS-MLLM 推理脚本 —— 支持 LoRA + 剪枝 + 四数据集评估。
 """
 import argparse
 import json
-from rsmllm.config import DATA_ROOT
 import os
 from pathlib import Path
 import re
 import sys
 import time
 
-# Ensure repo root in path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.config import DATA_ROOT
+
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -243,20 +246,37 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--start_offset", type=int, default=0)
-    parser.add_argument("--output_dir", default="outputs/inference_results")
+    parser.add_argument(
+        "--output_dir",
+        default=str(REPO_ROOT / "outputs" / "inference_results"),
+        help="输出目录(相对路径按仓库根解析)",
+    )
     parser.add_argument("--datasets", nargs="+", choices=list(BENCHMARKS.keys()) + ["all"], default=["all"])
     parser.add_argument("--image", nargs="*", help="Image path(s) for single inference")
     parser.add_argument("--text", help="Text prompt for single inference")
 
     args = parser.parse_args()
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.chdir(REPO_ROOT)
+    model_path = Path(args.model_path).expanduser()
+    if not model_path.is_absolute():
+        model_path = REPO_ROOT / model_path
+    lora_path = Path(args.lora_path).expanduser() if args.lora_path else None
+    if lora_path is not None and not lora_path.is_absolute():
+        lora_path = REPO_ROOT / lora_path
+    image_paths = [Path(path).expanduser() for path in (args.image or [])]
+    image_paths = [path if path.is_absolute() else REPO_ROOT / path for path in image_paths]
+    output_dir = Path(args.output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    engine = ModelEngine(args.model_path, lora_path=args.lora_path, device=args.device,
+    engine = ModelEngine(str(model_path), lora_path=str(lora_path) if lora_path else None, device=args.device,
                          prune_method=args.prune_method, prune_r=args.prune_r)
 
     if args.image and args.text:
         bench, sp, _ = BENCHMARKS["vrsbench"]
-        pred = engine.batch_generate([(args.image, args.text, sp)], max_new_tokens=256, batch_size=1)
+        pred = engine.batch_generate([(list(map(str, image_paths)), args.text, sp)], max_new_tokens=256, batch_size=1)
         print(json.dumps({"prediction": pred[0]}, indent=2))
         return
 
@@ -300,11 +320,11 @@ def main():
                 predictions[offset + i] = bench.normalize(pred, group[i]) if hasattr(bench, "normalize") else pred
             offset += len(group)
 
-        out_path = os.path.join(args.output_dir, f"predictions_{ds_name}.json")
+        out_path = output_dir / f"predictions_{ds_name}.json"
         out = [{"task": s["task"], "images": s["images"], "prompt": s["prompt"],
                 "prediction": p, "references": s["references"]}
                for s, p in zip(samples, predictions)]
-        with open(out_path, "w") as f:
+        with out_path.open("w", encoding="utf-8") as f:
             json.dump(out, f, indent=2, ensure_ascii=False)
         print(f"  Saved to {out_path}")
 

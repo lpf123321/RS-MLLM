@@ -17,8 +17,16 @@ import random
 import shutil
 import hashlib
 import numpy as np
+from pathlib import Path
 
 from vllm import LLM, SamplingParams
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _repo_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 PROMPTS = [
     "请用一句话描述这幅遥感图像。",
@@ -109,37 +117,44 @@ def main() -> None:
     # 每个模型: --model <名字> --model-dir <路径>（可多组）
     ap.add_argument("--model", action="append", default=[], help="模型名(bf16/w8a8/gptq/任意)")
     ap.add_argument("--model-dir", action="append", default=[], help="模型目录，与 --model 一一对应")
-    ap.add_argument("--out-dir", default="results/quant_tol_probe", help="输出目录(默认仓库内 results/)")
+    ap.add_argument(
+        "--out-dir",
+        default=str(REPO_ROOT / "results" / "quant_tol_probe"),
+        help="输出目录(相对路径按仓库根解析)",
+    )
     ap.add_argument("--n-flips", type=int, default=20, help="每个权重张量注入的翻转位个数")
     ap.add_argument("--seed", type=int, default=20260826, help="随机种子(可复现)")
     ap.add_argument("--max-tokens", type=int, default=40, help="生成最大 token 数(短答)")
     args = ap.parse_args()
+    os.chdir(REPO_ROOT)
 
     if len(args.model) != len(args.model_dir):
         ap.error("--model 与 --model-dir 数量必须一致(如 --model bf16 --model-dir /path/to/model)")
-    MODELS = dict(zip(args.model, args.model_dir))
+    if not args.model:
+        ap.error("至少指定一组 --model NAME --model-dir DIR")
+    MODELS = {name: _repo_path(path) for name, path in zip(args.model, args.model_dir)}
     SEED = args.seed
     N_FLIPS = args.n_flips
-    OUT = args.out_dir
+    OUT = _repo_path(args.out_dir)
 
-    os.makedirs(OUT, exist_ok=True)
+    OUT.mkdir(parents=True, exist_ok=True)
     sp = SamplingParams(max_tokens=args.max_tokens, temperature=0.0)
     result = {}
     for name, mdir in MODELS.items():
         print(f"=== {name} ===", flush=True)
         # 干净基线
-        base = run(mdir, PROMPTS, sp)
+        base = run(str(mdir), PROMPTS, sp)
         h0 = sha256_file(os.path.join(mdir, [f for f in os.listdir(mdir)
                                              if f.endswith(".safetensors") and "index" not in f][0]))
         # 注入 + 翻转副本
-        dst = f"{OUT}/{name}_flipped"
-        n = flip_weights(mdir, dst, N_FLIPS, SEED, name)
+        dst = OUT / f"{name}_flipped"
+        n = flip_weights(str(mdir), str(dst), N_FLIPS, SEED, name)
         h1 = sha256_file(os.path.join(dst, [f for f in os.listdir(dst)
                                             if f.endswith(".safetensors") and "index" not in f][0]))
         detected = 0 if h0 == h1 else 1  # 哈希不一致 = 完整性检查应捕获
         # 绕过校验（探针）：加载翻转副本（量化模型若加载失败仅记录, 不中断实验)
         try:
-            flipped = run(dst, PROMPTS, sp)
+            flipped = run(str(dst), PROMPTS, sp)
             changed = sum(1 for a, b in zip(base, flipped) if a != b)
             sample = flipped[0][:40]
             flip_load = "ok"
@@ -154,9 +169,9 @@ def main() -> None:
             "sample": sample,
         }
         print(json.dumps(result[name], ensure_ascii=False), flush=True)
-    with open(f"{OUT}/summary.json", "w", encoding="utf-8") as f:
+    with (OUT / "summary.json").open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
-    print("saved:", f"{OUT}/summary.json")
+    print("saved:", OUT / "summary.json")
 
 
 if __name__ == "__main__":

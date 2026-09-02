@@ -14,6 +14,7 @@ SPECS = {
     "vrsbench_vqa": ("VRSBench/vrsbench_eval.jsonl", "[VQA]"),
     "vrsbench_referring": ("VRSBench/vrsbench_eval.jsonl", "[REF]"),
 }
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def canonical(value: object) -> str:
@@ -135,8 +136,21 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def resolve_image_reference(source: Path, value: object) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"empty image reference in {source}")
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    for base in (source.parent, REPO_ROOT):
+        candidate = (base / path).resolve()
+        if candidate.is_file():
+            return candidate
+    return (source.parent / path).resolve()
+
+
 def main() -> None:
-    repo = Path(__file__).resolve().parent.parent
+    repo = REPO_ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--shared-root",
@@ -154,6 +168,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.samples < 1:
         raise ValueError("--samples must be positive")
+
+    for name in ("shared_root", "xlrs_grounding", "output"):
+        value = getattr(args, name).expanduser()
+        if not value.is_absolute():
+            value = repo / value
+        setattr(args, name, value.resolve())
 
     sources = {
         name: (args.shared_root / relative, prefix)
@@ -180,7 +200,7 @@ def main() -> None:
             content = record["messages"][0]["content"]
             for item in content:
                 if isinstance(item, dict) and item.get("type") == "image":
-                    image = Path(str(item["image"])).expanduser()
+                    image = resolve_image_reference(source, item["image"])
                     if not image.is_file():
                         missing_images.append(str(image))
         if missing_images:

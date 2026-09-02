@@ -35,7 +35,8 @@ cd evaluation/vllm_eval
 
 - `--model-profile` 取 `model_policy.py` 中可信 profile（如 `mmerestore_bf16`），
   或 `--derived-profile /path/to/profile.json`（二选一，不能同时省略）；
-- `--output-dir` 省略时默认 `results/<manifest文件名>_<profile>`；
+- `--output-dir` 省略时默认仓库根下的 `results/<manifest文件名>_<profile>`；
+  相对输出目录也按仓库根解析，不随启动时的 cwd 改变；
 - 三 pass 策略（token 倍数 1x/2x/4x），输出 `prediction_attempts.jsonl` + `run_config.json`。
 - 评测器自包含: VLLM_USE_FLASHINFER_SAMPLER/LD_LIBRARY_PATH/WORKER_MULTIPROC 自动设置。
 - 统一路由入口使用 `batch_size=128`（request window）与 `max_num_seqs=64`（GPU
