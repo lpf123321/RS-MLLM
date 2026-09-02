@@ -5,13 +5,16 @@
     model_dir = get_model("w8a8")          # 别名 -> 首次自动下载, 之后直接读缓存
     model_dir = get_model("/path/to/local")  # 本地路径原样返回
     model_dir = get_model("HITSZ-JBGS/xxx")  # 直接给 ModelScope id
+
+`expert_general` / `expert_ground` 是已完成一次 delta+PEFT LoRA 合并的
+canonical 快照；历史 `*_full` 二次合并别名会被拒绝。
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from rsmllm.config import MODELS_CACHE, MODELS_ROOT, MODEL_REGISTRY
+from rsmllm.config import MODELS_CACHE, MODELS_ROOT, MODEL_REGISTRY, RETIRED_MODEL_ALIASES
 
 
 LOCAL_MODEL_NAMES = {
@@ -29,6 +32,11 @@ LOCAL_MODEL_NAMES = {
 
 def get_model(name: str, *, cache_dir: str | None = None) -> str:
     """解析模型引用到本地目录; 未命中缓存时按需调用 ModelScope snapshot_download."""
+    if name in RETIRED_MODEL_ALIASES:
+        raise ValueError(
+            f"模型别名 {name!r} 已停用：它是二次合并产物；"
+            "请使用 canonical expert_general/expert_ground 及其量化别名"
+        )
     p = Path(name).expanduser()
     # 本地目录优先(复现/离线场景): 仅当名字像是路径时才检查，
     # 避免把模型别名(如 "base")误认为是仓库里的同名目录。

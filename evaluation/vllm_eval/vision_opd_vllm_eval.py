@@ -260,6 +260,7 @@ class VLLMBatchAdapter:
         model_path: Path,
         *,
         profile_key: str,
+        quantization: str = "bf16",
         max_pixels: int,
         min_pixels: int,
         max_model_len: int,
@@ -272,10 +273,16 @@ class VLLMBatchAdapter:
     ) -> None:
         if enforce_eager and cudagraph_mm_encoder:
             raise ValueError("Encoder CUDA Graph requires enforce_eager=False")
+        if quantization not in {"bf16", "w8a8", "gptq"}:
+            raise ValueError(
+                "Unsupported vLLM route quantization: "
+                f"{quantization!r} (expected bf16, w8a8, or gptq)"
+            )
         assert_model_allowed(model_path)
         if not skip_content_verification:
             verify_trusted_model_content(model_path, profile_key=profile_key)
         self.profile_key = profile_key
+        self.quantization = quantization
         self.model_path = model_path.resolve()
         self.max_pixels = max_pixels
         self.min_pixels = min_pixels
@@ -357,7 +364,9 @@ class VLLMBatchAdapter:
             "enforce_eager": self.enforce_eager,
             "cudagraph_mm_encoder": self.cudagraph_mm_encoder,
             "mm_encoder_attn_backend": self.mm_encoder_attn_backend,
-            "quantization": "bf16",
+            # The model config selects the actual compressed-tensors/GPTQ
+            # loader; this field records the route selection explicitly.
+            "quantization": self.quantization,
             "pruning": {"ratio": 0.0, "modules": 0, "parameters": 0, "zeros": 0},
             "cuda_device": torch.cuda.get_device_name(),
             "cuda_capability": list(torch.cuda.get_device_capability()),
@@ -513,6 +522,12 @@ def main() -> None:
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--max-num-seqs", type=int, default=64)
     parser.add_argument("--enforce-eager", action="store_true")
+    parser.add_argument(
+        "--quantization",
+        choices=("bf16", "w8a8", "gptq"),
+        default="bf16",
+        help="artifact representation used by the route (metadata and audit)",
+    )
     parser.add_argument("--cudagraph-mm-encoder", action="store_true")
     parser.add_argument(
         "--mm-encoder-attn-backend",
@@ -571,7 +586,7 @@ def main() -> None:
         model,
         min_pixels=args.min_pixels,
         max_pixels=args.max_pixels,
-        quantization="bf16",
+        quantization=args.quantization,
         prune_ratio=0.0,
         profile_key=profile_key,
     )
@@ -579,6 +594,7 @@ def main() -> None:
     engine: dict[str, Any] = {
         "name": "vllm",
         "model_profile": profile_key,
+        "quantization": args.quantization,
         "batch_size": args.batch_size,
         "max_model_len": args.max_model_len,
         "gpu_memory_utilization": args.gpu_memory_utilization,
@@ -640,6 +656,7 @@ def main() -> None:
     adapter = VLLMBatchAdapter(
         model,
         profile_key=profile_key,
+        quantization=args.quantization,
         max_pixels=args.max_pixels,
         min_pixels=args.min_pixels,
         max_model_len=args.max_model_len,

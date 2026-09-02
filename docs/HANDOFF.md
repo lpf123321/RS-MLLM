@@ -21,20 +21,24 @@
 ## 2. 模型（ModelScope，get_model 按需下载缓存到 .models/）
 
 **专家架构**（队友训练口径）：
-- `general` / `grounding` = base + delta + **LoRA(PEFT)** → 完整版 = **`expert_general_full`** / `expert_ground_full`
+- `general` / `grounding` 的 canonical 快照已经是 base + delta + **LoRA(PEFT)**
+  的一次合并结果：`expert_general` / `expert_ground`
 - `change` / `caption` = base + delta（**无 LoRA**，架构如此）
 
 **完整模型矩阵**（12 个，全部已上传 ModelScope + profile 注册）：
 
 | 专家 | bf16 | w8a8 | gptq |
 |---|---|---|---|
-| general（含 LoRA）| `expert_general_full` | `expert_general_full_w8a8` | `expert_general_full_gptq` |
-| ground（含 LoRA）| `expert_ground_full` | `expert_ground_full_w8a8` | `expert_ground_full_gptq` |
+| general（含 LoRA）| `expert_general` | `expert_general_w8a8` | `expert_general_gptq` |
+| ground（含 LoRA）| `expert_ground` | `expert_ground_w8a8` | `expert_ground_gptq` |
 | change（无 LoRA）| `expert_change` | `expert_change_w8a8` | `expert_change_gptq` |
 | caption（无 LoRA）| `expert_caption` | `expert_caption_w8a8` | `expert_caption_gptq` |
 
-- LoRA adapter 单独托管：`expert_general_lora` / `expert_ground_lora`（合并脚本 `scripts/merge_lora_to_model.py`）
-- `_full` 模型 **profile 已注册**（`evaluation/vllm_eval/expert_profiles.py`，sha 实测）——评测器加载会校验
+- LoRA adapter 单独托管：`expert_general_lora` / `expert_ground_lora`，作为
+  canonical 快照的来源记录；不要再次叠加。
+- 旧的 `*_full` 模型及其量化版是二次合并产物，**不用于新评测**；对应 profile
+  仅保留历史结果兼容性，`get_model` 已拒绝这些旧别名。
+- canonical 模型 profile 已注册（`evaluation/vllm_eval/expert_profiles.py`，sha 实测）——评测器加载会校验
 - 别名注册在 `rsmllm/config.py::MODEL_REGISTRY`
 
 ## 3. 数据
@@ -53,12 +57,12 @@
 # 一键路由专家评测(只选量化方式, 其余自动分配):
 python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 # 映射: general→vqa/mme/xlrs-lite; ground→referring/grounding-en; change→levir; caption→caption×2
-# 模型: general/ground 用 full(含LoRA), change/caption 用 delta-only
+# 模型: general/ground 使用已合并一次的 canonical 快照; change/caption 使用 delta-only
 
 # 单模型评测:
 ./rsmllm.sh → [1] 评测 → route/single
 
-# 结果: evaluation/vllm_eval/results/<manifest>_<profile>_<时间戳>/  (每次独立, 互不覆盖)
+# 结果: results/<manifest>_<profile>_<时间戳>/  (每次独立, 互不覆盖)
 #   clean_summary.json(正式分) / predictions.jsonl(原始) / unit_scores.jsonl
 ```
 
@@ -66,6 +70,10 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 - **关 thinking**（`enable_thinking=False`，与 qwen35vl 默认一致；多模态评测不需思考）
 - system prompt 按任务前缀（[VQA]/[CAP]/[REF]/[CD]/[MCQ]，报告口径）
 - manifest 保留任务前缀 + MCQ **保留选项行**（模型需看到 A/B/C/D）
+- `--quantization` 由一键入口透传为 `bf16` / `w8a8` / `gptq`，同时写入
+  `run_config.json`/`run_manifest.json` 的 engine/model 元数据；实际量化由模型目录配置决定
+- 不在离线 vLLM 评测中动态挂 LoRA：vLLM 0.26 的 offline `LLM` 没有经过验证的多模态
+  `add_lora_adapter` 路径；canonical 模型已完成一次合并，禁止二次应用
 - `--enforce-eager`（router_eval 当前稳定配置；graph 模式的启动与编译可能耗时，不能仅凭中途无输出判定挂起）
 - vLLM 错误中的 `cuda:0` 是进程内可见设备序号；`CUDA_VISIBLE_DEVICES=1` 时它对应物理 GPU 1，须用 `nvidia-smi` 的 GPU index/UUID 核对，不能据此断言落在物理 GPU 0。
 - 评测器在创建 `LLM` 前用 NVML 解析物理 GPU UUID、做显存预检并持有进程锁；同一物理 GPU 的重复评测会快速失败，不会再启动冲突的 EngineCore；不同物理 GPU 仍可并行。
@@ -77,6 +85,8 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 2. MCQ 无选项行 → 模型答语义 0 分（已修：保留选项行）
 3. `xlrs` 官方无 test split（HF 只有 train 74 分片）——我们用其 index 顺序前 3,080 条；`xlrs_caption_en`(934) / `xlrs_grounding_test`(6,310) 是官方 test
 4. 评测环境勿加 llmcompressor（依赖冲突）
+5. `results/` 中带 `expert_*_full` 的旧目录来自二次 LoRA 合并，不能作为 canonical
+   指标；新结果应使用 `expert_general`/`expert_ground` 及其 canonical 量化 profile。
 
 ## 5. 推理（Router，报告 §5.3）
 
@@ -100,7 +110,9 @@ bash quantization/setup_env.sh
 python scripts/quantize_qwen35_vlm.py --method w8a8-int8 --model <完整模型> \
   --calibration <calib>.jsonl --calibration-meta <meta>.json --output <out>
 ```
-- 量化前先合并 LoRA（`scripts/merge_lora_to_model.py`）得到完整模型
+- canonical `expert_general` / `expert_ground` 已完成一次 delta+LoRA 合并，量化直接以
+  这些快照为输入；`scripts/merge_lora_to_model.py` 仅用于显式指定的 delta-only 自定义目录，
+  对已有 `merge_manifest.json` 的模型会拒绝二次合并
 - 量化产物含 conversion_manifest.json（记录来源 sha）
 
 ## 8. 报告口径速查

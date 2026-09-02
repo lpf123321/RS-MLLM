@@ -70,6 +70,17 @@ REPORT_CONF = {
 }
 
 # ModelScope 模型注册表(download → 按需拉取)
+# 这些旧产物是在 canonical 快照上二次合并 LoRA 得到的，保留 profile 仅供
+# 历史结果读取，不再作为可解析别名暴露给新入口。
+RETIRED_MODEL_ALIASES = frozenset({
+    "expert_general_full",
+    "expert_ground_full",
+    "expert_general_full_w8a8",
+    "expert_general_full_gptq",
+    "expert_ground_full_w8a8",
+    "expert_ground_full_gptq",
+})
+
 MODEL_REGISTRY = {
     "base": "Fun10165/qwen-3.5-rs",
     "mmerestore_bf16": "Fun10165/rs-mllm-mmerestore-bf16",
@@ -79,12 +90,6 @@ MODEL_REGISTRY = {
     "expert_ground": "Fun10165/rs-mllm-expert-ground",
     "expert_general_lora": "Fun10165/rs-mllm-expert-general-lora",
     "expert_ground_lora": "Fun10165/rs-mllm-expert-ground-lora",
-    "expert_general_full": "Fun10165/rs-mllm-expert-general-full",
-    "expert_ground_full": "Fun10165/rs-mllm-expert-ground-full",
-    "expert_general_full_w8a8": "Fun10165/rs-mllm-expert-general-full-w8a8-int8",
-    "expert_general_full_gptq": "Fun10165/rs-mllm-expert-general-full-w4a16-gptq",
-    "expert_ground_full_w8a8": "Fun10165/rs-mllm-expert-ground-full-w8a8-int8",
-    "expert_ground_full_gptq": "Fun10165/rs-mllm-expert-ground-full-w4a16-gptq",
     "expert_change": "Fun10165/rs-mllm-expert-change",
     "expert_caption": "Fun10165/rs-mllm-expert-caption",
     "expert_general_w8a8": "Fun10165/rs-mllm-expert-general-w8a8-int8",

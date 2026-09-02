@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import json
 import os
 from pathlib import Path
 
-from rsmllm.config import REPORT_CONF, SUBSETS, MANIFESTS
+from rsmllm.config import REPORT_CONF
 from rsmllm.models import get_model, MODEL_REGISTRY
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -51,15 +50,22 @@ def _ask_model() -> str:
 
 
 def _cmd_eval() -> None:
-    mode = _ask("评测模式 (route=一键路由专家评测 / single=单模型评测)", "route")
+    mode = _ask(
+        "评测模式 (route=自动选择已合并 delta+LoRA 并用 vLLM 跑 / single=单模型评测)",
+        "route",
+    )
     if mode == "route":
         quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16")
         limit = _ask("每任务样本上限(留空=全量, 验证用填小值)", "")
-        print(f"  → 一键路由专家评测: 量化={quant}")
+        print(f"  → 一键路由专家评测: 量化={quant} (专家/任务自动分配)")
         cmd = [EVAL_PY, "-m", "rsmllm.router_eval", "--quant", quant]
         if limit:
             cmd += ["--limit", limit]
-        subprocess.run(cmd, check=False)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(cmd, check=False, env=env)
+        if result.returncode:
+            print(f"  ✗ 一键路由评测失败 (exit={result.returncode})")
         return
     model = _ask_model()
     datasets = _ask("数据集(空格/逗号: vrsbench mme xlrs levircc) 或 all", "all")

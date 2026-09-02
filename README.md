@@ -195,7 +195,7 @@ python -m rsmllm.router --chat
 > 实例按需启停（`pkill -f "vllm.entrypoints"`），用完释放显存不影响评测。
 
 支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
-`w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等 15 个），
+`w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等），
 或直接给 ModelScope id / 本地路径。模型按需下载缓存在 `.models/`（
 `RSMLLM_MODEL_CACHE` 可覆盖），离线时 `MODELSCOPE_OFFLINE=1` 强制本地命中。
 
@@ -203,14 +203,18 @@ python -m rsmllm.router --chat
 
 | 别名 | 内容 | 说明 |
 |---|---|---|
-| `expert_general` / `expert_ground` | base + 专家 delta（合并）| 无 LoRA 版 |
-| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32）| 需合并后使用 |
-| `expert_general_full` / `expert_ground_full` | **base + delta + LoRA（完整）** | 推荐评测用 |
+| `expert_general` / `expert_ground` | **base + delta + LoRA（已合并一次）** | canonical 评测模型；附带 `merge_manifest.json` |
+| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32）| 合并来源记录；不要再叠加到 canonical 快照 |
+| `expert_general_full` / `expert_ground_full` | 历史二次合并产物 | **别名已停用，禁止用于新评测** |
 | `expert_change` / `expert_caption` | base + delta（合并）| 无 LoRA（训练口径无）|
-| `expert_*_w8a8` / `expert_*_gptq` | 量化版 | 含 LoRA 版以 `_full` 为源量化 |
+| `expert_*_w8a8` / `expert_*_gptq` | canonical 专家量化版 | 从一次合并后的专家快照生成 |
 
-`_full` 模型 = 队友完整架构（`basemodel + expert(delta) + expert_lora(PEFT)` 合并），
-评测器离线加载直接使用。合并脚本：`scripts/merge_lora_to_model.py`。
+`expert_general` / `expert_ground` 的 `merge_manifest.json` 已明确记录
+`raw_base → expert_delta → peft_lora`，所以它们就是队友完整架构的 canonical
+结果。旧的 `_full` 目录是在该快照上再次合并同一个 adapter 产生的二次合并结果；
+`router_eval` 不再选择它们。`scripts/merge_lora_to_model.py` 对已有合并记录会
+直接拒绝，防止再次叠加；量化模型使用 canonical 快照生成的产物，vLLM 离线 API
+不动态挂 LoRA。
 
 ### 3.4 模型评测
 
@@ -224,8 +228,9 @@ evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
     --model-path <expert_caption路径: 本地目录 或 ModelScope 别名 expert_caption> \
     --datasets vrsbench --subtask caption
 
-# 一键路由专家评测（4 专家×对应任务）
+# 一键路由专家评测（4 专家×对应任务；只选择量化方式）
 evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
+# 量化方式可选: bf16 / w8a8 / gptq
 ```
 
 懒加载：图片 `datasets/shared_datasets/`、模型 `.models/`（`get_model` 自动下载）。`--subtask` 可选 `vqa/caption/referring/mcq/change`。结果写入 `--output` 指定 json。
