@@ -7,26 +7,27 @@
 # <仓库>/data/assets/<sub>/<hash>.png (env.sh 的 LOCAL_ASSETS 探测目标).
 #
 # 图片来源(二选一):
-#   --shared (默认)  从共享/镜像数据集图片拉原始图(VRSBench images/、LEVIR-CC images/)
+#   --local (默认)   从 datasets/VRSBench 与 datasets/LEVIR-CC 读取原图
 #   --hf <repo>      从 HuggingFace 下载数据集图片(评委无共享区的兜底; 需可精确指图目录)
 #
 # 用法:
-#   bash scripts/fetch_raw_images.sh              # 共享区默认(VRS+LEVIR)
-#   bash scripts/fetch_raw_images.sh --shared
+#   bash scripts/fetch_raw_images.sh              # datasets/ 下的 VRS+LEVIR
+#   bash scripts/fetch_raw_images.sh --raw-root /path/to/datasets
 #   bash scripts/fetch_raw_images.sh --hf <repo_id>
 # ============================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ASSETS_OUT="${ASSETS_OUT:-$REPO_ROOT/data/assets}"
-SHARED_DATA="${SHARED_DATA:-/users/u2024311136/shared/shared_datasets}"
+SHARED_DATA="${RS_MLLM_RAW_DATASETS_ROOT:-${SHARED_DATA:-$REPO_ROOT/datasets}}"
 JOBS=8
-MODE="shared"
+MODE="local"
 HF_REPO=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --shared) MODE="shared"; shift ;;
+    --shared|--local) MODE="local"; shift ;;
+    --raw-root) SHARED_DATA="$2"; shift 2 ;;
     --hf)     MODE="hf"; HF_REPO="$2"; shift 2 ;;
     --jobs)   JOBS="$2"; shift 2 ;;
     --out)    ASSETS_OUT="$2"; shift 2 ;;
@@ -69,17 +70,19 @@ for d, n in dirs.most_common(8):
     print(f"  {d or '(root)'}: {n} 图")
 PY
     ;;
-  shared)
-    VRS="$SHARED_DATA/VRSBench/images"
-    LEV="$SHARED_DATA/LEVIR-CC/images"
-    echo "  共享区: $VRS + $LEV"
+  local)
+    VRS="$SHARED_DATA/VRSBench"
+    LEV="$SHARED_DATA/LEVIR-CC"
+    echo "  本地原数据: $VRS + $LEV"
+    [ -d "$VRS" ] || { echo "缺少原数据目录: $VRS" >&2; exit 2; }
+    [ -d "$LEV" ] || { echo "缺少原数据目录: $LEV" >&2; exit 2; }
     ;;
 esac
 
-# 组装 --raw/--sub（shared 固定两对; hf 需用户确认子目录，这里以根递归）
+# 组装 --raw/--sub（local 固定两对; hf 需用户确认子目录，这里以根递归）
 declare -a RAW_DIRS=() SUBS=()
-if [ "$MODE" = "shared" ]; then
-  RAW_DIRS=( "$SHARED_DATA/VRSBench/images" "$SHARED_DATA/LEVIR-CC/images" )
+if [ "$MODE" = "local" ]; then
+  RAW_DIRS=( "$SHARED_DATA/VRSBench" "$SHARED_DATA/LEVIR-CC" )
   SUBS=( "vrsbench" "levir_cc" )
 else
   RAW_DIRS=( "$TIFF" )
@@ -93,7 +96,7 @@ PYARGS=()
 # stage1/GA2/A1 records.
 VRS_RECOVER_SHA="26ab63466cc4f113e6b5e446792eef7ecd3e4a0f7e5a708f3b889ec30cacc7e0"
 VRS_RECOVER_OUT="$ASSETS_OUT/vrsbench/${VRS_RECOVER_SHA}.png"
-if [ "$MODE" = shared ] && [ ! -s "$VRS_RECOVER_OUT" ] && [ -f "$SHARED_DATA/VRSBench/Images_train.zip" ]; then
+if [ "$MODE" = local ] && [ ! -s "$VRS_RECOVER_OUT" ] && [ -f "$SHARED_DATA/VRSBench/Images_train.zip" ]; then
   [ -L "$VRS_RECOVER_OUT" ] && unlink "$VRS_RECOVER_OUT"
   python "$REPO_ROOT/scripts/recover_asset_from_zip.py" \
     --zip "$SHARED_DATA/VRSBench/Images_train.zip" \

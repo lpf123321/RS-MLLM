@@ -309,38 +309,7 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 
 所有命令从仓库根目录执行；训练默认关闭 thinking。
 
-#### 目录约定
-
-```text
-datasets/
-├── MME-RealWorld-RS/、VRSBench/、XLRS-*/、LEVIR-CC/  # 上游原数据
-└── training35/                                        # 我们改编的 JSON 与内容哈希图片
-
-models/
-├── Qwen3.5-4B
-├── expert_general
-├── expert_ground
-├── expert_change
-├── expert_caption
-├── expert_general_lora
-├── expert_ground_lora
-├── expert_general_full
-├── expert_ground_full
-└── training35/                                        # delta、训练 LoRA 与 merged 产物
-```
-
-| 名称 | 内容 | 说明 |
-|---|---|---|
-| `expert_general` / `expert_ground` | base + 专家 delta | 无 LoRA 版 |
-| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32） | 需合并后使用 |
-| `expert_general_full` / `expert_ground_full` | base + delta + LoRA | 推荐评测用 |
-| `expert_change` / `expert_caption` | base + delta | 无 LoRA |
-| `expert_*_w8a8` / `expert_*_gptq` | 量化版 | 含 LoRA 时以 `*_full` 为源量化 |
-
 #### 环境
-
-本节已在 A100、Python 3.10.20、CUDA 12.8、PyTorch 2.8.0、
-Transformers 5.13.0、DeepSpeed 0.17.5、PEFT 0.15.2 上验证。
 
 ```bash
 conda create -n rs_mllm python=3.10 -y
@@ -350,48 +319,63 @@ uv pip install --python "$CONDA_PREFIX/bin/python" --torch-backend cu128 \
   -r pyproject.toml \
   -r training/distillation/expert_lora/requirements.txt \
   'modelscope==1.39.1' 'modelscope-hub==0.3.0'
-
 export CONDA_ENV=rs_mllm
-source scripts/training/env.sh
-activate_conda
 ```
 
-#### 准备
+已验证环境：A100、Python 3.10.20、CUDA 12.8、PyTorch 2.8.0、
+Transformers 5.13.0、DeepSpeed 0.17.5、PEFT 0.15.2。
+
+#### 准备模型和数据
+
+原数据集不随仓库和改编 JSON 重复发布。已有原数据时，请按以下名称放到
+`datasets/`（也可以放软链）；压缩包需先解压，XLRS 的 Hugging Face Arrow 可原样保留：
+
+```text
+datasets/
+├── MME-RealWorld-RS/
+├── VRSBench/
+├── XLRS-Bench-lite/
+├── XLRS-Bench_visual_grounding_en/
+├── LEVIR-CC/
+└── training35/                 # 脚本下载/生成的改编 JSON 与内容哈希图片
+```
+
+依次运行：
 
 ```bash
-# 模型软链和 base + delta 专家
-python scripts/stage_training35_models.py --build-experts
+# base 与四个无 LoRA 专家；缺失时从 ModelScope 下载，已有目录则直接复用
+python scripts/stage_training35_models.py --download
 
-# 五阶段 JSON、原图及 General/Grounding JSON
-bash scripts/fetch_training_data.sh
-bash scripts/fetch_raw_images.sh
-ms-hub download Uchitachi/RS-MLLM-Distillation-Data \
-  --repo-type dataset --local-dir datasets/training35/.source
+# 从 ModelScope 下载五阶段及 General/Grounding 改编 JSON
+python scripts/fetch_training35_data.py
 
-# 统一建立 datasets/ 与 datasets/training35/ 软链并检查
+# 从 datasets/ 原图恢复 XLRS 844 图、建立内容哈希链接并校验 SHA-256
+python scripts/prepare_training35_images.py
+
+# 建立统一训练路径并做 CPU 完整预检
 python scripts/stage_training35_data.py
 python scripts/preflight_training35.py
 ```
 
-五阶段 JSON 来自 ModelScope `yasumi/rs-mllm-datasets`；General/Grounding JSON
-来自 `Uchitachi/RS-MLLM-Distillation-Data`。无共享原图时的官方下载方法见
-`training/distillation/expert_lora/README.md`。
+运行前可加 `--dry-run` 检查前 3 条准备命令的来源和目标，不会下载或扫描大文件。
+模型来自 ModelScope `Fun10165/rs-mllm-*`；五阶段 JSON 来自
+`yasumi/rs-mllm-datasets`；续训练 JSON 来自
+`Uchitachi/RS-MLLM-Distillation-Data`。无原数据时，仓库也提供固定 revision 的
+Hugging Face 官方下载与哈希恢复脚本
+`training/distillation/expert_lora/scripts/download_official_datasets.sh`；MME 需先阅读并同意其许可。由于原图可达数百 GB，官方下载不会被上述准备命令隐式触发。
 
 #### 五阶段训练
 
 ```bash
-bash scripts/train.sh stage1_clean
-bash scripts/train.sh ga2_general
-bash scripts/train.sh a1_grounding
-bash scripts/train.sh a2b_change
-bash scripts/train.sh caption
+bash scripts/train.sh stage1_clean      # 统一 SFT 主干
+bash scripts/train.sh ga2_general       # General 续训
+bash scripts/train.sh a1_grounding      # Grounding 续训
+bash scripts/train.sh a2b_change        # Change 续训
+bash scripts/train.sh caption           # Caption 双域训练
 
-# 完整流水线或单卡 smoke
-bash scripts/train.sh all
+bash scripts/train.sh all               # 完整依赖流水线
 bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
-
-# Slurm afterok 流水线
-bash scripts/train.sh --slurm all
+bash scripts/train.sh --slurm all       # Slurm afterok 流水线
 ```
 
 #### General / Grounding 续训练
@@ -412,7 +396,7 @@ bash training/train_grounding_expert.sh \
   --output-root "$ARTIFACT_ROOT"
 ```
 
-合并成完整模型：
+合并完整模型：
 
 ```bash
 bash scripts/merge_checkpoint.sh \
@@ -434,7 +418,7 @@ python scripts/generate_mcq_data.py
 python scripts/gen_expert_deltas.py --verify
 ```
 
-四个 raw delta 写入 `models/training35/deltas/`，文件名为
+四个 raw delta 写入 `models/training35/deltas/`，命名为
 `expert_general.pt`、`expert_ground.pt`、`expert_change.pt`、`expert_caption.pt`。
 
 ---

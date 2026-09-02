@@ -7,12 +7,14 @@ import json
 import sys
 from pathlib import Path
 
-CANONICAL_MODELS = {
+TRAINING_MODELS = {
     "Qwen3.5-4B": "config.json",
     "expert_general": "config.json",
     "expert_ground": "config.json",
     "expert_change": "config.json",
     "expert_caption": "config.json",
+}
+OUTPUT_MODELS = {
     "expert_general_lora": "adapter_config.json",
     "expert_ground_lora": "adapter_config.json",
     "expert_general_full": "config.json",
@@ -65,6 +67,11 @@ def main() -> None:
         type=Path,
         help="canonical adapted-data directory (default: datasets/training35)",
     )
+    parser.add_argument(
+        "--require-outputs",
+        action="store_true",
+        help="also require the LoRA/full models produced after training",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
     training_data = (
@@ -78,7 +85,10 @@ def main() -> None:
         "expert_data": {},
     }
 
-    for name, marker in CANONICAL_MODELS.items():
+    required_models = dict(TRAINING_MODELS)
+    if args.require_outputs:
+        required_models.update(OUTPUT_MODELS)
+    for name, marker in required_models.items():
         path = repo / "models" / name
         passed = (path / marker).is_file()
         report["models"][name] = {
