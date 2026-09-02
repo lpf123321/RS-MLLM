@@ -136,26 +136,32 @@
 
 ### 3.2 环境配置
 
-**方式一：uv （推荐）**
+**方式一：一键脚本（推荐）**
 
 ```bash
-uv sync --locked            # 按 uv.lock 精确安装 121 个依赖（CUDA 12.8 + torch 2.8.0）
-source .venv/bin/activate
+bash setup.sh                                              # 训练/推理环境(torch 2.8 cu128)
+bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(vllm 0.26 cu129)
 ```
 
-**方式二：Docker 容器（推荐**
+`setup.sh` 自动识别已安装的 **uv / conda**：有 `uv` 时按 `uv.lock` 精确安装并进入 `.venv`，没有 `uv` 时回退 conda；两者都没有时，先按下方「安装 uv（可选）」装好 `uv` 再重跑即可。
+
+**方式二：Docker 容器**
 
 ```bash
 docker build -t rs-mllm .
 docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
 ```
 
-**方式三：一键配置（`setup.sh` 自动识别 uv/conda 并自动进入环境）**
+**安装 uv（可选；仅当脚本提示找不到 uv/conda 时需要）**
 
 ```bash
-bash setup.sh                                              # 训练/推理环境(torch 2.8 cu128)
-bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(vllm 0.26 cu129)
+# 任选一种：
+curl -LsSf https://astral.sh/uv/install.sh | sh   # 官方安装脚本（uv 装到 ~/.local/bin）
+# 或
+python3 -m pip install --user uv
 ```
+
+官方脚本装完后，新开终端即可直接使用 `uv`；若要在当前终端立即生效，执行 `source ~/.local/bin/env`。
 
 > 评测器依赖 vllm 0.26，要用 `evaluation/vllm_eval` 的评测环境，不能用 3.2 的训练环境。
 >
