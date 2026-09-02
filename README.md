@@ -337,13 +337,28 @@ models/
 | `expert_change` / `expert_caption` | base + delta | 无 LoRA |
 | `expert_*_w8a8` / `expert_*_gptq` | 量化版 | 含 LoRA 时以 `*_full` 为源量化 |
 
+#### 环境
+
+本节已在 A100、Python 3.10.20、CUDA 12.8、PyTorch 2.8.0、
+Transformers 5.13.0、DeepSpeed 0.17.5、PEFT 0.15.2 上验证。
+
+```bash
+conda create -n rs_mllm python=3.10 -y
+conda activate rs_mllm
+python -m pip install 'uv==0.12.8'
+uv pip install --python "$CONDA_PREFIX/bin/python" --torch-backend cu128 \
+  -r pyproject.toml \
+  -r training/distillation/expert_lora/requirements.txt \
+  'modelscope==1.39.1' 'modelscope-hub==0.3.0'
+
+export CONDA_ENV=rs_mllm
+source scripts/training/env.sh
+activate_conda
+```
+
 #### 准备
 
 ```bash
-source scripts/training/env.sh
-activate_conda
-python -m pip install 'modelscope==1.39.1' 'modelscope-hub==0.3.0'
-
 # 模型软链和 base + delta 专家
 python scripts/stage_training35_models.py --build-experts
 

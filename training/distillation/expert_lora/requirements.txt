@@ -6,5 +6,5 @@ qwen-vl-utils==0.0.14
 safetensors>=0.5
 modelscope-hub>=0.3.0
 huggingface-hub>=1.0
-Pillow==12.3.0
+Pillow==12.2.0
 pyarrow>=16
