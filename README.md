@@ -307,14 +307,45 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 
 ### 3.5 模型训练
 
-本节只覆盖报告第 5 章的训练验收。五阶段 SFT 与 General/Grounding 续训练均关闭
-thinking；运行产物统一写入 `outputs/training35/<run-id>/`，不会覆盖正式模型。
-LoRA 微调实现位于 `training/distillation/`，自进化代码位于
-`training/self_evolution/`。
+本节只说明报告第 5 章的五阶段 SFT、General/Grounding 续训练及四专家 delta。
+所有训练均关闭 thinking，产物写入 `outputs/training35/`，不会覆盖 `models/` 中的正式模型。
 
-#### 模型目录
+#### 依赖仓库
 
-训练和离线推理优先解析仓库根目录的标准名称：
+| 类型 | 仓库 | 用途 |
+|---|---|---|
+| 代码 | GitHub `lpf123321/RS-MLLM` | 训练、合并、数据构建与验收脚本 |
+| 基座模型 | `Qwen/Qwen3.5-4B` | 五阶段训练的原始基座 W0 |
+| 五阶段数据 | ModelScope `yasumi/rs-mllm-datasets` | Stage1、GA2、A1、A2b、Caption JSON |
+| 续训练数据 | ModelScope `Uchitachi/RS-MLLM-Distillation-Data` | General Exp7、Grounding bootstrap/Exp5 JSON 与图片哈希索引 |
+| 官方图片 | HF `yifanzhang114/MME-RealWorld`、`xiang709/VRSBench`、`initiacms/XLRS-Bench-lite`、`initiacms/XLRS-Bench_visual_grounding_en` | 按哈希重建训练图片，不在本仓库重复发布 |
+| 五阶段图片镜像 | HF `lmms-lab/VRSBench`、`chuangao/LEVIR-CC-CN` | 无共享数据盘时的原图来源 |
+| 专家检查点包 | ModelScope `Uchitachi/RS-MLLM-Expert-Checkpoints` | 可选；为续训练提供专家 delta/检查点 |
+| 预构建模型镜像 | ModelScope `Fun10165/rs-mllm-*` | 可选；别名见 `rsmllm/config.py`，本地 `models/` 优先 |
+
+#### 文件放置约定
+
+| 内容 | 仓库内路径 |
+|---|---|
+| 基座、四专家、两个续训练 LoRA/完整模型 | `models/` |
+| ModelScope 模型缓存、组合模型缓存 | `.models/` |
+| 五阶段训练 JSON | `finetune_framework/VRSbench/` |
+| General/Grounding JSON、图片索引及物化图片 | `.models/training35-data/` |
+| 五阶段内容哈希图片软链 | `data/assets/<dataset>/` |
+| 续训练配置与实现 | `training/distillation/expert_lora/` |
+| 五阶段入口 | `scripts/train.sh`、`scripts/training/run_stage35.sh` |
+| General/Grounding 入口 | `training/train_general_expert.sh`、`training/train_grounding_expert.sh` |
+| LoRA、merged model、日志和评测结果 | `outputs/training35/<run-id>/` |
+
+训练脚本实际读取的 JSON 为：
+
+| 训练 | JSON |
+|---|---|
+| Stage1 / GA2 / A1 / A2b / Caption | `finetune_framework/VRSbench/{manifest_sft_train.json,g_a2_mix.json,a1_domainalign.json,a2_change_mix.json,expert_data_caption.jsonl}` |
+| General Exp7 | `.models/training35-data/general/exp7_weighted15480.json` |
+| Grounding bootstrap / Exp5 | `.models/training35-data/grounding/{bootstrap_vrsnew942.json,exp5_all43838.json}` |
+
+标准模型名称如下；`models/` 建议只放软链：
 
 ```text
 models/
@@ -329,62 +360,45 @@ models/
 └── expert_ground_full
 ```
 
-`.models/` 只作为 ignored cache；`models/` 中使用软链，不复制权重。
-`expert_general` 和 `expert_ground` 分别由 base + full-rank delta 生成，不含最终
-Exp7/Exp5 LoRA。下面的 staging 命令幂等执行、拒绝覆盖冲突路径，并记录所有
-safetensors 分片的大小与 SHA-256：
+其中 `expert_general`、`expert_ground` 分别是 `W0 + full-rank delta`，不包含
+Exp7/Exp5 LoRA；`*_lora` 是续训练 adapter，`*_full` 是合并后的完整模型。
+
+#### 准备模型和数据
 
 ```bash
-cd RS-MLLM
 source scripts/training/env.sh
 activate_conda
+
+# 当前集群默认路径可直接执行；其他机器用 --help 指定模型/delta 来源
 python scripts/stage_training35_models.py --build-experts
-```
 
-共享路径不同的机器可通过 `python scripts/stage_training35_models.py --help` 显式传入
-base、delta、四专家、两个最终 LoRA 和两个最终 full model 的位置。
-`get_model("base")` / `get_model("expert_*")` 会优先使用该本地布局；
-`MODELSCOPE_OFFLINE=1` 时不会意外下载远端版本。
-
-#### 数据与 CPU 预检
-
-原五阶段 JSON 来自公开的 `yasumi/rs-mllm-datasets`；图片按内容哈希链接到
-`data/assets/`：
-
-```bash
+# 五阶段 JSON 与内容哈希图片
 bash scripts/fetch_training_data.sh
 bash scripts/fetch_raw_images.sh
+
+# General/Grounding 续训练数据
+ms-hub download Uchitachi/RS-MLLM-Distillation-Data \
+  --repo-type dataset --local-dir .models/training35-data
+
+# 检查全部模型、配置、记录数和图片路径
+python scripts/preflight_training35.py --expert-data .models/training35-data
 ```
 
-General Exp7、Grounding bootstrap/Exp5 的便携 JSON 与图片索引发布在
-`Uchitachi/RS-MLLM-Distillation-Data`：
+新机器若没有共享图片，应把数据仓库与官方图片物化到同一目录；脚本已固定上游 revision：
 
 ```bash
+ASSET_ROOT="$PWD/.models/training35-assets"
 ms-hub download Uchitachi/RS-MLLM-Distillation-Data \
-  --repo-type dataset \
-  --local-dir .models/training35-data
-
-python -m pip install -r training/distillation/expert_lora/requirements.txt
-
-python training/distillation/expert_lora/scripts/materialize_images.py \
-  --dataset-root .models/training35-data \
-  --source mme_realworld_rs=/path/to/MME-RealWorld-RS \
-  --source vrsbench=/path/to/VRSBench \
-  --source xlrs=/path/to/XLRS-Bench-lite \
-  --source xlrs_grounding=/path/to/XLRS-Bench_visual_grounding_en
-
-python scripts/preflight_training35.py \
-  --expert-data .models/training35-data
+  --repo-type dataset --local-dir "$ASSET_ROOT/datasets"
+RS_MLLM_ASSET_ROOT="$ASSET_ROOT" RS_MLLM_ACCEPT_MME_TERMS=1 \
+  bash training/distillation/expert_lora/scripts/download_official_datasets.sh
+test -e .models/training35-data || \
+  ln -s training35-assets/datasets .models/training35-data
 ```
 
-物化器只读取上游训练 split，按字节数和 SHA-256 校验，并用 Pillow 12.3.0
-确定性重放历史 JPEG preview；首次构建不要使用 `--resume-verified`。CPU 预检检查
-9 个模型入口、全部普通 JSON 配置、五阶段 273,340 条记录对应图片，以及三组续训练数据
-的 schema、相对路径和图片存在性。
+#### 五阶段训练
 
-#### 五阶段链路
-
-父模型关系固定如下：
+父模型关系为：
 
 | 阶段 | 起点 |
 |---|---|
@@ -394,44 +408,65 @@ python scripts/preflight_training35.py \
 | `a2b_change` | Stage1 merged |
 | `caption` | GA2 merged |
 
-单卡结构 smoke 每阶段完成一次 optimizer update、保存 LoRA、显式按正确父模型合并，
-并重新读取 adapter/merged safetensors：
+单阶段训练结束后会自动保存 LoRA、合并到正确父模型并检查产物可重新加载。
 
 ```bash
-bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
-```
-
-本地前台逐段执行时，默认共同写入 `outputs/training35/five-stage/five_stage/`，所以下列
-命令可按顺序直接运行；已完成且可重载的阶段会被幂等复用：
-
-```bash
+# 本地逐段运行；默认共用 outputs/training35/five-stage/
 bash scripts/train.sh stage1_clean
 bash scripts/train.sh ga2_general
 bash scripts/train.sh a1_grounding
 bash scripts/train.sh a2b_change
 bash scripts/train.sh caption
 
-# 等价的完整前台流水线
+# 完整流水线
 bash scripts/train.sh all
+
+# 单卡结构 smoke：每阶段只做一次 optimizer update
+bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
 ```
 
-需要隔离一轮输出时加 `--run-id <run-id>`；逐段执行必须使用同一个 run-id。
-Slurm 模式把每段的“训练→合并→重载验证”封装成一个作业，`all` 使用
-`afterok` 串成五作业依赖链：
+Slurm 模式为五个 `afterok` 作业，每个作业内执行“训练 → 合并 → 重载检查”：
 
 ```bash
 bash scripts/train.sh --slurm stage1_clean
 bash scripts/train.sh --slurm all
 
-# 非默认分区/时限通过环境变量显式指定
-TRAINING35_SLURM_PARTITION=gpu-a30 \
-TRAINING35_SLURM_TIME=02:00:00 \
-bash scripts/train.sh --slurm all
+# 可选：指定分区和时限
+TRAINING35_SLURM_PARTITION=gpu-a30 TRAINING35_SLURM_TIME=02:00:00 bash scripts/train.sh --slurm all
 ```
 
-提交前可追加 `--dry-run` 检查展开后的 `sbatch` 和依赖 ID，不会申请 GPU。
+#### General Exp7 与 Grounding Exp5
 
-数据构建与四专家 full-rank delta 使用以下无参数命令：
+单卡会自动调整 gradient accumulation，保持有效 batch size 32。
+
+```bash
+RUN_ID=training35-short
+OUT="outputs/training35/$RUN_ID"
+
+# expert_general → General Exp7 LoRA
+bash training/train_general_expert.sh   --config general_exp7 --gpus 1 --max-updates 30   --output-root "$OUT"
+
+# expert_ground → bootstrap LoRA
+bash training/train_grounding_expert.sh   --config grounding_bootstrap_942 --gpus 1   --output-root "$OUT"
+
+# 在 bootstrap adapter 上继续训练 Exp5
+bash training/train_grounding_expert.sh   --config grounding_exp5 --gpus 1 --max-updates 30   --init-lora "$OUT/grounding_bootstrap_942"   --output-root "$OUT"
+```
+
+Exp5 输出是已经包含 bootstrap 续训状态的单个 adapter；最终只需合并
+`expert_ground + Exp5 LoRA`，不能再次叠加 bootstrap。
+
+完整历史配置：
+
+| 配置 | GPU | updates |
+|---|---:|---:|
+| General Exp7 | 4 | 484 |
+| Grounding bootstrap | 4 | 30 |
+| Grounding Exp5 | 8 | 1370 |
+
+完整训练使用同一入口、对应 GPU 数量并去掉 `--max-updates`。
+
+#### 数据构建与 delta
 
 ```bash
 python scripts/build_caption_expert_data.py
@@ -439,251 +474,69 @@ python scripts/generate_mcq_data.py
 python scripts/gen_expert_deltas.py --verify
 ```
 
-Caption 重建结果和 MCQ 结果均为 ignored 本地 JSON；delta 以 BF16 写到
-`outputs/merged/expert_deltas_rel_W0/`。最后一个命令从标准 `models/Qwen3.5-4B`
-与四个 `models/expert_*` 计算差值，并逐 tensor 检查 `W0 + delta ≈ expert`
-（仅允许 BF16 舍入误差）。
+前两个命令生成 ignored 本地 JSON。最后一个命令从 W0 与四个完整专家计算 BF16 delta，
+并逐 tensor 验证 `W0 + delta ≈ expert`；产物位于
+`outputs/merged/expert_deltas_rel_W0/`。
 
-合并工具不再有隐式 raw-base 默认值，三个路径都必须显式提供：
-
-```bash
-bash scripts/merge_checkpoint.sh \
-  --base /path/to/parent-model \
-  --lora /path/to/adapter \
-  --output /path/to/new-merged-model
-```
-
-#### 模型—Delta—LoRA 关系图
-
-下图中方框均为模型、full-rank delta 或 LoRA；每条有向边的文字就是执行该变换的脚本：
+#### 训练关系
 
 ```mermaid
 flowchart LR
-  B["模型<br/>Qwen3.5-4B (W0)"]
-  S1L["LoRA<br/>stage1_clean"]
-  S1["模型<br/>Stage1 merged"]
-  G2L["LoRA<br/>ga2_general"]
-  G2["模型<br/>GA2 / models/expert_general"]
-  A1L["LoRA<br/>a1_grounding"]
-  A1["模型<br/>A1 / models/expert_ground"]
-  CGL["LoRA<br/>a2b_change"]
-  CG["模型<br/>models/expert_change"]
-  CPL["LoRA<br/>caption"]
-  CP["模型<br/>models/expert_caption"]
+  B["模型：Qwen3.5-4B / W0"]
+  S1L["LoRA：stage1_clean"]
+  S1["模型：Stage1 merged"]
+  G2L["LoRA：ga2_general"]
+  GE["模型：expert_general"]
+  A1L["LoRA：a1_grounding"]
+  GR["模型：expert_ground"]
+  CL["LoRA：a2b_change"]
+  CE["模型：expert_change"]
+  CPL["LoRA：caption"]
+  CPE["模型：expert_caption"]
 
-  B -->|"scripts/train.sh stage1_clean"| S1L
-  S1L -->|"merge_checkpoint.sh (base=W0)"| S1
-  S1 -->|"scripts/train.sh ga2_general"| G2L
-  G2L -->|"merge_checkpoint.sh (base=Stage1)"| G2
-  S1 -->|"scripts/train.sh a1_grounding"| A1L
-  A1L -->|"merge_checkpoint.sh (base=Stage1)"| A1
-  S1 -->|"scripts/train.sh a2b_change"| CGL
-  CGL -->|"merge_checkpoint.sh (base=Stage1)"| CG
-  G2 -->|"scripts/train.sh caption"| CPL
-  CPL -->|"merge_checkpoint.sh (base=GA2)"| CP
+  B -->|"train.sh stage1_clean"| S1L
+  S1L -->|"merge_checkpoint.sh"| S1
+  S1 -->|"train.sh ga2_general"| G2L
+  G2L -->|"merge_checkpoint.sh"| GE
+  S1 -->|"train.sh a1_grounding"| A1L
+  A1L -->|"merge_checkpoint.sh"| GR
+  S1 -->|"train.sh a2b_change"| CL
+  CL -->|"merge_checkpoint.sh"| CE
+  GE -->|"train.sh caption"| CPL
+  CPL -->|"merge_checkpoint.sh"| CPE
 
-  DG["Delta<br/>general_relW0"]
-  DR["Delta<br/>grounding_relW0"]
-  DC["Delta<br/>change_relW0"]
-  DP["Delta<br/>caption_relW0"]
+  DG["Delta：general"]
+  DR["Delta：grounding"]
+  DC["Delta：change"]
+  DP["Delta：caption"]
+  GE -->|"gen_expert_deltas.py"| DG
+  GR -->|"gen_expert_deltas.py"| DR
+  CE -->|"gen_expert_deltas.py"| DC
+  CPE -->|"gen_expert_deltas.py"| DP
 
-  G2 -->|"gen_expert_deltas.py --verify"| DG
-  A1 -->|"gen_expert_deltas.py --verify"| DR
-  CG -->|"gen_expert_deltas.py --verify"| DC
-  CP -->|"gen_expert_deltas.py --verify"| DP
-
-  GL["LoRA<br/>General Exp7"]
-  GF["模型<br/>expert_general_full"]
-  BL["LoRA<br/>Ground bootstrap 942"]
-  RL["LoRA<br/>Ground Exp5（含 bootstrap 续训状态）"]
-  RF["模型<br/>expert_ground_full"]
-
-  G2 -->|"training/train_general_expert.sh"| GL
-  GL -->|"merge_checkpoint.sh (base=expert_general)"| GF
-  A1 -->|"train_grounding_expert.sh bootstrap"| BL
-  BL -->|"train_grounding_expert.sh exp5 --init-lora"| RL
-  RL -->|"merge_checkpoint.sh (base=expert_ground)"| RF
+  GL["LoRA：General Exp7"]
+  GF["模型：expert_general_full"]
+  BL["LoRA：bootstrap 942"]
+  E5["LoRA：Grounding Exp5"]
+  RF["模型：expert_ground_full"]
+  GE -->|"train_general_expert.sh"| GL
+  GL -->|"merge_checkpoint.sh"| GF
+  GR -->|"train_grounding_expert.sh"| BL
+  BL -->|"train_grounding_expert.sh --init-lora"| E5
+  E5 -->|"merge_checkpoint.sh"| RF
 ```
 
-这里 Exp5 LoRA 是从 bootstrap adapter 继续优化后的单个 adapter；最终合并时只需要
-`expert_ground + Exp5 LoRA`，不再额外叠加一次 bootstrap。
+#### 已完成的验收
 
-#### General Exp7 与 Grounding Exp5
+- CPU preflight、Shell/Python 检查和 8 个单元测试通过。
+- 五阶段已在单张 A100 上完成 1-update smoke，五个 LoRA/merged model 均可重新加载。
+- General Exp7、Grounding bootstrap/Exp5 已实际完成 30-update A100 短训。
+- Caption 10064 条、MCQ 5000 条和四个 BF16 delta 均已实际生成；四专家 delta 验证通过。
+- smoke 每阶段只有一个 update，只验证功能与数值有限性，不代表 loss 已形成下降趋势。
+- 两组短训没有超过 3 个百分点的主要指标下降，但“向历史终点距离缩短”的严格趋势条件未通过。
 
-单卡会自动调整 gradient accumulation，保持历史有效 batch size 32。30-update
-短训命令：
-
-```bash
-RUN_ID=training35-short
-OUT="outputs/training35/$RUN_ID"
-
-bash training/train_general_expert.sh \
-  --config general_exp7 \
-  --gpus 1 \
-  --max-updates 30 \
-  --output-root "$OUT"
-
-bash training/train_grounding_expert.sh \
-  --config grounding_bootstrap_942 \
-  --gpus 1 \
-  --output-root "$OUT"
-
-bash training/train_grounding_expert.sh \
-  --config grounding_exp5 \
-  --gpus 1 \
-  --init-lora "$OUT/grounding_bootstrap_942" \
-  --max-updates 30 \
-  --output-root "$OUT"
-```
-
-完整历史训练与短训使用相同入口，只改变卡数并去掉 `--max-updates`：
-
-| 配置 | 起点 | GPU | gradient accumulation | 完整 updates |
-|---|---|---:|---:|---:|
-| General Exp7 | `models/expert_general` | 4 | 8 | 484 |
-| Grounding bootstrap | `models/expert_ground` | 4 | 8 | 30 |
-| Grounding Exp5 | 新生成的 bootstrap LoRA | 8 | 4 | 1370 |
-
-三组都使用 lr 1e-4、seed 20260823、LoRA r32/alpha64/dropout0.05。
-训练器拒绝 NaN/Inf loss 和 gradient，并在 `training_metrics.json` 写入数据、
-初始化 adapter、输出 adapter 的 SHA-256。
-
-#### 固定 ID 趋势评测
-
-```bash
-python scripts/build_training35_eval_subsets.py \
-  --xlrs-grounding datasets/shared_datasets/XLRS-Bench_visual_grounding_en/test \
-  --output outputs/training35/eval_subsets
-```
-
-脚本按 sample ID 的 SHA-256 和 seed 20260823 固定选择 MME MCQ、XLRS MCQ、
-VRSBench VQA、VRSBench Referring、XLRS Grounding 各 1000 条，并验证图片存在。
-
-短训结束后先显式合并，再对三个端点运行相同的固定子集。以下命令沿用上文的
-`OUT=outputs/training35/training35-short`：
-
-```bash
-bash scripts/merge_checkpoint.sh \
-  --base models/expert_general \
-  --lora "$OUT/general_exp7" \
-  --output "$OUT/general_exp7_merged"
-
-bash scripts/merge_checkpoint.sh \
-  --base models/expert_ground \
-  --lora "$OUT/grounding_exp5" \
-  --output "$OUT/grounding_exp5_merged"
-
-bash scripts/evaluate_training35.sh general \
-  --model models/expert_general --tag initial --batch-size 16
-bash scripts/evaluate_training35.sh general \
-  --model "$OUT/general_exp7_merged" --tag short30 --batch-size 16
-bash scripts/evaluate_training35.sh general \
-  --model models/expert_general_full --tag historical-final --batch-size 16
-
-bash scripts/evaluate_training35.sh grounding \
-  --model models/expert_ground --tag initial --batch-size 4
-bash scripts/evaluate_training35.sh grounding \
-  --model "$OUT/grounding_exp5_merged" --tag short30 --batch-size 4
-bash scripts/evaluate_training35.sh grounding \
-  --model models/expert_ground_full --tag historical-final --batch-size 4
-
-python scripts/check_training35_trend.py \
-  --kind general \
-  --initial outputs/training35/trend/general/initial/results.json \
-  --short outputs/training35/trend/general/short30/results.json \
-  --final outputs/training35/trend/general/historical-final/results.json \
-  --output outputs/training35/trend/general/report.json
-
-python scripts/check_training35_trend.py \
-  --kind grounding \
-  --initial outputs/training35/trend/grounding/initial/results.json \
-  --short outputs/training35/trend/grounding/short30/results.json \
-  --final outputs/training35/trend/grounding/historical-final/results.json \
-  --output outputs/training35/trend/grounding/report.json
-```
-
-若保留了 8-5090 的历史逐样本预测，可用
-`python scripts/score_training35_history.py --help` 按同一 `eligible_index`
-离线生成 historical-final 结果，避免重复推理最终模型。
-
-对 initial、short、historical-final 三个模型使用 3.4 的 `qwen35vl` adapter 生成结果后，
-用 `scripts/check_training35_trend.py` 判定：short 到 final 的平均绝对距离必须缩短，
-任何主要指标最多下降 0.03，XLRS Grounding parseable 必须为 1.0。
-
-#### 本次实际验收记录
-
-环境：2026-09-02，单张 NVIDIA A100 40 GB，conda `rs_mllm`，thinking off；
-Python 3.10.20、PyTorch 2.8.0+cu128、Transformers 5.13.0、PEFT 0.15.2、
-qwen-vl-utils 0.0.14。图片确定性物化单独使用 Pillow 12.3.0。
-
-- CPU preflight：9/9 模型入口通过；五阶段记录数分别为
-  165395 / 28830 / 31871 / 37180 / 10064，所有引用图片存在。
-- 无参数数据构建实测：Caption 为 5032 VRS + 5032 XLRS，共 10064 条；MCQ 从
-  85774 条具备内容哈希资产的 VRSBench VQA 中固定合成 5000 条，A/B/C/D 分布为
-  1254 / 1192 / 1320 / 1234。原始标注中 9 张未进入哈希池的图片对应 65 条记录，
-  脚本明确报告并排除这些记录，产物中没有悬空图片路径。
-- 四专家 delta 无参数命令实测生成 4 个 BF16 `*.pt`（每个约 8.5 GiB）。
-  `W0+Δ` 对 grounding/change/general/caption 各 723 个 tensor 的最大重构误差分别为
-  `0` / `1.52587890625e-05` / `0` / `7.62939453125e-06`，0 个 tensor 超过
-  0.01 容差；审计报告为 `outputs/merged/expert_deltas_rel_W0/verification.json`。
-- 五阶段 smoke：`outputs/training35/20260902-a100-smoke/five_stage`。
-  五段 loss 分别为 3.005 / 2.860 / 1.891 / 4.369 / 0.9882；
-  grad norm 为 54.65 / 13.48 / 20.56 / 57.58 / 2.22。每个 LoRA 为
-  496 个 tensor，每个 merged model 为 723 个 tensor，全部重新读取通过。
-  每阶段只有一次 optimizer update，只能证明 loss/gradient 有限，不能据此声称
-  阶段内 loss 已形成下降趋势。
-- General Exp7 30-update：
-  `outputs/training35/20260902-a100-short-v4/general_exp7`，scheduler
-  484 updates / 15 warmup，mean loss 0.255926，adapter SHA-256
-  `4ac16e400e35340905f2dfb43e6b76247902980f2b767a55700a39872c1d3987`。
-  合并产物含 723 个 tensor，并以 45.39 亿参数 Qwen3.5 模型重新加载通过。
-- Grounding bootstrap 30-update：mean loss 0.233154，adapter SHA-256
-  `75891f21cbf454ac659015d6833aa453f928ed5fc16772e4a8e2d2a6bd59ce1b`。
-  Exp5 30-update 的 `init_lora_sha256` 与之完全相同；Exp5 mean loss
-  0.366353，adapter SHA-256
-  `9bcc0d5c47d640e9be0c97b3bcd37535d01a39e6584759a871bb8a7cf03c3d4f`。
-  两个 adapter 均为 496 个 tensor，Exp5 merged 为 723 个 tensor并实际重新加载。
-- fixed-ID manifest SHA-256 为
-  `d1301dc0102feeaca3b43c5d693bef47f7e1faf373b2526d9fecb3ebb17a738a`。
-  General 的 initial / short30 / historical-final 分别为
-  `(0.684, 0.464, 0.700)` / `(0.693, 0.466, 0.681)` /
-  `(0.685, 0.463, 0.701)`。所有单项下降不超过 0.03，但平均终点距离
-  从 0.001000 变为 0.010333，严格距离条件未通过；失败报告保存在
-  `outputs/training35/trend/general/report.json`，未把它标记为通过。
-- Grounding evaluator 的 referring 生成上限在 3.5 专用入口中由 32 修正为 64 token，
-  否则 XLRS bbox 小数会被截断。修正后 initial / short30 / historical-final 的
-  `(VRS Acc@0.5, XLRS Acc@0.5, XLRS parseable)` 分别为
-  `(0.753, 0.335, 1.0)` / `(0.759, 0.335, 1.0)` /
-  `(0.751, 0.328, 1.0)`。short30 没有主要指标下降，但到该 historical-final
-  的平均距离由 0.0045 变为 0.0075，因此严格距离条件仍未通过，未标记为通过。
-  `models/expert_ground` 的 composition manifest 明确为 base + grounding delta、无 adapter；
-  另将历史 Grounding LoRA 合并后与 `expert_ground_full` 比较，723 个 tensor 中
-  457 个完全一致，266 个 LoRA 影响 tensor 仅有 BF16 合并舍入差异，排除了
-  `expert_ground` 已预先融合该 LoRA 的可能。
-
-- 数据哈希：General Exp7 历史源 JSON
-  `8711391dec337dd5117602eb122b9bdcf8994831458202979d699662b47104cb`；
-  便携 JSON
-  `3f599530b7431cd2280410a5c8590a4cb90241e828206956b2950a5fcaaa1153`；
-  Grounding bootstrap 历史源 JSON
-  `7db73a60f5af529824ad093cdf6770de1f4e18c3add376941fa0b47029d8b098`；
-  便携 JSON
-  `e5dcf9059fc0e7705ad2439e15a3e1ed4f4ab0ca788d4c194730fc05e0c11bed`；
-  Grounding Exp5 历史源 JSON
-  `a309be904dbdddd5a0674e28e20964075e283017931ec7e9a17217c4699093c3`；
-  便携 JSON
-  `01270c916f7be534e11667ec409b8b27fd1f06dcabc5c350dd932ecf02d08871`。
-- 模型哈希：General delta
-  `9874aa7644f7ce0f36efbb650ad2a52d742cd5e61afd88afe901c45af972943f`；
-  Grounding delta
-  `94d16ba39229baa3078d1acae9eb31e0061e98cbb459c6ee671b575677fad953`；
-  历史最终 General/Grounding LoRA 分别为
-  `8699a37f9c0a75d4640a1162f14707ae78350959ec39e3e026785f38ecfd203b` /
-  `bc3f88356276872d25d37bc44f2c448b5875351e747b6de58e21d497d7e0b6b3`。
-
-历史完整模型终点仅作参考：General Exp7 为 MME 0.702623、XLRS 0.490584、
-VRSBench VQA 0.705713；Grounding Exp5 为 VRS Acc@0.5 0.771644、
-XLRS Acc@0.5 0.319651（parseable 1.0）。
+更详细的数据哈希、训练参数和历史指标见
+`training/distillation/expert_lora/README.md`。
 
 ---
 
