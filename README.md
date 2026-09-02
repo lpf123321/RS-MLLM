@@ -259,8 +259,10 @@ evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py expert_general exp
 evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all --dir /data/models
 ```
 
-- **默认位置**：`models/<别名>/`（下载后可 `ls models/` 查看）；自定义 `--dir` 后，
-  后续评测请 `export RSMLLM_MODELS_ROOT=<dir>` 指回；
+- **默认位置**：`models/<别名>/`（下载后可 `ls models/` 查看）；base 特例落在
+  `models/Qwen3.5-4B/`（与 `get_model` 本地查找名一致）；LoRA adapter 需显式传
+  别名下载（如 `fetch_models.py expert_general_lora`），默认 `--all` 不含；
+  自定义 `--dir` 后，后续评测请 `export RSMLLM_MODELS_ROOT=<dir>` 指回；
 - 模型来源：ModelScope `Fun10165/rs-mllm-*`（已公开）；完整别名见
   `rsmllm/config.py::MODEL_REGISTRY`；
 - canonical 专家（bf16）为 base + delta + PEFT LoRA 的一次合并结果，量化版由

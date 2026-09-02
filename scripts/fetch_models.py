@@ -15,6 +15,8 @@
 默认目标 = <仓库>/models/（可用环境变量 RSMLLM_MODELS_ROOT 覆盖）。
 下载完成后的模型目录与 router_eval / get_model 的本地优先约定一致：
 评测与路由推理会直接使用 models/<别名>/，不再重复下载。
+目录名 = get_model 的本地查找名（映射见 rsmllm/models.py::LOCAL_MODEL_NAMES；
+base 落在 models/Qwen3.5-4B/；lora adapter 可按别名显式下载，默认 --all 不含）。
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from rsmllm.config import MODELS_ROOT, MODEL_REGISTRY  # noqa: E402
-from rsmllm.models import get_model  # noqa: E402
+from rsmllm.models import LOCAL_MODEL_NAMES, get_model  # noqa: E402
 
 # 评测模型矩阵: 4 专家 × bf16 / w8a8 / gptq(canonical, 含一次 delta+LoRA 合并来源)
 EXPERT_ALIASES = {
@@ -39,10 +41,19 @@ EXPERT_ALIASES = {
 }
 
 
-def _complete(directory: Path) -> bool:
-    """判断目录是否为完整可加载模型(单文件或分片 safetensors 均可, 看 config.json)."""
-    if not (directory / "config.json").is_file():
+def _complete(directory: Path, alias: str) -> bool:
+    """判断目录是否完整可加载(与 get_model 命中规则一致).
+
+    完整模型: config.json + 权重(单文件, 或 index.json 全部分片);
+    LoRA adapter(_lora 别名): adapter_config.json + adapter_model.{safetensors,bin}.
+    """
+    marker = "adapter_config.json" if alias.endswith("_lora") else "config.json"
+    if not (directory / marker).is_file():
         return False
+    if (directory / "adapter_model.safetensors").is_file():
+        return True
+    if (directory / "adapter_model.bin").is_file():
+        return True
     if (directory / "model.safetensors").is_file():
         return True
     index = directory / "model.safetensors.index.json"
@@ -56,15 +67,15 @@ def _complete(directory: Path) -> bool:
         return False
     return all((directory / name).is_file() for name in set(weight_map.values()))
 
-
 def fetch(alias: str, dest_root: Path, force: bool) -> int:
     if alias not in MODEL_REGISTRY:
         print(f"  ✗ 未知别名/模型: {alias} (可用: {' '.join(MODEL_REGISTRY)})", file=sys.stderr)
         return 1
     model_id = MODEL_REGISTRY[alias]
-    dest = dest_root / alias
-    if not force and _complete(dest):
-        print(f"  = {alias}: 已就绪 {dest} (跳过; --force 可重下)")
+    local_name = LOCAL_MODEL_NAMES.get(alias, alias)
+    dest = dest_root / local_name
+    if not force and _complete(dest, alias):
+        print(f"  = {alias}: 已就绪 {dest} (目录名 {local_name!r}; --force 可重下)")
         return 0
     print(f"  → {alias}: 从 ModelScope 下载 {model_id} ...", flush=True)
     try:
@@ -79,8 +90,8 @@ def fetch(alias: str, dest_root: Path, force: bool) -> int:
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest)
-    ok = _complete(dest)
-    print(f"  ✓ {alias} -> {dest}" + ("" if ok else "  (警告: config.json 缺失)"))
+    ok = _complete(dest, alias)
+    print(f"  ✓ {alias} -> {dest}" + ("" if ok else "  (警告: 模型文件不完整)"))
     return 0 if ok else 1
 
 

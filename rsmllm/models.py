@@ -23,6 +23,14 @@ LOCAL_MODEL_NAMES = {
     "expert_ground": "expert_ground",
     "expert_change": "expert_change",
     "expert_caption": "expert_caption",
+    "expert_general_w8a8": "expert_general_w8a8",
+    "expert_ground_w8a8": "expert_ground_w8a8",
+    "expert_change_w8a8": "expert_change_w8a8",
+    "expert_caption_w8a8": "expert_caption_w8a8",
+    "expert_general_gptq": "expert_general_gptq",
+    "expert_ground_gptq": "expert_ground_gptq",
+    "expert_change_gptq": "expert_change_gptq",
+    "expert_caption_gptq": "expert_caption_gptq",
     "expert_general_lora": "expert_general_lora",
     "expert_ground_lora": "expert_ground_lora",
     "expert_general_full": "expert_general_full",
@@ -45,9 +53,9 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
             return str(p)
 
 
-    # README 3.5 defines models/ as the canonical offline layout. Prefer it
-    # over the ModelScope cache so a staged checkout cannot pick a different
-    # remote revision by accident.
+    # README 3.3.3 defines models/<local_name>/ as the canonical offline
+    # layout (fetch_models.py downloads there). Prefer it over the ModelScope
+    # cache so a staged checkout cannot pick a different remote revision.
     local_name = LOCAL_MODEL_NAMES.get(name)
     if local_name:
         local = MODELS_ROOT / local_name
