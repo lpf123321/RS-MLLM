@@ -67,6 +67,7 @@ def _complete(directory: Path, alias: str) -> bool:
         return False
     return all((directory / name).is_file() for name in set(weight_map.values()))
 
+
 def fetch(alias: str, dest_root: Path, force: bool) -> int:
     if alias not in MODEL_REGISTRY:
         print(f"  ✗ 未知别名/模型: {alias} (可用: {' '.join(MODEL_REGISTRY)})", file=sys.stderr)
