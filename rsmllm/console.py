@@ -13,7 +13,7 @@ from pathlib import Path
 
 from rsmllm.config import REPORT_CONF
 from rsmllm.models import get_model, MODEL_REGISTRY
-from rsmllm.router_eval import QUANT_EXPERTS, resolve_model
+from rsmllm.router_eval import QUANT_EXPERTS, build_subtask_manifest, resolve_model
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # 训练类分支(deepspeed/trl)依赖根环境; 评测/推理(vllm)依赖评测环境
@@ -93,26 +93,50 @@ def _cmd_eval() -> None:
         print("  ✗ 未识别到数据集, 使用默认 vrsbench")
         ds_list = ["vrsbench"]
     subtask = _ask("子任务(留空=全量 / vqa / caption / referring / mcq / change; 仅对含该任务类型的数据集生效)", "")
-    # 官方评测入口: evaluation.main.py --adapter qwen35vl
-    eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
-    py = eval_py if eval_py.exists() else sys.executable
-    main_py = Path(__file__).resolve().parent.parent / "evaluation" / "main.py"
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
+    # vLLM 评测器(与 route 同引擎同环境): evaluation/vllm_eval/vision_opd_vllm_eval.py
+    # 数据集 -> 评测清单(由 prepare_eval 自动构建), 子任务按 task_type 切分
+    manifest_src = {
+        "vrsbench": "vrsbench_eval.jsonl",
+        "mme": "mme_rs.jsonl",
+        "xlrs": "xlrs.jsonl",
+        "xlrs_caption": "xlrs_caption_en.jsonl",
+        "xlrs_grounding": "xlrs_grounding_test.jsonl",
+        "levircc": "levircc_test.jsonl",
+    }
+    subtask_task = {
+        "vqa": "open_vqa", "caption": "caption", "referring": "bbox",
+        "mcq": "single_choice", "change": "change_caption",
+    }
+    alias, profile = QUANT_EXPERTS[quant][expert]
     from rsmllm.data import prepare_eval
+    eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
     for ds in ds_list:
         prepare_eval(ds)   # 图片就绪复用; 首次: 下载评测图片 + 自动构建清单
-        cmd = [str(py), str(main_py),
-               "--adapter", "qwen35vl",
-               "--model_path", model_dir,
-               "--datasets", ds]
+        manifest = eval_dir / "manifests" / manifest_src[ds]
         if subtask:
-            cmd += ["--subtask", subtask]
-        cmd += ["--image_max_pixels", str(REPORT_CONF["max_pixels"]),
-                "--eval_batch_size", str(REPORT_CONF["batch_size"]),
-                "--output", str(Path(__file__).resolve().parent.parent / "results" / f"{ds}_{subtask or 'all'}.json")]
-        print(f"  → 评测 {ds} (模型 {model_dir}, subtask={subtask or '全量'})")
-        subprocess.run(cmd, check=False, env=env)
+            task_type = subtask_task.get(subtask)
+            if not task_type:
+                print(f"  ✗ 未知子任务 {subtask!r} (可选 vqa/caption/referring/mcq/change), 跳过 {ds}")
+                continue
+            label = f"{ds}_{subtask}"
+            manifest = build_subtask_manifest(manifest.name, task_type, label)
+            if manifest.stat().st_size == 0:
+                print(f"  [warn] {ds} 无 {subtask} 子任务样本, 跳过")
+                continue
+        cmd = [EVAL_PY, str(eval_dir / "vision_opd_vllm_eval.py"),
+               "--manifest", str(manifest),
+               "--model", model_dir,
+               "--model-profile", profile,
+               "--quantization", quant,
+               "--min-pixels", str(REPORT_CONF["min_pixels"]),
+               "--max-pixels", str(REPORT_CONF["max_pixels"]),
+               "--batch-size", str(REPORT_CONF["batch_size"]),
+               "--max-model-len", str(REPORT_CONF["max_model_len"]),
+               "--max-num-seqs", str(REPORT_CONF["max_num_seqs"]),
+               "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
+               "--enforce-eager"]
+        print(f"  → 评测 {ds} (model={alias}, profile={profile}, manifest={manifest.name}, subtask={subtask or '全量'})")
+        subprocess.run(cmd, check=False)
 
 
 def _cmd_serve() -> None:

@@ -348,27 +348,22 @@ python -m rsmllm.router --chat
 **single（指定专家/模型跑特定数据集）**：`[1]` → 输入 `single` → 依次选
 专家(4 选 1：general / grounding / change / caption) → 量化档(bf16 / w8a8 / gptq)
 → 数据集(默认全部 6 个) → 子任务(可空)。模型自动按「专家 × 量化档」解析
-(本地 `models/` 优先，缺失才从 ModelScope 拉取)。
+(本地 `models/` 优先，缺失才从 ModelScope 拉取)；single 与 route 使用**同一个
+vLLM 评测器**（`evaluation/vllm_eval/vision_opd_vllm_eval.py`），只是任务范围不同。
 
 命令行方式：
 
 ```bash
-# 一次性建评测环境
-bash evaluation/vllm_eval/setup_env.sh
-
-# 单专家评测，模型自动从 ModelScope 拉取(需 PYTHONPATH=. 以 import rsmllm 配置)
-PYTHONPATH=. evaluation/vllm_eval/.venv/bin/python evaluation/main.py \
-    --adapter qwen35vl \
-    --model_path <expert_caption路径: 本地目录 或 ModelScope 别名 expert_caption> \
-    --datasets vrsbench --subtask caption
-
 # 一键路由专家评测（4 专家×对应任务；只选择量化方式）
 evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 # 量化方式可选: bf16 / w8a8 / gptq
+# 只跑某专家或快速验证: 追加 --experts general --limit 50
 ```
 
 评测图片（已有官方数据摆放 / ModelScope、HF 下载）与模型准备见 3.3；
 图片就绪后清单由入口自动构建（`rsmllm/data.py::prepare_eval`），也可用 3.3.1 的命令手动预构建。
+按指定数据集/子任务评测单模型请用上面的 single 交互（底层即 vLLM 评测器），
+不要直接跑 `evaluation/main.py`——那是队友实验用的 Transformers 链路，需根训练环境且慢约 150×。
 
 **量化转换**（与报告同链路）：
 
