@@ -51,7 +51,7 @@ run_one() {
 
 stage1_parent="$REPO_ROOT/models/Qwen3.5-4B"
 submit_stage() {
-  local stage="$1" parent="$2" dependency="$3"
+  local stage="$1" parent="$2" dependency="$3" remaining="${4:-}"
   local lora="$LORA_ROOT/$stage" merged="$MERGED_ROOT/$stage"
   local -a command=(
     sbatch --parsable
@@ -66,7 +66,7 @@ submit_stage() {
   [[ -n "$dependency" ]] && command+=(--dependency="afterok:$dependency")
   command+=(
     "$REPO_ROOT/scripts/training/stage35.slurm"
-    "$stage" "$parent" "$lora" "$merged" "$GPUS" "$MAX_UPDATES" "$SMOKE"
+    "$stage" "$parent" "$lora" "$merged" "$GPUS" "$MAX_UPDATES" "$SMOKE" "$remaining"
   )
   if ((DRY == 1)); then
     printf '[training35 slurm dry-run]'; printf ' %q' "${command[@]}"; printf '\n'
@@ -86,6 +86,13 @@ submit_stage() {
 if ((SLURM == 1)); then
   stages=("$COMMAND")
   [[ "$COMMAND" == all ]] && stages=(stage1_clean ga2_general a1_grounding a2b_change caption)
+  if [[ "$COMMAND" == all && "$DRY" == 0 ]]; then
+    # Keep only one successor pending at a time. This preserves an afterok
+    # chain on clusters whose QOS permits at most two submitted jobs per user.
+    submit_stage stage1_clean "$stage1_parent" "" "ga2_general,a1_grounding,a2b_change,caption"
+    echo "[training35 slurm] rolling afterok chain started: $SUBMITTED_JOB_ID; run root: $RUN_ROOT"
+    exit 0
+  fi
   previous_job=
   for stage in "${stages[@]}"; do
     case "$stage" in
