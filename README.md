@@ -360,11 +360,29 @@ python scripts/preflight_training35.py
 运行前可加 `--dry-run` 检查前 3 条准备命令的来源和目标，不会下载或扫描大文件。
 模型来自 ModelScope `Fun10165/rs-mllm-*`；五阶段 JSON 来自
 `yasumi/rs-mllm-datasets`；续训练 JSON 来自
-`Uchitachi/RS-MLLM-Distillation-Data`。无原数据时，仓库也提供固定 revision 的
-Hugging Face 官方下载与哈希恢复脚本
-`training/distillation/expert_lora/scripts/download_official_datasets.sh`；MME 需先阅读并同意其许可。由于原图可达数百 GB，官方下载不会被上述准备命令隐式触发。
+`Uchitachi/RS-MLLM-Distillation-Data`。原数据需自行取得并按上述目录放置；
+`training/distillation/expert_lora/scripts/download_official_datasets.sh` 仅用于下载和
+校验专家续训练所需的部分官方图像，不能代替完整五阶段数据准备，也不包含
+LEVIR-CC。MME 下载前需阅读并同意其许可。由于原图可达数百 GB，官方下载不会
+被上述准备命令隐式触发。
 
 #### 五阶段训练
+
+首次运行建议先做单卡 smoke test：
+
+```bash
+bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
+```
+
+smoke 通过后，完整训练在本地与 Slurm 中二选一，不要依次执行：
+
+```bash
+bash scripts/train.sh all               # 本地完整依赖流水线
+bash scripts/train.sh --slurm all       # Slurm afterok 完整依赖流水线
+```
+
+以下单阶段命令仅用于调试或断点续跑；运行前须确保它依赖的上游阶段已在同一
+`run-id` 下完成：
 
 ```bash
 bash scripts/train.sh stage1_clean      # 统一 SFT 主干
@@ -372,13 +390,11 @@ bash scripts/train.sh ga2_general       # General 续训
 bash scripts/train.sh a1_grounding      # Grounding 续训
 bash scripts/train.sh a2b_change        # Change 续训
 bash scripts/train.sh caption           # Caption 双域训练
-
-bash scripts/train.sh all               # 完整依赖流水线
-bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
-bash scripts/train.sh --slurm all       # Slurm afterok 流水线
 ```
 
 #### General / Grounding 续训练
+
+以下是 30 updates 的功能验收，不用于复现历史最终指标：
 
 ```bash
 ARTIFACT_ROOT="$PWD/models/training35/runs/training35-short"
@@ -396,6 +412,10 @@ bash training/train_grounding_expert.sh \
   --output-root "$ARTIFACT_ROOT"
 ```
 
+复现完整历史训练时，另设 `ARTIFACT_ROOT="$PWD/models/training35/runs/training35-full"`，并使用 General
+4 卡/484 updates、Grounding bootstrap 4 卡/30 updates、Grounding final
+8 卡/1370 updates；将上述 `--gpus` 和 `--max-updates` 相应替换即可。
+
 合并完整模型：
 
 ```bash
@@ -411,6 +431,8 @@ bash scripts/merge_checkpoint.sh \
 ```
 
 #### 数据构建与 delta
+
+以下命令不是训练前置步骤，仅在需要重新构建数据或导出四专家 delta 时运行：
 
 ```bash
 python scripts/build_caption_expert_data.py
