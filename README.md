@@ -233,11 +233,7 @@ evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 # 量化方式可选: bf16 / w8a8 / gptq
 ```
 
-懒加载：图片 `datasets/shared_datasets/`、模型 `.models/`（`get_model` 自动下载）。`--subtask` 可选 `vqa/caption/referring/mcq/change`。结果写入 `--output` 指定 json。
-> **数据懒加载**：评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像
-> （`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，
-> 并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，
-> 见 `rsmllm/data.py::prepare_eval`。清单为生成产物不入库，评委首次评测时自动构建。
+评测首次会自动创建 `datasets/` 并从 ModelScope/HF 镜像（`hf-mirror.com`，`HF_ENDPOINT` 可覆盖）下载评测图片到 `datasets/shared_datasets/<数据名>/`，并自动构建可移植评测清单（图片相对路径 + 真实尺寸）到 `evaluation/vllm_eval/manifests/`，见 `rsmllm/data.py::prepare_eval`。清单为生成产物，首次评测时自动构建。
 
 **从 HuggingFace 官方数据集导入**：
 
