@@ -114,7 +114,7 @@ CVSearch 论文原作者。参与自进化框架设计主导与技术报告优�
 
 ### 2.1 整体架构图
 
-![overall](assets/overall.png)
+![overall](assets/preview.png)
 
 ---
 
