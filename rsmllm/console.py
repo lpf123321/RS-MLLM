@@ -12,12 +12,16 @@ import os
 from pathlib import Path
 
 from rsmllm.config import REPORT_CONF
+from rsmllm.eval_reporting import print_combined_key_metrics
 from rsmllm.models import get_model, MODEL_REGISTRY
 from rsmllm.router_eval import (
     QUANT_EXPERTS,
+    ROUTE_PLAN,
+    SRC_TO_DATASET,
     build_subtask_manifest,
-    evaluation_runtime_config,
+    new_evaluation_output_dir,
     resolve_model,
+    run_eval,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +35,7 @@ if not Path(EVAL_PY).exists():
     EVAL_PY = sys.executable
 
 MAIN_MENU = {
-    "1": ("评测实验", "route 一键路由(4专家×任务) / single 指定专家+量化+数据集"),
+    "1": ("评测实验", "route 一键路由(4专家×任务) / single 指定专家+量化+负责任务"),
     "2": ("推理服务", "按报告配置启动 vLLM 推理"),
     "3": ("训练", "多专家 SFT / 蒸馏流程"),
     "4": ("量化", "W8A8 / GPTQ 转换与部署"),
@@ -41,6 +45,9 @@ MAIN_MENU = {
     "8": ("工具", "TTFT 测量 / batch 扫描 / 模型查看"),
     "q": ("退出", ""),
 }
+
+# 实现和数字入口继续保留，只从交互菜单中暂时隐藏。
+HIDDEN_MENU_KEYS = frozenset({"4", "5", "6", "7", "8"})
 
 
 def _repo_env() -> dict[str, str]:
@@ -78,6 +85,39 @@ def _ask_model() -> str:
     return get_model(raw)  # 首次自动下载(缓存命中则秒回)
 
 
+def _single_task_plan(
+    expert: str, selection: str
+) -> list[tuple[str, str, str | None]]:
+    """Resolve a single-mode selection strictly within one expert's route."""
+    available = ROUTE_PLAN[expert]
+    if selection.strip().lower() == "all":
+        return list(available)
+
+    aliases: dict[str, tuple[str, str, str | None]] = {}
+    for task in available:
+        task_name, src_name, _task_type = task
+        aliases[task_name] = task
+        aliases[SRC_TO_DATASET[src_name]] = task
+
+    requested = [
+        value
+        for value in selection.replace("，", " ").replace(",", " ").split()
+        if value
+    ]
+    unknown = [value for value in requested if value not in aliases]
+    if not requested or unknown:
+        choices = ", ".join(task[0] for task in available)
+        detail = ", ".join(unknown) if unknown else "空输入"
+        raise ValueError(f"不属于 {expert} 专家的任务: {detail}; 可选: {choices}, all")
+
+    selected = []
+    for value in requested:
+        task = aliases[value]
+        if task not in selected:
+            selected.append(task)
+    return selected
+
+
 def _cmd_eval() -> None:
     mode = _ask(
         "评测模式 (route=自动选择已合并 delta+LoRA 并用 vLLM 跑 / single=单模型评测)",
@@ -107,63 +147,46 @@ def _cmd_eval() -> None:
     print(f"  → 模型: {alias} ({expert} × {quant}); 本地 models/ 优先, 缺失时 ModelScope 拉取")
     # 与 route 同一解析: canonical 专家(含 merge_manifest 校验), 量化版由 canonical 导出
     model_dir = resolve_model(expert, quant)
-    datasets = _ask(
-        "数据集(空格/逗号分隔: vrsbench mme xlrs xlrs_caption xlrs_grounding levircc; all=全部)",
-        "all",
-    )
-    if datasets.strip().lower() == "all":
-        ds_list = ["vrsbench", "mme", "xlrs", "xlrs_caption", "xlrs_grounding", "levircc"]
-    else:
-        ds_list = [d for d in datasets.replace("，", " ").replace(",", " ").split() if d]
-    if not ds_list:
-        print("  ✗ 未识别到数据集, 使用默认 vrsbench")
-        ds_list = ["vrsbench"]
-    subtask = _ask("子任务(留空=全量 / vqa / caption / referring / mcq / change; 仅对含该任务类型的数据集生效)", "")
-    # vLLM 评测器(与 route 同引擎同环境): evaluation/vllm_eval/vision_opd_vllm_eval.py
-    # 数据集 -> 评测清单(由 prepare_eval 自动构建), 子任务按 task_type 切分
-    manifest_src = {
-        "vrsbench": "vrsbench_eval.jsonl",
-        "mme": "mme_rs.jsonl",
-        "xlrs": "xlrs.jsonl",
-        "xlrs_caption": "xlrs_caption_en.jsonl",
-        "xlrs_grounding": "xlrs_grounding_test.jsonl",
-        "levircc": "levircc_test.jsonl",
-    }
-    subtask_task = {
-        "vqa": "open_vqa", "caption": "caption", "referring": "bbox",
-        "mcq": "single_choice", "change": "change_caption",
-    }
+    available_names = ", ".join(task[0] for task in ROUTE_PLAN[expert])
+    while True:
+        selection = _ask(
+            f"{expert} 专家任务(空格/逗号分隔: {available_names}; all=该专家全部)",
+            "all",
+        )
+        try:
+            tasks = _single_task_plan(expert, selection)
+            break
+        except ValueError as exc:
+            print(f"  ✗ {exc}")
+
+    # 直接使用 ROUTE_PLAN 的固定清单与 task_type，禁止专家/任务错配。
     alias, profile = QUANT_EXPERTS[quant][expert]
     from rsmllm.data import prepare_eval
-    eval_dir = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval"
-    for ds in ds_list:
+    completed_outputs: list[Path] = []
+    for task_name, src_name, task_type in tasks:
+        ds = SRC_TO_DATASET[src_name]
         prepare_eval(ds)   # 图片就绪复用; 首次: 下载评测图片 + 自动构建清单
-        manifest = eval_dir / "manifests" / manifest_src[ds]
-        if subtask:
-            task_type = subtask_task.get(subtask)
-            if not task_type:
-                print(f"  ✗ 未知子任务 {subtask!r} (可选 vqa/caption/referring/mcq/change), 跳过 {ds}")
-                continue
-            label = f"{ds}_{subtask}"
-            manifest = build_subtask_manifest(manifest.name, task_type, label)
-            if manifest.stat().st_size == 0:
-                print(f"  [warn] {ds} 无 {subtask} 子任务样本, 跳过")
-                continue
-        runtime = evaluation_runtime_config(manifest)
-        cmd = [EVAL_PY, str(eval_dir / "vision_opd_vllm_eval.py"),
-               "--manifest", str(manifest),
-               "--model", model_dir,
-               "--model-profile", profile,
-               "--quantization", quant,
-               "--min-pixels", str(runtime["min_pixels"]),
-               "--max-pixels", str(runtime["max_pixels"]),
-               "--batch-size", str(runtime["batch_size"]),
-               "--max-model-len", str(runtime["max_model_len"]),
-               "--max-num-seqs", str(runtime["max_num_seqs"]),
-               "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
-               "--enforce-eager"]
-        print(f"  → 评测 {ds} (model={alias}, profile={profile}, manifest={manifest.name}, subtask={subtask or '全量'})")
-        _run_repo(cmd)
+        manifest = build_subtask_manifest(
+            src_name, task_type, task_name.replace("-", "_")
+        )
+        print(
+            f"  → 评测 {task_name} (model={alias}, profile={profile}, "
+            f"manifest={manifest.name})"
+        )
+        output_dir = new_evaluation_output_dir(manifest, profile)
+        rc = run_eval(
+            model_dir,
+            profile,
+            manifest,
+            None,
+            quant,
+            output_dir=output_dir,
+        )
+        if rc == 0:
+            completed_outputs.append(output_dir)
+        if rc:
+            print(f"  ✗ {task_name} 评测失败 (exit={rc})")
+    print_combined_key_metrics(completed_outputs)
 
 
 def _cmd_serve() -> None:
@@ -235,6 +258,8 @@ def main() -> int:
     while True:
         print()
         for k, (title, desc) in MAIN_MENU.items():
+            if k in HIDDEN_MENU_KEYS:
+                continue
             print(f"  [{k}] {title}  — {desc}" if desc else f"  [{k}] {title}")
         choice = _ask("选择功能").lower()
         if choice in ("q", "quit", "exit"):

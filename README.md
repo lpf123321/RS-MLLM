@@ -207,15 +207,15 @@ datasets/shared_datasets/
   不是与清单同名的文件，建议直接用 3.3.2 的下载脚本从官方源导出（脚本自动按 `index`
   列顺序导出并重编号），或按上述命名规则手动对齐。
 
-摆放完成后可手动预构建评测清单（可选；不跑也不影响，首次评测会自动构建）：
+
+若没有官方数据，在交互式控制台选择测评功能时，会从modelscope自动下载test split并摆放到上述目录。若网络不稳，建议先手动下载。
+
+<!-- 摆放完成后可手动预构建评测清单（可选；不跑也不影响，首次评测会自动构建）：
 
 ```bash
 python scripts/build_sample_manifest.py --all --images-root ../../../datasets/shared_datasets
-```
-
-图片放在别处时，不要求一定放 `datasets/shared_datasets/`，用
-`--images-root <你的图片目录>` 重写清单路径前缀即可。
-
+``` -->
+<!--
 #### 3.3.2 评测图片：从 ModelScope 或 HuggingFace 下载
 
 没有官方数据时，一键下载后自动摆放到 3.3.1 的目录：
@@ -241,92 +241,82 @@ python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
 下载完成后，首次评测会自动构建可移植评测清单到 `evaluation/vllm_eval/manifests/`
 （见 `rsmllm/data.py::prepare_eval`）。
 
-菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。
+菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。 -->
 
-#### 3.3.3 模型：下载到本地（评测前准备好）
+#### 3.3.2 模型：下载到本地（评测前准备好）
 
-面向**评测与单模型推理**（3.5 评测、3.4 的 `rsmllm.sh`/别名入口）本地优先：
-`models/<别名>/`（或 `~/models/<别名>/`）存在完整模型时直接使用，缺失时才从
-ModelScope 拉取并缓存到 `.models/`。为避免现场拉取受网络影响，可先用脚本显式下载
-到约定位置：
+评测只使用以下 12 个专家模型，即 4 个专家 × 3 种精度：
+
+| 专家 | BF16 | W8A8 | GPTQ |
+|---|---|---|---|
+| General（问答/选择题） | `expert_general` | `expert_general_w8a8` | `expert_general_gptq` |
+| Grounding（目标定位） | `expert_ground` | `expert_ground_w8a8` | `expert_ground_gptq` |
+| Change（变化描述） | `expert_change` | `expert_change_w8a8` | `expert_change_gptq` |
+| Caption（图像描述） | `expert_caption` | `expert_caption_w8a8` | `expert_caption_gptq` |
+
+模型统一下载到交互式控制台使用的 ModelScope 缓存根目录 `.models/`。实际快照位于
+`.models/models/<组织--仓库>/snapshots/<版本>/`；目录中已有完整模型时会自动复用，
+不会重复下载或再复制到 `models/`。
+
+一次下载全部 12 个模型：
 
 ```bash
-# 12 个评测模型(4 专家 × bf16 / w8a8 / gptq) → 仓库 models/
 evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all
-
-# 只做精度演示: bf16 一档即可
-evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant bf16
-
-# 附带 base 基座 / 指定个别模型 / 自定义目录
-evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant bf16 --base
-evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py expert_general expert_general_w8a8
-evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all --dir /data/models
 ```
 
-- **默认位置**：`models/<别名>/`（下载后可 `ls models/` 查看）；base 特例落在
-  `models/Qwen3.5-4B/`（与 `get_model` 本地查找名一致）；LoRA adapter 需显式传
-  别名下载（如 `fetch_models.py expert_general_lora`），默认 `--all` 不含；
-  自定义 `--dir` 后，后续评测请 `export RSMLLM_MODELS_ROOT=<dir>` 指回；
-- 模型来源：ModelScope `Fun10165/rs-mllm-*`（已公开）；完整别名见
-  `rsmllm/config.py::MODEL_REGISTRY`；
-- canonical 专家（bf16）为 base + delta + PEFT LoRA 的一次合并结果，量化版由
-  canonical 快照导出（专家架构说明见 3.4 推理节）——**不要再叠加 LoRA**；
-- 目标目录已完整（`config.json` + 权重）会跳过，`--force` 强制重下；
-- 完全离线环境：下载完成后 `export MODELSCOPE_OFFLINE=1`，评测只读本地。
+也可以只下载一种精度，每条命令会下载该精度下的 4 个专家：
+
+```bash
+# 4 个 BF16 专家
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant bf16
+
+# 4 个 W8A8 专家
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant w8a8
+
+# 4 个 GPTQ 专家
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant gptq
+```
+
+只下载某一个专家的三种精度时，直接提供表格中的三个别名。例如：
+
+```bash
+# General 专家的 BF16、W8A8 和 GPTQ
+evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py \
+  expert_general expert_general_w8a8 expert_general_gptq
+```
+
+模型来自 ModelScope 的 `Fun10165/rs-mllm-*` 仓库。下载完成后，`route` 和
+`single` 评测都会优先使用本地模型；离线运行可设置
+`export MODELSCOPE_OFFLINE=1`。
 
 ### 3.4 模型推理
 
-**唯一入口：交互式控制台**（菜单选择功能，模型自动从 ModelScope 拉取）
+在仓库根目录启动交互式控制台：
 
 ```bash
 ./rsmllm.sh
 ```
 
-菜单：
-- `[1]` 评测实验（选评测模式/量化方式；全程回车走 route+bf16 全量，见 3.5）
-- `[2]` 推理服务（默认 **WebUI 网页推理**：浏览器 http://127.0.0.1:7860 上传图片/文字对话；也可 CLI）
-- `[3]` 训练 / `[4]` 量化 / `[5]` 数据预处理 / `[6]` Token 剪枝 / `[7]` 容错探针 / `[8]` 工具
+当前菜单只显示：
 
-**多专家路由推理**（报告 §5.3：4 专家按 prompt 规则路由）：
+- `[1]` 评测实验：`route` 自动完成全部专家评测；`single` 只运行指定专家负责的任务。
+- `[2]` 推理服务：默认启动 WebUI，也可选择 CLI。
+- `[3]` 训练：进入训练流程。
+- `[q]` 退出。
 
-```bash
-# 1) 一键启动 4 个专家实例(默认模型目录 ~/router_models/, 可用 --models-dir 指定)
-#    general=8001 grounding=8002 change=8003 caption=8004, 两卡分载
-bash scripts/start_router.sh
+模型会优先复用本地 `models/` 或 `.models/` 缓存，缺失时自动从 ModelScope 下载。
+4 个专家分别负责通用问答、目标定位、变化描述和图像描述；控制台会自动选择正确
+模型及推理配置，用户不需要手动组合模型与 LoRA。评测的具体用法见 3.5。
 
-# 2) 交互路由对话(自动按规则分发到对应专家)
-python -m rsmllm.router --chat
-#   "Describe the image in detail" → caption
-#   "[REF] Where is the building?" → grounding
-#   "Describe the changes"         → change
-#   "What color is the roof?"      → general
-```
+`[4]`–`[8]` 的实现和数字入口仍保留在代码中，目前只是不显示在菜单里。
 
-> 路由规则与评测链路一致（`evaluation/router/rules.py`：`[VQA]`/默认→general、
-> `[REF]`/where→grounding、`[CD]`/change→change、`[CAP]`/describe→caption）。
-> 实例按需启停（`pkill -f "vllm.entrypoints"`），用完释放显存不影响评测。
-
-支持的模型别名见 `rsmllm/config.py` 的 `MODEL_REGISTRY`（如 `base`、`mmerestore_bf16`、
-`w8a8`、`gptq`、`expert_general`、`expert_general_w8a8` 等），
-或直接给 ModelScope id / 本地路径。模型按需下载缓存在 `.models/`（
-`RSMLLM_MODEL_CACHE` 可覆盖），离线时 `MODELSCOPE_OFFLINE=1` 强制本地命中。
-
-**专家模型架构**（与训练口径一致）：
-
-| 别名 | 内容 | 说明 |
-|---|---|---|
-| `expert_general` / `expert_ground` | **base + delta + LoRA（已合并一次）** | canonical 评测模型；附带 `merge_manifest.json` |
-| `expert_general_lora` / `expert_ground_lora` | PEFT LoRA adapter（rank 32）| 合并来源记录；不要再叠加到 canonical 快照 |
-| `expert_general_full` / `expert_ground_full` | 历史二次合并产物 | **别名已停用，禁止用于新评测** |
-| `expert_change` / `expert_caption` | base + delta（合并）| 无 LoRA（训练口径无）|
-| `expert_*_w8a8` / `expert_*_gptq` | canonical 专家量化版 | 从一次合并后的专家快照生成 |
-
-`expert_general` / `expert_ground` 的 `merge_manifest.json` 已明确记录
-`raw_base → expert_delta → peft_lora`，所以它们就是队友完整架构的 canonical
-结果。旧的 `_full` 目录是在该快照上再次合并同一个 adapter 产生的二次合并结果；
-`router_eval` 不再选择它们。`scripts/merge_lora_to_model.py` 对已有合并记录会
-直接拒绝，防止再次叠加；量化模型使用 canonical 快照生成的产物，vLLM 离线 API
-不动态挂 LoRA。
+<!--
+旧版 3.4 详细说明保留：多专家服务可通过 scripts/start_router.sh 启动，
+交互路由入口为 python -m rsmllm.router --chat。模型别名定义在
+rsmllm/config.py::MODEL_REGISTRY；general/grounding canonical 模型已经完成一次
+base + delta + PEFT LoRA 合并，不应再次叠加 LoRA。change/caption 为 base + delta，
+量化模型由对应 canonical 快照生成。
+-->
 
 ### 3.5 模型评测
 
@@ -347,13 +337,18 @@ python -m rsmllm.router --chat
 
 等价命令行：`evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16`
 （交互模式与命令行入口同一链路）。结果输出到 `results/<清单>_<profile>_<时间戳>/`
-（每次独立目录，`clean_summary.json` 为正式分）。
+（每次独立目录，`clean_summary.json` 为正式分）。每个任务完成时会立即打印关键指标；
+本轮所有任务结束后，控制台会再次集中显示全部已完成任务的指标和结果目录。
 
-**single（指定专家/模型跑特定数据集）**：`[1]` → 输入 `single` → 依次选
+**single（指定专家跑其负责的任务）**：`[1]` → 输入 `single` → 依次选
 专家(4 选 1：general / grounding / change / caption) → 量化档(bf16 / w8a8 / gptq)
-→ 数据集(默认全部 6 个) → 子任务(可空)。模型自动按「专家 × 量化档」解析
+→ 该专家负责的一个或多个任务（`all` 为该专家全部任务）。任务列表直接复用
+route 映射，不能跨专家选择数据集或子任务。模型自动按「专家 × 量化档」解析
 (本地 `models/` 优先，缺失才从 ModelScope 拉取)；single 与 route 使用**同一个
 vLLM 评测器**（`evaluation/vllm_eval/vision_opd_vllm_eval.py`），只是任务范围不同。
+
+<!--
+以下命令行、量化和实验级入口暂时隐藏，源码说明保留。
 
 命令行方式：
 
@@ -388,6 +383,7 @@ python scripts/ttft_serve_probe.py      # vLLM serve /metrics TTFT
 python scripts/run_batch_scan.py        # 6 档并发吞吐/时延扫描
 python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 ```
+-->
 
 ### 3.6 模型训练
 

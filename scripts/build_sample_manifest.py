@@ -325,6 +325,7 @@ def convert_flat_grounding(
     *,
     source_dir: Path,
     images_root: str | None,
+    image_index_by_source: dict[str, int] | None = None,
 ) -> dict:
     """平铺 grounding 记录 -> Sample dict (v1.0, bbox)."""
     path = raw.get("image", "")
@@ -336,6 +337,21 @@ def convert_flat_grounding(
         path = path.replace(
             "/images_exported_test/", "/images_exported_test_4096/"
         )
+        # The 1024 export retained global/sparse image numbers, whereas the
+        # 4096 export was numbered densely by each original image's first
+        # occurrence in the test Arrow dataset.  The JSONL preserves that row
+        # order and original ``path``, so reconstruct the dense name without
+        # importing datasets/pyarrow into the evaluation environment.
+        if image_index_by_source is not None:
+            source_key = str(raw.get("path", "")).strip()
+            if not source_key:
+                raise ManifestBuildError(
+                    f"{dataset} row {index}: missing original image path"
+                )
+            if source_key not in image_index_by_source:
+                image_index_by_source[source_key] = len(image_index_by_source)
+            image_number = image_index_by_source[source_key]
+            path = str(Path(path).with_name(f"xlrs_vg_{image_number:05d}.jpg"))
     image = _image_ref(
         path,
         role="none",
@@ -395,19 +411,20 @@ def build(dataset: str, subtask_filter: str | None, limit: int | None,
     tmp = out.with_name(f".{out.name}.tmp.{os.getpid()}")
     written = 0
     dropped = 0
+    grounding_image_numbers: dict[str, int] = {}
     try:
         with src.open(encoding="utf-8") as f, tmp.open("w", encoding="utf-8") as g:
             for i, line in enumerate(f, start=1):
                 if not line.strip():
                     continue
                 raw = json.loads(line)
-                sample = convert(
-                    raw,
-                    dataset,
-                    i,
-                    source_dir=src.parent,
-                    images_root=images_root,
-                )
+                convert_kwargs = {
+                    "source_dir": src.parent,
+                    "images_root": images_root,
+                }
+                if dataset == "xlrs_grounding":
+                    convert_kwargs["image_index_by_source"] = grounding_image_numbers
+                sample = convert(raw, dataset, i, **convert_kwargs)
                 # 无正确选项答案的 choice 样本直接丢弃(否则评测器校验抛错杀全量)
                 if sample["task_type"] in {"single_choice", "multi_choice"} and not sample["answer_labels"]:
                     dropped += 1

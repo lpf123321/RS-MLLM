@@ -25,9 +25,11 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from rsmllm.config import MODELS_ROOT, REPORT_CONF
+from rsmllm.eval_reporting import print_combined_key_metrics
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = REPO_ROOT / "evaluation" / "vllm_eval"
@@ -142,6 +144,8 @@ def run_eval(
     manifest: Path,
     limit: int | None,
     quantization: str,
+    *,
+    output_dir: Path | None = None,
 ) -> int:
     if limit:
         # 子清单截断(评测器无 --max-samples)
@@ -153,9 +157,12 @@ def run_eval(
                 g.write(line)
         manifest = sub
     runtime = evaluation_runtime_config(manifest)
+    if output_dir is None:
+        output_dir = new_evaluation_output_dir(manifest, profile)
     cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
            "--manifest", str(manifest),
            "--model", model_path,
+           "--output-dir", str(output_dir),
            "--model-profile", profile,
            "--quantization", quantization,
            "--min-pixels", str(runtime["min_pixels"]),
@@ -186,6 +193,15 @@ def run_eval(
             flush=True,
         )
     return result.returncode
+
+
+def new_evaluation_output_dir(
+    manifest: Path, profile: str, limit: int | None = None
+) -> Path:
+    """Return the exact timestamped directory used for one evaluator child."""
+    stem = f"{manifest.stem}_n{limit}" if limit else manifest.stem
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return REPO_ROOT / "results" / f"{stem}_{profile}_{stamp}"
 
 
 def evaluation_runtime_config(manifest: Path) -> dict[str, int]:
@@ -304,6 +320,7 @@ def main() -> int:
         return 0
 
     rc = 0
+    completed_outputs: list[Path] = []
     experts = args.experts or list(ROUTE_PLAN)
     for expert in experts:
         tasks = ROUTE_PLAN[expert]
@@ -317,8 +334,21 @@ def main() -> int:
                 prepare_eval(SRC_TO_DATASET[src_name])
             print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
-            r = run_eval(model_path, profile, manifest, args.limit, args.quant)
+            output_dir = new_evaluation_output_dir(
+                manifest, profile, args.limit
+            )
+            r = run_eval(
+                model_path,
+                profile,
+                manifest,
+                args.limit,
+                args.quant,
+                output_dir=output_dir,
+            )
+            if r == 0:
+                completed_outputs.append(output_dir)
             rc = max(rc, r)
+    print_combined_key_metrics(completed_outputs)
     print(f"\n[router-eval] 完成. 结果在 {REPO_ROOT / 'results'}/ (按任务独立时间戳目录)")
     return rc
 

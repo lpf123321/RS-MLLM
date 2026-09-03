@@ -26,6 +26,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from rsmllm.eval_reporting import print_key_metrics
 
 
 def _resolve_cli_path(path: Path) -> Path:
@@ -704,6 +708,7 @@ def main() -> None:
     final_predictions = output_dir / "predictions.jsonl"
     if final_predictions.exists():
         print(json.dumps({"status": "already_complete", "output_dir": str(output_dir)}))
+        print_key_metrics(output_dir)
         return
     attempts_path = output_dir / "prediction_attempts.jsonl"
     expected = {raw["id"]: raw for raw in raw_rows}
@@ -725,6 +730,7 @@ def main() -> None:
             output_dir, samples, raw_rows, completed, config,
             {"note": "finalized from existing attempts"}, 0.0, _NullAdapter(),
         )
+        print_key_metrics(output_dir)
         return
     load_started = time.perf_counter()
     adapter = VLLMBatchAdapter(
@@ -884,6 +890,7 @@ def main() -> None:
         print("==> vLLM 引擎已释放, 显存已回收", flush=True)
     except Exception as exc:  # noqa: BLE001
         print(f"==> 清理警告(不影响结果): {exc}", flush=True)
+    print_key_metrics(output_dir)
 
 
 class _NullAdapter:
