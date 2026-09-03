@@ -447,9 +447,11 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 
 ### 3.6 模型训练
 
-所有命令从仓库根目录执行；训练默认关闭 thinking。
+下面是一条完整的线性复现流程：从 Base 模型开始完成五阶段训练，得到四个初始
+专家，再对 General 和 Grounding 续训练，最后发布为评测/推理使用的四个专家。
+所有命令都在仓库根目录执行，训练默认关闭 thinking。
 
-#### 环境
+#### 第 1 步：安装训练环境
 
 ```bash
 conda create --override-channels -c conda-forge -n rs_mllm python=3.10 -y
@@ -468,11 +470,10 @@ export CONDA_ENV=rs_mllm
 已验证环境：A100、Python 3.10.21、CUDA 12.8、PyTorch 2.8.0、
 Transformers 5.13.0、DeepSpeed 0.17.5、PEFT 0.15.2。
 
-#### 准备模型和数据
+#### 第 2 步：放置原始数据集
 
-原数据集不随仓库和改编 JSON 重复发布。已有原数据时，请按以下名称放到
-`datasets/shared_datasets/`（也可以让 `shared_datasets` 本身成为软链）；压缩包需先
-解压，XLRS 的 Hugging Face Arrow 可原样保留：
+将原始数据按以下名称放到 `datasets/shared_datasets/`。该目录可以是软链；压缩包
+需要先解压，XLRS 的 Hugging Face Arrow 文件可原样保留。
 
 ```text
 datasets/shared_datasets/
@@ -481,118 +482,98 @@ datasets/shared_datasets/
 ├── XLRS-Bench-lite/
 ├── XLRS-Bench_visual_grounding_en/
 ├── LEVIR-CC/
-
-datasets/training35/            # 脚本下载/生成的改编 JSON 与内容哈希图片
 ```
 
-依次运行：
+原始图片不会被下面的脚本自动下载。MME 使用前请先阅读并同意其许可证。
+
+#### 第 3 步：准备 Base 模型和五阶段数据
+
+依次执行，不要跳步：
 
 ```bash
-# 五阶段只需要 base；缺失时从 ModelScope 下载，已有目录则直接复用
 python scripts/stage_training35_models.py --download
-
-# 从 ModelScope 下载五阶段正式训练 JSON
 python scripts/fetch_training35_data.py
-
-# 从 datasets/ 原图建立五阶段内容哈希软链
 python scripts/prepare_training35_images.py
-
-# 建立统一训练路径并做 CPU 完整预检
 python scripts/stage_training35_data.py
 python scripts/preflight_training35.py
 ```
 
-运行前可加 `--dry-run` 检查前 3 条准备命令的来源和目标，不会下载或扫描大文件。
-Base 模型来自 ModelScope `Fun10165/qwen-3.5-rs`；五阶段 JSON 来自
-`yasumi/rs-mllm-datasets`。原数据需自行取得并按上述目录放置；
-`training/distillation/expert_lora/scripts/download_official_datasets.sh` 仅用于下载和
-校验专家续训练所需的部分官方图像，不能代替完整五阶段数据准备，也不包含
-LEVIR-CC。MME 下载前需阅读并同意其许可。由于原图可达数百 GB，官方下载不会
-被上述准备命令隐式触发。
+最后一条输出 `"passed": true` 且所有 `missing_images` 为 `0` 才能继续。生成的
+训练清单位于 `datasets/training35/`。Base 模型和五阶段 JSON 分别来自 ModelScope
+`Fun10165/qwen-3.5-rs` 与 `yasumi/rs-mllm-datasets`。
 
-#### 五阶段训练
+#### 第 4 步：运行五阶段训练
 
-首次运行建议先做单卡 smoke test：
+建议先用一张 GPU 跑一次最小 smoke test：
 
 ```bash
 bash scripts/train.sh smoke-all --gpus 1 --max-updates 1
 ```
 
-smoke 通过后，完整训练在本地与 Slurm 中二选一，不要依次执行：
+通过后，本地或 Slurm 二选一执行完整训练：
 
 ```bash
-bash scripts/train.sh all               # 本地完整依赖流水线
-bash scripts/train.sh --slurm all       # Slurm afterok 完整依赖流水线
+bash scripts/train.sh all          # 本地
+# bash scripts/train.sh --slurm all  # Slurm；与上一条不要同时运行
 ```
 
-以下单阶段命令仅用于调试或断点续跑；运行前须确保它依赖的上游阶段已在同一
-`run-id` 下完成：
+该命令自动依次运行 `stage1_clean`、`ga2_general`、`a1_grounding`、
+`a2b_change` 和 `caption`。四个初始专家位于：
 
-```bash
-bash scripts/train.sh stage1_clean      # 统一 SFT 主干
-bash scripts/train.sh ga2_general       # General 续训
-bash scripts/train.sh a1_grounding      # Grounding 续训
-bash scripts/train.sh a2b_change        # Change 续训
-bash scripts/train.sh caption           # Caption 双域训练
+```text
+models/training35/runs/five-stage/merged/ga2_general    # General
+models/training35/runs/five-stage/merged/a1_grounding  # Grounding
+models/training35/runs/five-stage/merged/a2b_change    # Change
+models/training35/runs/five-stage/merged/caption       # Caption
 ```
 
-#### General / Grounding 续训练
+#### 第 5 步：准备 General/Grounding 续训练
 
-这是独立于五阶段的可选复现实验。首次运行前额外准备两个专家模型、续训练 JSON
-和图片；专家图片索引约 74 GB，请先确认磁盘空间：
+先把五阶段产生的 General 和 Grounding 接入续训练入口：
 
 ```bash
-python scripts/stage_training35_models.py --profile expert-lora --download
+python scripts/stage_training35_models.py --profile expert-lora \
+  --general models/training35/runs/five-stage/merged/ga2_general \
+  --ground models/training35/runs/five-stage/merged/a1_grounding \
+  --replace-links
+```
+
+若只验收续训练链路、没有实际运行第 4 步，可改用
+`python scripts/stage_training35_models.py --profile expert-lora --download`
+下载已有的 General/Grounding 专家作为起点。
+
+再下载续训练 JSON、恢复图片并预检。完整图片约需 74 GB，请先确认磁盘空间：
+
+```bash
 python scripts/fetch_training35_data.py --include-expert
 python scripts/prepare_training35_images.py --include-expert
 python scripts/stage_training35_data.py --include-expert
 python scripts/preflight_training35.py --include-expert
 ```
 
-续训练 JSON 来自 ModelScope `Uchitachi/RS-MLLM-Distillation-Data`。
+续训练 JSON 来自 ModelScope `Uchitachi/RS-MLLM-Distillation-Data`。预检同样必须
+显示 `"passed": true`。
 
-磁盘不足时，可先只恢复每个入口的两条样本并做真实 GPU smoke test；它会验证
-JSON、图片哈希、模型加载、前后向和 LoRA 保存，但不代表完整训练结果：
-
-```bash
-python scripts/prepare_training35_images.py \
-  --include-expert --expert-smoke-samples 2
-python scripts/stage_training35_data.py --include-expert
-
-ARTIFACT_ROOT="$PWD/models/training35/runs/expert-smoke"
-bash training/train_general_expert.sh --gpus 1 --max-updates 2 \
-  --smoke-samples 2 --output-root "$ARTIFACT_ROOT"
-bash training/train_grounding_expert.sh --stage bootstrap --gpus 1 \
-  --max-updates 2 --smoke-samples 2 --output-root "$ARTIFACT_ROOT"
-bash training/train_grounding_expert.sh --stage final --gpus 1 \
-  --max-updates 2 --smoke-samples 2 \
-  --init-lora "$ARTIFACT_ROOT/bootstrap/expert_ground_lora" \
-  --output-root "$ARTIFACT_ROOT"
-```
-
-以下是 30 updates 的功能验收，不用于复现历史最终指标：
+#### 第 6 步：续训练 General 和 Grounding
 
 ```bash
-ARTIFACT_ROOT="$PWD/models/training35/runs/training35-short"
+ARTIFACT_ROOT="$PWD/models/training35/runs/training35-full"
 
-# expert_general -> expert_general_lora
+# General：4 卡，484 updates
 bash training/train_general_expert.sh \
-  --gpus 1 --max-updates 30 --output-root "$ARTIFACT_ROOT"
+  --gpus 4 --max-updates 484 --output-root "$ARTIFACT_ROOT"
 
-# expert_ground -> bootstrap -> expert_ground_lora
+# Grounding：先 bootstrap，再进行 final 续训练
 bash training/train_grounding_expert.sh \
-  --stage bootstrap --gpus 1 --output-root "$ARTIFACT_ROOT"
+  --stage bootstrap --gpus 4 --max-updates 30 \
+  --output-root "$ARTIFACT_ROOT"
 bash training/train_grounding_expert.sh \
-  --stage final --gpus 1 --max-updates 30 \
+  --stage final --gpus 8 --max-updates 1370 \
   --init-lora "$ARTIFACT_ROOT/bootstrap/expert_ground_lora" \
   --output-root "$ARTIFACT_ROOT"
 ```
 
-复现完整历史训练时，另设 `ARTIFACT_ROOT="$PWD/models/training35/runs/training35-full"`，并使用 General
-4 卡/484 updates、Grounding bootstrap 4 卡/30 updates、Grounding final
-8 卡/1370 updates；将上述 `--gpus` 和 `--max-updates` 相应替换即可。
-
-合并完整模型：
+#### 第 7 步：合并 General/Grounding
 
 ```bash
 bash scripts/merge_checkpoint.sh \
@@ -606,18 +587,24 @@ bash scripts/merge_checkpoint.sh \
   --output "$ARTIFACT_ROOT/expert_ground_full"
 ```
 
-#### 数据构建与 delta
+此时最终四个模型是 `expert_general_full`、`expert_ground_full`、`a2b_change` 和
+`caption`。
 
-以下命令不是训练前置步骤，仅在需要重新构建数据或导出四专家 delta 时运行：
+#### 第 8 步：发布到评测和推理目录
 
 ```bash
-python scripts/build_caption_expert_data.py
-python scripts/generate_mcq_data.py
-python scripts/gen_expert_deltas.py --verify
+python scripts/publish_trained_experts.py \
+  --expert-root "$ARTIFACT_ROOT" \
+  --replace-links
 ```
 
-四个 raw delta 写入 `models/training35/deltas/`，命名为
-`expert_general.pt`、`expert_ground.pt`、`expert_change.pt`、`expert_caption.pt`。
+脚本检查四个模型后，将它们软链到 `models/expert_general`、
+`models/expert_ground`、`models/expert_change` 和 `models/expert_caption`。评测与推理
+会直接使用这些本地模型，发布记录位于 `models/TRAINED_EXPERTS_MANIFEST.json`。
+
+只检查命令而不训练时，可运行 `bash scripts/train.sh all --dry-run`；发布前也可以给
+最后一条命令加 `--dry-run`。单阶段训练和数据/delta 重建脚本仅用于调试，不属于
+上述标准复现流程。
 
 ---
 

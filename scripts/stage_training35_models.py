@@ -68,13 +68,20 @@ def validate(path: Path, adapter: bool = False) -> dict[str, object]:
     }
 
 
-def ensure_link(link: Path, target: Path) -> None:
+def ensure_link(link: Path, target: Path, *, replace_links: bool = False) -> None:
     target = target.expanduser().resolve()
     if link.is_symlink():
         if link.resolve() != target:
-            raise FileExistsError(
-                f"conflicting link: {link} -> {link.resolve()} (wanted {target})"
-            )
+            if not replace_links:
+                raise FileExistsError(
+                    f"conflicting link: {link} -> {link.resolve()} (wanted {target}); "
+                    "use --replace-links"
+                )
+            temporary = link.parent / f".{link.name}.stage-{os.getpid()}"
+            if temporary.exists() or temporary.is_symlink():
+                temporary.unlink()
+            temporary.symlink_to(target, target_is_directory=True)
+            os.replace(temporary, link)
         return
     if link.exists():
         if link.resolve() == target:
@@ -102,7 +109,22 @@ def main() -> None:
         action="store_true",
         help="print the local/ModelScope resolution plan without writing or downloading",
     )
+    parser.add_argument(
+        "--replace-links",
+        action="store_true",
+        help="replace conflicting model symlinks; real directories are never replaced",
+    )
     parser.add_argument("--base", type=Path)
+    parser.add_argument(
+        "--general",
+        type=Path,
+        help="existing General expert (for example the five-stage ga2_general output)",
+    )
+    parser.add_argument(
+        "--ground",
+        type=Path,
+        help="existing Grounding expert (for example the five-stage a1_grounding output)",
+    )
     parser.add_argument("--general-delta", type=Path)
     parser.add_argument("--ground-delta", type=Path)
     parser.add_argument("--change", type=Path)
@@ -128,6 +150,8 @@ def main() -> None:
 
     explicit = {
         "base": args.base,
+        "general": args.general,
+        "ground": args.ground,
         "change": args.change,
         "caption": args.caption,
         "general_lora": args.general_lora,
@@ -143,13 +167,13 @@ def main() -> None:
         canonical = args.models_root / name
         supplied = explicit.get(option_name)
         marker = "adapter_config.json" if name.endswith("_lora") else "config.json"
-        if (canonical / marker).is_file():
-            plan[name] = {"action": "reuse", "source": str(canonical.resolve())}
-        elif supplied is not None:
+        if supplied is not None:
             plan[name] = {
                 "action": "link",
                 "source": str(supplied.expanduser().resolve()),
             }
+        elif (canonical / marker).is_file():
+            plan[name] = {"action": "reuse", "source": str(canonical.resolve())}
         elif name == "expert_general" and (args.build_general or args.build_experts):
             plan[name] = {
                 "action": "compose",
@@ -265,7 +289,11 @@ def main() -> None:
         for name, (path, adapter) in targets.items()
     }
     for name, (target, _) in targets.items():
-        ensure_link(args.models_root / name, target)
+        ensure_link(
+            args.models_root / name,
+            target,
+            replace_links=args.replace_links,
+        )
     args.cache_root.mkdir(parents=True, exist_ok=True)
     (args.cache_root / "staging_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
