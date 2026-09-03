@@ -301,9 +301,21 @@ evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py \
 Caption 四个专家；模型未下载时会自动从 ModelScope 获取。每次请求都会根据 prompt
 中的任务前缀和关键词自动选择专家，例如 `[VQA]`、`[REF]`、`[CD]` 和 `[CAP]`。
 
-- **WebUI（推荐）**：直接回车采用默认模式，模型加载完成后打开
-  `http://127.0.0.1:7860`，即可上传遥感图片并提问。
-- **CLI**：输入 `cli`，模型加载完成后在 `prompt>` 后输入问题，按 `Ctrl+C` 退出。
+当前 Router 会对**每一条 prompt 独立路由**，不会只根据第一条消息永久锁定专家。
+若想在后续提问中继续使用同一个专家，建议每条 prompt 都保留对应的任务前缀；没有
+明确前缀或关键词时默认使用 General。页面会显示历史消息，但当前模型请求只包含
+本次上传的图像和 prompt，因此追问时应补充必要的上下文。
+
+| Expert | 适用任务 | 推荐 prompt 示例 |
+|---|---|---|
+| General | 遥感问答、选择题 | `[VQA] What objects are visible in this image?` |
+| Grounding | 查找目标并输出位置框 | `[REF] Locate the building and return its bounding box.` |
+| Change | 对比两张图像的变化 | `[CD] Describe the changes between these two images.` |
+| Caption | 生成完整图像描述 | `[CAP] Provide a detailed description of this image.` |
+
+- **WebUI（推荐）**：直接回车采用默认模式，打开 `http://127.0.0.1:7860`，上传图片
+  并输入上述 prompt。单卡首次请求会现场加载命中的专家，需要等待约 1 分钟。
+- **CLI**：输入 `cli`，在 `router>` 后输入 prompt，按 `Ctrl+C` 退出。
 
 在远程服务器运行 WebUI 时，可在本地建立端口转发后访问：
 
