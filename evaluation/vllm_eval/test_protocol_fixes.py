@@ -28,7 +28,9 @@ from scripts.build_sample_manifest import (
 from scripts import fetch_models
 from vision_opd_vllm_eval import VLLMBatchAdapter
 from vision_opd_eval import intentional_length_constraint
-from rsmllm.router_eval import evaluation_runtime_config
+from evaluation.router.rules import route, route_task
+from rsmllm.router import expert_device_map
+from rsmllm.router_eval import evaluation_runtime_config, route_manifest
 from rsmllm import console
 from rsmllm.console import _single_task_plan
 from rsmllm.eval_reporting import key_metric_lines, print_combined_key_metrics
@@ -66,6 +68,47 @@ class ProtocolFixTests(unittest.TestCase):
     def test_hidden_console_services_remain_registered(self) -> None:
         self.assertEqual(console.HIDDEN_MENU_KEYS, {"4", "5", "6", "7", "8"})
         self.assertTrue(console.HIDDEN_MENU_KEYS <= console.MAIN_MENU.keys())
+
+    def test_prompt_router_covers_four_experts_and_bbox_wins_change_words(self) -> None:
+        self.assertEqual(route("[VQA] What is visible?"), "general")
+        self.assertEqual(route("[CAP] Describe the image."), "caption")
+        self.assertEqual(route("[CD] Describe the changes."), "change")
+        self.assertEqual(route("请框出目标的位置"), "grounding")
+        self.assertEqual(
+            route_task(
+                "Identify the bounding box. The fields have differences in color."
+            ),
+            "referring",
+        )
+
+    def test_route_manifest_rejects_mixed_experts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "mixed.jsonl"
+            manifest.write_text(
+                '\n'.join(
+                    json.dumps({"prompt": prompt})
+                    for prompt in ("[VQA] question", "[CAP] describe")
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "路由到多个专家"):
+                route_manifest(manifest)
+
+    def test_online_router_preserves_two_gpu_layout(self) -> None:
+        self.assertEqual(
+            expert_device_map(["0", "1"]),
+            {"general": "0", "grounding": "1", "change": "1", "caption": "0"},
+        )
+
+    def test_console_serve_starts_prompt_router(self) -> None:
+        with (
+            patch.object(console, "_ask", side_effect=["bf16", "webui"]),
+            patch.object(console, "_run_repo") as run_repo,
+        ):
+            console._cmd_serve()
+        command = run_repo.call_args.args[0]
+        self.assertEqual(command[1:5], ["-m", "rsmllm.router", "--serve", "--quant"])
+        self.assertEqual(command[5:], ["bf16", "--webui"])
 
     def test_console_key_metrics_cover_discrete_bbox_and_caption(self) -> None:
         summary = {

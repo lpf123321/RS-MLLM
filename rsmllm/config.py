@@ -111,6 +111,29 @@ MODEL_REGISTRY = {
     "expert_caption_gptq": "Fun10165/rs-mllm-expert-caption-w4a16-gptq",
 }
 
+# 在线推理与 route 评测共用的「精度 × 专家 → canonical 模型别名」。
+# 保持在集中配置中，避免两个 Router 选到不同权重。
+EXPERT_MODEL_ALIASES = {
+    "bf16": {
+        "general": "expert_general",
+        "grounding": "expert_ground",
+        "change": "expert_change",
+        "caption": "expert_caption",
+    },
+    "w8a8": {
+        "general": "expert_general_w8a8",
+        "grounding": "expert_ground_w8a8",
+        "change": "expert_change_w8a8",
+        "caption": "expert_caption_w8a8",
+    },
+    "gptq": {
+        "general": "expert_general_gptq",
+        "grounding": "expert_ground_gptq",
+        "change": "expert_change_gptq",
+        "caption": "expert_caption_gptq",
+    },
+}
+
 # ModelScope 数据集注册表(清洗后训练清单 json): 首次自动拉取到 DATASETS_CACHE
 DATA_REGISTRY = {
     # 训练数据: 14 个清洗 json(发布名), fetch 后还原内部名到 finetune_framework/VRSbench/

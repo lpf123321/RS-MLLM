@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""一键路由专家评测: 按映射表自动跑 4 专家 × 对应子任务.
+"""一键路由专家评测: 按 prompt 规则自动跑 4 专家 × 对应子任务.
 
 用法:
   python -m rsmllm.router_eval --quant bf16        # bf16 全量路由评测
   python -m rsmllm.router_eval --quant w8a8 --limit 50   # 小样本验证
   python -m rsmllm.router_eval --list              # 打印映射表
 
-只选量化方式(bf16/w8a8/gptq), 专家与子任务自动分配:
+只选量化方式(bf16/w8a8/gptq)，每个任务清单的全部 prompt 会先经过与在线
+推理相同的规则；确认路由结果唯一且符合任务登记后，再启动对应专家：
   general  : vrsbench-vqa, mme, xlrs-bench-lite
   grounding: vrsbench-referring, xlrs-bench-grounding-en
   change   : levir-cc
@@ -28,7 +29,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from rsmllm.config import MODELS_ROOT, REPORT_CONF
+from evaluation.router.rules import route
+from rsmllm.config import EXPERT_MODEL_ALIASES, MODELS_ROOT, REPORT_CONF
 from rsmllm.eval_reporting import print_combined_key_metrics
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -63,18 +65,8 @@ ROUTE_PLAN = {
 # *_full 目录（它们是历史上的二次合并产物）。change/caption 没有 LoRA。
 # 别名而不是硬编码绝对路径，确保新机器会走 ModelScope 懒加载。
 QUANT_EXPERTS = {
-    "bf16": {"general": ("expert_general", "expert_general"),
-             "grounding": ("expert_ground", "expert_ground"),
-             "change": ("expert_change", "expert_change"),
-             "caption": ("expert_caption", "expert_caption")},
-    "w8a8": {"general": ("expert_general_w8a8", "expert_general_w8a8"),
-             "grounding": ("expert_ground_w8a8", "expert_ground_w8a8"),
-             "change": ("expert_change_w8a8", "expert_change_w8a8"),
-             "caption": ("expert_caption_w8a8", "expert_caption_w8a8")},
-    "gptq": {"general": ("expert_general_gptq", "expert_general_gptq"),
-             "grounding": ("expert_ground_gptq", "expert_ground_gptq"),
-             "change": ("expert_change_gptq", "expert_change_gptq"),
-             "caption": ("expert_caption_gptq", "expert_caption_gptq")},
+    quant: {expert: (alias, alias) for expert, alias in aliases.items()}
+    for quant, aliases in EXPERT_MODEL_ALIASES.items()
 }
 
 # Known local artifacts are preferred over a second download.  The alternate
@@ -136,6 +128,32 @@ def build_subtask_manifest(src_name: str, task_type: str | None, label: str) -> 
         raise
     print(f"  子任务清单: {out.name} ({written} samples)")
     return out
+
+
+def route_manifest(manifest: Path) -> tuple[str, dict[str, int]]:
+    """Classify every prompt and require one unambiguous expert per task."""
+    counts = {expert: 0 for expert in ROUTE_PLAN}
+    with manifest.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            row = json.loads(line)
+            prompt = row.get("prompt")
+            if not isinstance(prompt, str):
+                raise ValueError(
+                    f"manifest row {line_number} 缺少字符串 prompt: {manifest}"
+                )
+            expert = route(prompt)
+            if expert not in counts:
+                raise ValueError(
+                    f"manifest row {line_number} 路由到未知专家 {expert!r}: {manifest}"
+                )
+            counts[expert] += 1
+    active = [expert for expert, count in counts.items() if count]
+    if not active:
+        raise ValueError(f"评测清单为空: {manifest}")
+    if len(active) != 1:
+        detail = ", ".join(f"{key}={value}" for key, value in counts.items() if value)
+        raise ValueError(f"同一评测任务被路由到多个专家 ({detail}): {manifest}")
+    return active[0], counts
 
 
 def run_eval(
@@ -321,19 +339,33 @@ def main() -> int:
 
     rc = 0
     completed_outputs: list[Path] = []
-    experts = args.experts or list(ROUTE_PLAN)
-    for expert in experts:
-        tasks = ROUTE_PLAN[expert]
-        model_ref, profile = QUANT_EXPERTS[args.quant][expert]
-        print(f"[router-eval] 量化 {args.quant} / 专家 {expert} → 模型 {model_ref} (profile {profile})")
-        model_path = resolve_model(expert, args.quant)
-        for task_name, src_name, task_type in tasks:
+    resolved_models: dict[str, tuple[str, str]] = {}
+    planned_experts = args.experts or list(ROUTE_PLAN)
+    for expected_expert in planned_experts:
+        for task_name, src_name, task_type in ROUTE_PLAN[expected_expert]:
             # 首次自动准备: 图片下载 + 可移植评测清单构建(vrsbench 等 6 数据集)
             from rsmllm.data import prepare_eval
             if src_name in SRC_TO_DATASET:
                 prepare_eval(SRC_TO_DATASET[src_name])
-            print(f"\n[{expert}] {task_name} ...")
             manifest = build_subtask_manifest(src_name, task_type, task_name.replace("-", "_"))
+            expert, route_counts = route_manifest(manifest)
+            if expert != expected_expert:
+                raise RuntimeError(
+                    f"路由规则改变了 {task_name} 的专家: "
+                    f"原映射={expected_expert}, prompt 路由={expert}, counts={route_counts}"
+                )
+            if expert not in resolved_models:
+                model_ref, profile = QUANT_EXPERTS[args.quant][expert]
+                print(
+                    f"[router-eval] 量化 {args.quant} / prompt 路由 → "
+                    f"专家 {expert} / 模型 {model_ref} (profile {profile})"
+                )
+                resolved_models[expert] = (resolve_model(expert, args.quant), profile)
+            model_path, profile = resolved_models[expert]
+            print(
+                f"\n[{expert}] {task_name} "
+                f"(prompt 路由 {sum(route_counts.values())} 条) ..."
+            )
             output_dir = new_evaluation_output_dir(
                 manifest, profile, args.limit
             )

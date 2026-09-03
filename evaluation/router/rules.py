@@ -12,21 +12,29 @@ task -> expert 的映射集中在 ``TASK_TO_EXPERT``，将来 expert 拆分（�
 import re
 
 CHANGE_KEYWORDS = (
-    "change", "difference", "before", "after", "compare", "changed"
+    "change", "difference", "before", "after", "compare", "changed",
+    "变化", "改变", "差异", "前后", "对比",
 )
 GROUNDING_KEYWORDS = (
-    "where", "location", "position", "find", "locate", "region"
+    "where", "location", "position", "find", "locate", "region",
+    "哪里", "位置", "定位", "找到", "区域", "坐标", "框出",
 )
 CAPTION_KEYWORDS = (
     "describe", "description", "caption", "captioning", "detailed description",
     "overall description", "partitioned description", "comprehensive inference",
     "describe the image", "generate a caption", "image caption",
+    "描述", "图像描述", "图片内容", "场景描述",
 )
 CAPTION_INSTRUCTION_MARKERS = (
     "description is divided into three parts",
     "partitioned description",
     "comprehensive inference",
     "generating a detailed description",
+)
+GROUNDING_INSTRUCTION_MARKERS = (
+    "identify the bounding box",
+    "answer directly with the bounding box",
+    "return the bounding box",
 )
 
 # expert 名
@@ -100,6 +108,10 @@ def route_task(prompt: str) -> str:
         return CAPTION
     if _has_mcq(t):
         return MCQ
+    # Grounding descriptions may mention visual "differences" or comparisons;
+    # an explicit bbox instruction must win over incidental change words.
+    if any(marker in low for marker in GROUNDING_INSTRUCTION_MARKERS):
+        return REFERRING
     if any(kw in low for kw in CHANGE_KEYWORDS):
         return CHANGE_TASK
     if any(kw in low for kw in GROUNDING_KEYWORDS):

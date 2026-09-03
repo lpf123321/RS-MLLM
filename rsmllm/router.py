@@ -1,12 +1,13 @@
 """RS-MLLM vLLM Router: 规则路由 + 多专家实例分发.
 
 架构(与报告 §5.3 一致):
-  4 个专家 = 4 个 delta-merged 完整模型(base+delta), general/grounding 叠加 LoRA
+  4 个专家 = 当前精度档的 4 个 canonical 完整模型
   → 每个专家起一个 vLLM OpenAI 兼容服务
   → 本层按 prompt 规则(rules.py)把请求路由到对应专家实例
 
 用法:
-  python -m rsmllm.router --config router_config.json    # 启动全部实例+路由入口
+  python -m rsmllm.router --serve --chat --quant bf16    # 启动全部实例+CLI
+  python -m rsmllm.router --serve --webui --quant w8a8   # 启动全部实例+WebUI
   python -m rsmllm.router --probe prompt                 # 仅打印路由结果
 
 路由规则(与评测链路 evaluation/router/rules.py 一致):
@@ -33,22 +34,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from evaluation.router.rules import route  # 与评测一致的路由规则
+from rsmllm.config import EXPERT_MODEL_ALIASES, LOGS_DIR, REPORT_CONF
+from rsmllm.models import get_model
 
 DEFAULT_PORTS = {"general": 8001, "grounding": 8002, "change": 8003, "caption": 8004}
 EVAL_PY = REPO_ROOT / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
 DEFAULT_PYTHON = str(EVAL_PY) if EVAL_PY.is_file() else sys.executable
 
-# 默认专家 -> 模型目录(可被 --config 覆盖)
-DEFAULT_MODELS = {
-    "general": str(REPO_ROOT / "router_models" / "general_exp7_merged"),
-    "grounding": str(REPO_ROOT / "router_models" / "ground_expert_update_merged"),
-    "change": str(REPO_ROOT / "router_models" / "change_merged"),
-    "caption": str(REPO_ROOT / "router_models" / "caption_merged"),
-}
-DEFAULT_LORAS = {
-    "general": str(REPO_ROOT / "lora_test" / "general"),
-    "grounding": str(REPO_ROOT / "lora_test" / "grounding"),
-}
+EXPERT_ORDER = ("general", "grounding", "change", "caption")
 
 
 def _repo_path(value: str) -> Path:
@@ -79,41 +72,71 @@ def _executable_path(value: str) -> Path:
     return Path(found) if found else path
 
 
-def start_expert(name: str, model_dir: str, port: int, lora: str | None = None,
-                 python: str = DEFAULT_PYTHON) -> None:
+def start_expert(
+    name: str,
+    model_dir: str,
+    port: int,
+    *,
+    device: str | None = None,
+    gpu_memory_utilization: float = 0.85,
+    python: str = DEFAULT_PYTHON,
+) -> subprocess.Popen:
     """启动一个专家的 vLLM OpenAI 兼容服务."""
     python_path = _executable_path(python)
     model_path = _runtime_path(model_dir)
-    lora_path = _runtime_path(lora) if lora else None
     env = dict(os.environ)
     env.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")  # flashinfer JIT 与 cub 不兼容
+    if device is not None:
+        env["CUDA_VISIBLE_DEVICES"] = device
     if python_path.parent != Path("."):
         env["PATH"] = str(python_path.parent) + os.pathsep + env.get("PATH", "")  # ninja
     cmd = [
         str(python_path), "-m", "vllm.entrypoints.openai.api_server",
         "--model", model_path,
-        "--served-model-name", "default",
+        "--served-model-name", name,
         "--port", str(port),
         "--dtype", "bfloat16",
         "--trust-remote-code",
         "--max-model-len", "16384",
         "--limit-mm-per-prompt", '{"image": 2}',
+        "--allowed-local-media-path", "/tmp",
+        "--mm-processor-kwargs",
+        json.dumps(
+            {
+                "min_pixels": REPORT_CONF["min_pixels"],
+                "max_pixels": REPORT_CONF["max_pixels"],
+            }
+        ),
+        "--gpu-memory-utilization", str(gpu_memory_utilization),
     ]
-    if lora_path:
-        cmd += ["--enable-lora", "--max-lora-rank", "32", "--lora-modules", f"{name}={lora_path}"]
-    print(f"[router] 启动 {name}: {model_path} (port {port}{' + LoRA' if lora_path else ''})", flush=True)
-    subprocess.Popen(
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / f"router_{name}.log"
+    log_file = log_path.open("a", encoding="utf-8")
+    print(
+        f"[router] 启动 {name}: {model_path} "
+        f"(port {port}, GPU {device or '默认'}, log {log_path})",
+        flush=True,
+    )
+    process = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
     )
+    log_file.close()
+    return process
 
 
-def wait_ready(port: int, timeout: int = 600) -> None:
+def wait_ready(
+    port: int, timeout: int = 600, process: subprocess.Popen | None = None
+) -> None:
     t0 = time.time()
     while time.time() - t0 < timeout:
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(
+                f"专家实例 {port} 启动失败 (exit={process.returncode})，请查看 logs/router_*.log"
+            )
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=3):
                 return
@@ -128,9 +151,170 @@ def route_request(prompt: str, ports: dict[str, int]) -> tuple[str, int]:
     return expert, ports.get(expert, ports["general"])
 
 
+def _visible_devices(device_arg: str | None = None) -> list[str]:
+    """Return physical GPU identifiers available to expert subprocesses."""
+    if device_arg:
+        devices = [item.strip() for item in device_arg.split(",") if item.strip()]
+        if devices:
+            return devices
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if visible and visible != "-1":
+        devices = [item.strip() for item in visible.split(",") if item.strip()]
+        if devices:
+            return devices
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def expert_device_map(devices: list[str]) -> dict[str, str | None]:
+    """Spread four experts across available GPUs, preserving the old 2-GPU layout."""
+    if not devices:
+        return {expert: None for expert in EXPERT_ORDER}
+    if len(devices) == 2:
+        assignment = (devices[0], devices[1], devices[1], devices[0])
+    else:
+        assignment = tuple(devices[i % len(devices)] for i in range(len(EXPERT_ORDER)))
+    return dict(zip(EXPERT_ORDER, assignment, strict=True))
+
+
+def default_gpu_memory_utilization(device_count: int) -> float:
+    """Split each GPU's vLLM reservation between experts sharing that GPU."""
+    experts_per_gpu = 4 if device_count <= 1 else (2 if device_count == 2 else 1)
+    return {1: 0.85, 2: 0.45, 4: 0.22}[experts_per_gpu]
+
+
+def start_all_experts(
+    quant: str,
+    config: dict,
+    *,
+    devices: list[str],
+    gpu_memory_utilization: float | None,
+) -> tuple[dict[str, int], list[subprocess.Popen]]:
+    """Resolve canonical models and start the four routed vLLM endpoints."""
+    ports: dict[str, int] = {}
+    processes: list[subprocess.Popen] = []
+    device_map = expert_device_map(devices)
+    gpu_mem = gpu_memory_utilization or default_gpu_memory_utilization(len(devices))
+    try:
+        for name in EXPERT_ORDER:
+            cfg = config.get(name, {})
+            if "model" in cfg:
+                model_path = get_model(cfg["model"])
+            else:
+                # Reuse evaluation's canonical/local-artifact resolution so
+                # online and offline Router cannot silently select different weights.
+                from rsmllm.router_eval import resolve_model
+
+                model_path = resolve_model(name, quant)
+            port = int(cfg.get("port", DEFAULT_PORTS[name]))
+            device = str(cfg.get("device", device_map[name])) if cfg.get(
+                "device", device_map[name]
+            ) is not None else None
+            process = start_expert(
+                name,
+                model_path,
+                port,
+                device=device,
+                gpu_memory_utilization=float(cfg.get("gpu_memory_utilization", gpu_mem)),
+            )
+            processes.append(process)
+            ports[name] = port
+            print(f"[router] 等待 {name} (port {port}) 就绪...", flush=True)
+            wait_ready(port, process=process)
+            print(f"[router] {name} 已就绪", flush=True)
+    except Exception:
+        stop_experts(processes)
+        raise
+    return ports, processes
+
+
+def stop_experts(processes: list[subprocess.Popen]) -> None:
+    """Stop only expert processes started by this router invocation."""
+    for process in processes:
+        if process.poll() is None:
+            process.terminate()
+    for process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+class LazyExpertPool:
+    """Keep one routed expert resident for single-GPU inference."""
+
+    def __init__(
+        self,
+        quant: str,
+        *,
+        device: str | None,
+        gpu_memory_utilization: float = 0.85,
+    ) -> None:
+        self.quant = quant
+        self.device = device
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.current_expert: str | None = None
+        self.current_process: subprocess.Popen | None = None
+        self.lock = threading.Lock()
+
+    def client_endpoint(self, expert: str) -> tuple[str, int]:
+        """Start or reuse the requested expert; caller must hold ``lock``."""
+        if (
+            expert == self.current_expert
+            and self.current_process is not None
+            and self.current_process.poll() is None
+        ):
+            return expert, DEFAULT_PORTS[expert]
+        self.close()
+        from rsmllm.router_eval import resolve_model
+
+        model_path = resolve_model(expert, self.quant)
+        port = DEFAULT_PORTS[expert]
+        print(f"[router] prompt 命中 {expert}，加载对应专家...", flush=True)
+        process = start_expert(
+            expert,
+            model_path,
+            port,
+            device=self.device,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+        )
+        try:
+            wait_ready(port, process=process)
+        except Exception:
+            stop_experts([process])
+            raise
+        self.current_expert = expert
+        self.current_process = process
+        return expert, port
+
+    def close(self) -> None:
+        if self.current_process is not None:
+            stop_experts([self.current_process])
+        self.current_process = None
+        self.current_expert = None
+
+
 def chat(expert_name: str, expert_port: int, messages: list[dict]) -> str:
     """调用专家实例 OpenAI 兼容接口."""
-    body = json.dumps({"model": expert_name, "messages": messages, "max_tokens": 1024}).encode()
+    body = json.dumps(
+        {
+            "model": expert_name,
+            "messages": messages,
+            "max_tokens": 1024,
+            "temperature": 0,
+        }
+    ).encode()
     req = urllib.request.Request(
         f"http://127.0.0.1:{expert_port}/v1/chat/completions",
         data=body, headers={"Content-Type": "application/json"})
@@ -141,11 +325,23 @@ def chat(expert_name: str, expert_port: int, messages: list[dict]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--config", help="JSON: {expert: {model, port, lora}}")
+    ap.add_argument(
+        "--config", help="JSON: {expert: {model, port, device, gpu_memory_utilization}}"
+    )
     ap.add_argument("--probe", help="仅打印该 prompt 的路由结果")
     ap.add_argument("--serve", action="store_true", help="启动全部专家实例")
     ap.add_argument("--chat", action="store_true", help="交互对话(自动路由)")
+    ap.add_argument("--webui", action="store_true", help="网页对话(自动路由)")
+    ap.add_argument("--web-port", type=int, default=7860, help="WebUI 端口")
+    ap.add_argument("--quant", choices=tuple(EXPERT_MODEL_ALIASES), default="bf16")
+    ap.add_argument("--devices", help="专家可用 GPU，例如 0,1,2,3；默认自动检测")
+    ap.add_argument("--gpu-mem", type=float, help="每个专家的 GPU 显存占比")
     args = ap.parse_args()
+
+    for key in ("NO_PROXY", "no_proxy"):
+        current = os.environ.get(key, "")
+        local = "127.0.0.1,localhost"
+        os.environ[key] = f"{local},{current}" if current else local
 
     config: dict = {}
     if args.config:
@@ -156,40 +352,96 @@ def main() -> int:
         print(f"[router] {args.probe[:50]!r} -> {expert} (port {port})")
         return 0
 
+    ports = {
+        name: int(config.get(name, {}).get("port", DEFAULT_PORTS[name]))
+        for name in EXPERT_ORDER
+    }
+    processes: list[subprocess.Popen] = []
+    lazy_pool: LazyExpertPool | None = None
     if args.serve:
-        threads = []
-        for name, default_model in DEFAULT_MODELS.items():
-            cfg = config.get(name, {})
-            model = cfg.get("model", default_model)
-            port = cfg.get("port", DEFAULT_PORTS[name])
-            lora = cfg.get("lora", DEFAULT_LORAS.get(name))
-            t = threading.Thread(target=start_expert, args=(name, model, port, lora))
-            t.start()
-            threads.append((name, t))
-        for name, t in threads:
-            t.join()
-            print(f"[router] {name} 已提交启动")
-        for name, port in DEFAULT_PORTS.items():
-            print(f"[router] 等待 {name} (port {port}) 就绪...")
-            wait_ready(port)
-        print("[router] 全部专家就绪: general:8001 grounding:8002 change:8003 caption:8004")
-        return 0
+        devices = _visible_devices(args.devices)
+        if not devices:
+            print(
+                "[router] 警告: 未检测到 GPU 编号，将由 vLLM 使用当前可见设备。",
+                file=sys.stderr,
+            )
+        if len(devices) <= 1 and (args.chat or args.webui):
+            lazy_pool = LazyExpertPool(
+                args.quant,
+                device=devices[0] if devices else None,
+                gpu_memory_utilization=args.gpu_mem or 0.85,
+            )
+            print(
+                "[router] 单 GPU 模式: 按 prompt 加载命中专家，切换专家时自动释放旧实例。",
+                flush=True,
+            )
+        else:
+            ports, processes = start_all_experts(
+                args.quant,
+                config,
+                devices=devices,
+                gpu_memory_utilization=args.gpu_mem,
+            )
+            detail = " ".join(f"{name}:{ports[name]}" for name in EXPERT_ORDER)
+            print(f"[router] 全部专家就绪: {detail}", flush=True)
+
+    if args.webui:
+        command = [
+            DEFAULT_PYTHON,
+            "-m",
+            "rsmllm.webui",
+            "--router",
+            "--ports-json",
+            json.dumps(ports),
+            "--web-port",
+            str(args.web_port),
+        ]
+        if lazy_pool is not None:
+            command += ["--lazy-router", "--quant", args.quant]
+            if lazy_pool.device is not None:
+                command += ["--device", lazy_pool.device]
+            command += ["--gpu-mem", str(lazy_pool.gpu_memory_utilization)]
+        try:
+            return subprocess.run(command, cwd=str(REPO_ROOT), check=False).returncode
+        finally:
+            if processes:
+                stop_experts(processes)
 
     if args.chat:
-        while True:
-            try:
-                prompt = input("router> ").strip()
-            except (KeyboardInterrupt, EOFError):
-                print("\nbye")
-                return 0
-            if not prompt:
-                continue
-            expert, port = route_request(prompt, DEFAULT_PORTS)
-            print(f"  → {expert} (port {port})")
-            try:
-                print(chat(expert, port, [{"role": "user", "content": prompt}]))
-            except Exception as e:
-                print(f"  ! 调用失败: {e}")
+        try:
+            while True:
+                try:
+                    prompt = input("router> ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    print("\nbye")
+                    return 0
+                if not prompt:
+                    continue
+                expert, port = route_request(prompt, ports)
+                print(f"  → {expert} (port {port})")
+                try:
+                    if lazy_pool is not None:
+                        with lazy_pool.lock:
+                            expert, port = lazy_pool.client_endpoint(expert)
+                            answer = chat(
+                                expert, port, [{"role": "user", "content": prompt}]
+                            )
+                    else:
+                        answer = chat(
+                            expert, port, [{"role": "user", "content": prompt}]
+                        )
+                    print(answer)
+                except Exception as e:
+                    print(f"  ! 调用失败: {e}")
+        finally:
+            if processes:
+                stop_experts(processes)
+            if lazy_pool is not None:
+                lazy_pool.close()
+
+    if args.serve:
+        print("[router] 专家服务保持后台运行；可用 --chat 或 --webui 连接。")
+        return 0
 
     ap.print_help()
     return 0

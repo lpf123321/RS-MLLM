@@ -120,13 +120,13 @@ def _single_task_plan(
 
 def _cmd_eval() -> None:
     mode = _ask(
-        "评测模式 (route=自动选择已合并 delta+LoRA 并用 vLLM 跑 / single=单模型评测)",
+        "评测模式 (route=按 prompt 自动选择专家 / single=指定专家评测)",
         "route",
     )
     if mode == "route":
         quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16")
         limit = _ask("每任务样本上限(留空=全量, 验证用填小值)", "")
-        print(f"  → 一键路由专家评测: 量化={quant} (专家/任务自动分配)")
+        print(f"  → Prompt Router 全量评测: 量化={quant} (逐任务核验路由后选择专家)")
         cmd = [EVAL_PY, "-m", "rsmllm.router_eval", "--quant", quant]
         if limit:
             cmd += ["--limit", limit]
@@ -190,21 +190,20 @@ def _cmd_eval() -> None:
 
 
 def _cmd_serve() -> None:
-    model = _ask_model()
+    quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16").lower()
+    if quant not in QUANT_EXPERTS:
+        raise ValueError(f"不支持的量化方式: {quant}")
     mode = _ask("模式 (webui=网页界面 / cli=命令行对话)", "webui")
-    model_dir = get_model(model)  # 标准 ModelScope 用法: 缓存复用, 返回真实路径
     # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
+    cmd = [str(py), "-m", "rsmllm.router", "--serve", "--quant", quant]
     if mode == "webui":
-        print(f"  → WebUI 推理 model={model_dir} (浏览器打开 http://127.0.0.1:7860)")
-        cmd = [str(py), "-m", "rsmllm.webui", "--model", model_dir]
+        print("  → 启动四专家 Router + WebUI (浏览器打开 http://127.0.0.1:7860)")
+        cmd.append("--webui")
     else:
-        port = _ask("端口", "8001")
-        print(f"  → CLI 推理 model={model_dir} port={port}")
-        cmd = [str(py), "-m", "rsmllm.serve",
-               "--model", model_dir, "--port", port,
-               "--gpu-mem", str(REPORT_CONF["gpu_memory_utilization"])]
+        print("  → 启动四专家 Router + CLI；每条 prompt 自动选择专家")
+        cmd.append("--chat")
     _run_repo(cmd)
 
 
