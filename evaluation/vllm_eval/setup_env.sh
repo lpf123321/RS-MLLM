@@ -64,7 +64,12 @@ echo "==> 校验 Pillow"
 ".venv/bin/python" -c 'from PIL import Image; print("    Pillow OK:", Image.__version__)'
 
 echo "==> 安装 METEOR 英文 WordNet 语料"
-if ! .venv/bin/python -m nltk.downloader -d "${EVAL_DIR}/.nltk_data" wordnet </dev/null; then
+mkdir -p "${EVAL_DIR}/.nltk_data"
+# ``-f`` prevents NLTK 3.10 from opening an interactive retry prompt when a
+# restricted network or its destination safety check rejects the download.
+# The evaluator has an exact+stem fallback, so this optional resource must not
+# turn a non-interactive setup into an EOF traceback.
+if ! .venv/bin/python -m nltk.downloader -q -f -d "${EVAL_DIR}/.nltk_data" wordnet </dev/null; then
     echo "    [warn] WordNet 下载失败；METEOR 将使用 exact+stem 回退口径" >&2
 fi
 
