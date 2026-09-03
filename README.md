@@ -17,9 +17,7 @@
   - [3.4 模型推理](#34-模型推理)
   - [3.5 模型评测](#35-模型评测)
   - [3.6 模型训练](#36-模型训练)
-- [四、测试结果](#四测试结果)
-- [五、目录索引](#五目录索引)
-- [六、Acknowledgment](#六acknowledgment)
+- [四、目录索引](#四目录索引)
 
 ---
 
@@ -56,60 +54,54 @@
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>赖培丰　</strong></div>
         </td>
-        <td>...</td>
+        <td>模型训练、数据集处理</td>
         <td>
-1. ...<br>
-2. ...
+队长，参与整个部署方案的统筹，主要负责多专家微调路由设计工作。
         </td>
       </tr>
       <tr>
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>曹鹏宇</strong></div>
         </td>
-        <td>...</td>
+        <td>模型训练、自进化框架设计</td>
         <td>
-1. ...<br>
-2. ...
+完成知识蒸馏、深化 SFT 、数据构造和自进化框架的设计。参与技术报告示意图绘制。
         </td>
       </tr>
       <tr>
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>王翰　</strong></div>
         </td>
-        <td>...</td>
+        <td> 模型基座选用、视觉 Token 压缩</td>
         <td>
-1. ...<br>
-2. ...
+主要负责模型基座选取与视觉 Token 压缩路由设计工作。同时参与技术报告示意图绘制。
         </td>
       </tr>
       <tr>
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>曹忠博　</strong></div>
         </td>
-        <td>...</td>
+        <td>视觉 Token 压缩</td>
         <td>
-1. ...<br>
-2. ...
+主要负责机动工作。参与视觉 Token 压缩方法调研与数据构造实验工作。
         </td>
       </tr>
       <tr>
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>孙昊　</strong></div>
         </td>
-        <td>...</td>
+        <td>数据集处理、模型量化与故障机制设计</td>
         <td>
-1. ...<br>
-2. ...
+主要负责模型量化、推理优化与故障恢复机制设计。
         </td>
       </tr>
       <tr>
         <td>
           <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>李刘鹏　</strong></div>
         </td>
-        <td>...</td>
+        <td> CVSearch 框架设计</td>
         <td>
-1. ...<br>
-2. ...
+CVSearch 论文原作者。参与自进化框架设计主导与技术报告优化工作。
         </td>
       </tr>
     </tbody>
@@ -593,9 +585,7 @@ python scripts/gen_expert_deltas.py --verify
 
 ---
 
-## 四、测试结果
-
-## 五、目录索引
+## 四、目录索引
 
 ```
 .
@@ -660,5 +650,3 @@ python scripts/gen_expert_deltas.py --verify
 ├── rsmllm.sh                 # 交互式统一入口（自动选解释器）
 └── setup.sh                  # 环境一键安装（conda/uv）
 ```
-
-## 六、Acknowledgment
