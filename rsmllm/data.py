@@ -52,7 +52,12 @@ def _repo_path(value: str | Path) -> Path:
     return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
-def get_dataset(name: str, *, cache_dir: str | None = None) -> str:
+def get_dataset(
+    name: str,
+    *,
+    cache_dir: str | None = None,
+    allow_patterns: list[str] | tuple[str, ...] | None = None,
+) -> str:
     """解析数据集引用到本地目录; 未命中缓存时按需调用 ModelScope snapshot_download."""
     p = Path(name).expanduser()
     # 本地目录优先(复现/离线场景): 仅当名字像是路径(含分隔符/绝对路径)时才检查，
@@ -79,6 +84,7 @@ def get_dataset(name: str, *, cache_dir: str | None = None) -> str:
                 "需要 modelscope: pip install modelscope  (或用本地数据集路径绕过)" ) from e
         path = snapshot_download(
             model_id=dataset_id, repo_type="dataset", local_dir=str(cache.resolve()),
+            allow_patterns=list(allow_patterns) if allow_patterns else None,
             token=os.environ.get("MODELSCOPE_API_TOKEN") or None,
         )
         return str(path)

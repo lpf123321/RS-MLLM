@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download and stage the two README 3.5 JSON bundles from ModelScope."""
+"""Download and stage the two README 3.6 JSON bundles from ModelScope."""
 from __future__ import annotations
 
 import argparse
@@ -15,6 +15,16 @@ FIVE_STAGE_MARKERS = (
     "a2_change_mix.json",
     "expert_data_caption.jsonl",
 )
+# Published filenames needed to restore the five canonical stage files above.
+# The source repository also contains historical/alternative mixtures; pulling
+# the entire snapshot wastes bandwidth and disk without affecting training35.
+FIVE_STAGE_DOWNLOAD_FILES = (
+    "stage1_unified_sft_train.json",
+    "general_anti_forget_train.json",
+    "grounding_domain_align_train.json",
+    "change_anti_forget_train.json",
+    "caption_dual_domain_train.jsonl",
+)
 EXPERT_MARKERS = (
     "general/exp3_mme3736_xlrs3080.json",
     "general/exp7_weighted15480.json",
@@ -23,6 +33,11 @@ EXPERT_MARKERS = (
     "grounding/exp4_xlrs6611.json",
     "grounding/exp5_all43838.json",
     "IMAGE_INDEX.jsonl",
+)
+EXPERT_OPTIONAL_FILES = (
+    "ASSET_MANIFEST.json",
+    "LICENSES.md",
+    "SHA256SUMS",
 )
 
 
@@ -51,6 +66,11 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true", help="show repositories and outputs only"
     )
+    parser.add_argument(
+        "--include-expert",
+        action="store_true",
+        help="also download the optional General/Grounding continuation bundle",
+    )
     args = parser.parse_args()
 
     plan = {
@@ -69,8 +89,11 @@ def main() -> None:
         print(json.dumps(plan, indent=2))
         return
 
+    required_plan = [plan["five_stage"]]
+    if args.include_expert:
+        required_plan.append(plan["expert_lora"])
     if os.environ.get("MODELSCOPE_OFFLINE") and not all(
-        item["ready"] for item in plan.values()
+        item["ready"] for item in required_plan
     ):
         raise SystemExit("required JSON is missing and MODELSCOPE_OFFLINE=1")
 
@@ -79,13 +102,15 @@ def main() -> None:
         from rsmllm.data import get_dataset, restore_training_data
 
         downloaded = get_dataset(
-            args.five_stage_repo, cache_dir=str(args.cache_root / "five_stage")
+            args.five_stage_repo,
+            cache_dir=str(args.cache_root / "five_stage"),
+            allow_patterns=FIVE_STAGE_DOWNLOAD_FILES,
         )
         restore_training_data(
             dataset_root=downloaded, dest_root=str(args.five_stage_output)
         )
 
-    if not plan["expert_lora"]["ready"]:
+    if args.include_expert and not plan["expert_lora"]["ready"]:
         try:
             from modelscope.hub.snapshot_download import snapshot_download
         except ImportError as exc:
@@ -95,6 +120,7 @@ def main() -> None:
             model_id=args.expert_repo,
             repo_type="dataset",
             local_dir=str(args.expert_output),
+            allow_patterns=[*EXPERT_MARKERS, *EXPERT_OPTIONAL_FILES],
             token=os.environ.get("MODELSCOPE_API_TOKEN") or None,
         )
 
@@ -103,15 +129,17 @@ def main() -> None:
         for marker in FIVE_STAGE_MARKERS
         if not (args.five_stage_output / marker).is_file()
     ]
-    missing.extend(
-        str(args.expert_output / marker)
-        for marker in EXPERT_MARKERS
-        if not (args.expert_output / marker).is_file()
-    )
+    if args.include_expert:
+        missing.extend(
+            str(args.expert_output / marker)
+            for marker in EXPERT_MARKERS
+            if not (args.expert_output / marker).is_file()
+        )
     if missing:
         raise SystemExit("download finished but required files are missing:\n  " + "\n  ".join(missing))
     plan["five_stage"]["ready"] = present(args.five_stage_output, FIVE_STAGE_MARKERS)
-    plan["expert_lora"]["ready"] = present(args.expert_output, EXPERT_MARKERS)
+    if args.include_expert:
+        plan["expert_lora"]["ready"] = present(args.expert_output, EXPERT_MARKERS)
     print(json.dumps({"passed": True, **plan}, indent=2))
 
 

@@ -32,7 +32,8 @@ if [[ ! -s "${SOURCE_ROOT}/ASSET_MANIFEST.json" && "${RS_MLLM_SKIP_DOWNLOAD:-0}"
   ms-hub download "${RS_MLLM_DISTILLATION_DATASET_ID:-Uchitachi/RS-MLLM-Distillation-Data}" \
     --repo-type dataset --local-dir "${SOURCE_ROOT}"
 fi
-"${PYTHON_BIN}" "${REPO_ROOT}/scripts/stage_training35_data.py" --expert-source "${SOURCE_ROOT}" --output "${DATASET_ROOT}"
+"${PYTHON_BIN}" "${REPO_ROOT}/scripts/stage_training35_data.py" \
+  --expert-source "${SOURCE_ROOT}" --output "${DATASET_ROOT}" --include-expert
 
 export PYTHONPATH="${PACKAGE_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PYTHON_BIN}" -m expert_lora.runner \

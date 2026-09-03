@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the portable README 3.5 ``models/`` layout.
+"""Prepare the portable README 3.6 ``models/`` layout.
 
 Existing local directories are linked without copying. With ``--download``,
 missing entries are fetched from the ModelScope ids in ``rsmllm.config``.
@@ -30,8 +30,11 @@ MODEL_SPECS = {
     "expert_ground_full": ("expert_ground_full", False, "ground_full"),
 }
 PROFILES = {
-    # Inputs needed by the five-stage pipeline, continued expert training and
-    # gen_expert_deltas.py. The four LoRA/full entries are training outputs.
+    # The five-stage pipeline starts from the raw base and produces all four
+    # experts itself.  Continued expert-LoRA experiments are a separate path.
+    "five-stage": ("Qwen3.5-4B",),
+    "expert-lora": ("expert_general", "expert_ground"),
+    # Backward-compatible aggregate used by delta/reproduction workflows.
     "training": tuple(list(MODEL_SPECS)[:5]),
     "all": tuple(MODEL_SPECS),
 }
@@ -88,7 +91,7 @@ def main() -> None:
     parser.add_argument(
         "--cache-root", type=Path, default=repo / ".models" / "training35"
     )
-    parser.add_argument("--profile", choices=PROFILES, default="training")
+    parser.add_argument("--profile", choices=PROFILES, default="five-stage")
     parser.add_argument(
         "--download",
         action="store_true",

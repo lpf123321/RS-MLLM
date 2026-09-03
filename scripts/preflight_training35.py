@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CPU-only preflight for every README 3.5 training entry point."""
+"""CPU-only preflight for every README 3.6 training entry point."""
 from __future__ import annotations
 
 import argparse
@@ -72,6 +72,11 @@ def main() -> None:
         action="store_true",
         help="also require the LoRA/full models produced after training",
     )
+    parser.add_argument(
+        "--include-expert",
+        action="store_true",
+        help="also validate optional General/Grounding continuation inputs",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
     training_data = (
@@ -85,7 +90,11 @@ def main() -> None:
         "expert_data": {},
     }
 
-    required_models = dict(TRAINING_MODELS)
+    required_models = {"Qwen3.5-4B": "config.json"}
+    if args.include_expert:
+        required_models.update(
+            {name: marker for name, marker in TRAINING_MODELS.items() if name != "Qwen3.5-4B"}
+        )
     if args.require_outputs:
         required_models.update(OUTPUT_MODELS)
     for name, marker in required_models.items():
@@ -133,24 +142,31 @@ def main() -> None:
         except Exception as exc:
             failures.append(f"{name}: {exc}")
 
-    for config_name in EXPERT_CONFIGS:
-        config = load_config(package / "configs" / f"{config_name}.json")
-        path = training_data / config["data"]
-        rows = load_records(path)
-        result = validate_records(
-            rows,
-            schema=config["data_schema"],
-            image_root=training_data,
-            check_images=True,
-            allow_absolute=False,
-        )
-        result["expected_records"] = config["expected_records"]
-        result["passed"] = (
-            result["passed"] and len(rows) == config["expected_records"]
-        )
-        report["expert_data"][config_name] = result
-        if not result["passed"]:
-            failures.append(f"{config_name}: {result['errors'][:3]}")
+    for config_name in EXPERT_CONFIGS if args.include_expert else ():
+        try:
+            config = load_config(package / "configs" / f"{config_name}.json")
+            path = training_data / config["data"]
+            rows = load_records(path)
+            result = validate_records(
+                rows,
+                schema=config["data_schema"],
+                image_root=training_data,
+                check_images=True,
+                allow_absolute=False,
+            )
+            result["expected_records"] = config["expected_records"]
+            result["passed"] = (
+                result["passed"] and len(rows) == config["expected_records"]
+            )
+            report["expert_data"][config_name] = result
+            if not result["passed"]:
+                failures.append(f"{config_name}: {result['errors'][:3]}")
+        except Exception as exc:
+            failures.append(f"{config_name}: {exc}")
+            report["expert_data"][config_name] = {
+                "passed": False,
+                "error": str(exc),
+            }
 
     report["passed"] = not failures
     report["failures"] = failures

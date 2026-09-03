@@ -23,7 +23,7 @@ case "$STAGE" in
   a1_grounding) DATA=a1_grounding.json; GLOBAL_BATCH=16; MAX_PIXELS=4194304;;
   a2b_change) DATA=a2b_change.json; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
   caption) DATA=caption.jsonl; GLOBAL_BATCH=64; MAX_PIXELS=1048576;;
-  *) echo "unknown 3.5 stage: $STAGE" >&2; exit 2;;
+  *) echo "unknown training35 stage: $STAGE" >&2; exit 2;;
 esac
 DATA_PATH="$REPO_ROOT/datasets/training35/$DATA"
 IMAGE_ROOT="${TRAINING35_DATA_ROOT:-$REPO_ROOT/datasets/training35}"

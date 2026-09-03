@@ -20,6 +20,7 @@ if [ -z "$CONDA_HOME" ]; then
   done
 fi
 CONDA_ENV="${CONDA_ENV:-rs_mllm}"
+LOCAL_ASSETS="${LOCAL_ASSETS:-}"
 
 if [ -z "$CONDA_HOME" ]; then
   echo "[env] 未找到 conda。请设置 CONDA_HOME 指向含 etc/profile.d/conda.sh 的目录。" >&2
@@ -73,8 +74,8 @@ resolve_model() {
     echo "$m"; return 0
   fi
   # 否则走 rsmllm 懒加载(基于 REPO_ROOT)
-  local prev_py="$PYTHONPATH"
-  export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
+  local prev_py="${PYTHONPATH:-}"
+  export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
   local out
   out=$(python -c "from rsmllm.models import get_model; print(get_model('$m'))")
   export PYTHONPATH="$prev_py"

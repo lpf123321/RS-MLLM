@@ -452,44 +452,49 @@ python evaluation/run_prune_sweep.py    # Token 剪枝方法扫描
 #### 环境
 
 ```bash
-conda create -n rs_mllm python=3.10 -y
+conda create --override-channels -c conda-forge -n rs_mllm python=3.10 -y
 conda activate rs_mllm
 python -m pip install 'uv==0.12.8'
 uv pip install --python "$CONDA_PREFIX/bin/python" --torch-backend cu128 \
   -r pyproject.toml \
   -r training/distillation/expert_lora/requirements.txt \
   'modelscope==1.39.1' 'modelscope-hub==0.3.0'
+# DeepSpeed 导入和 CUDA 扩展编译需要与 cu128 匹配的 nvcc
+conda install --override-channels -c nvidia/label/cuda-12.8.0 -c conda-forge \
+  'cuda-nvcc=12.8.61' -y
 export CONDA_ENV=rs_mllm
 ```
 
-已验证环境：A100、Python 3.10.20、CUDA 12.8、PyTorch 2.8.0、
+已验证环境：A100、Python 3.10.21、CUDA 12.8、PyTorch 2.8.0、
 Transformers 5.13.0、DeepSpeed 0.17.5、PEFT 0.15.2。
 
 #### 准备模型和数据
 
 原数据集不随仓库和改编 JSON 重复发布。已有原数据时，请按以下名称放到
-`datasets/`（也可以放软链）；压缩包需先解压，XLRS 的 Hugging Face Arrow 可原样保留：
+`datasets/shared_datasets/`（也可以让 `shared_datasets` 本身成为软链）；压缩包需先
+解压，XLRS 的 Hugging Face Arrow 可原样保留：
 
 ```text
-datasets/
+datasets/shared_datasets/
 ├── MME-RealWorld-RS/
 ├── VRSBench/
 ├── XLRS-Bench-lite/
 ├── XLRS-Bench_visual_grounding_en/
 ├── LEVIR-CC/
-└── training35/                 # 脚本下载/生成的改编 JSON 与内容哈希图片
+
+datasets/training35/            # 脚本下载/生成的改编 JSON 与内容哈希图片
 ```
 
 依次运行：
 
 ```bash
-# base 与四个无 LoRA 专家；缺失时从 ModelScope 下载，已有目录则直接复用
+# 五阶段只需要 base；缺失时从 ModelScope 下载，已有目录则直接复用
 python scripts/stage_training35_models.py --download
 
-# 从 ModelScope 下载五阶段及 General/Grounding 改编 JSON
+# 从 ModelScope 下载五阶段正式训练 JSON
 python scripts/fetch_training35_data.py
 
-# 从 datasets/ 原图恢复 XLRS 844 图、建立内容哈希链接并校验 SHA-256
+# 从 datasets/ 原图建立五阶段内容哈希软链
 python scripts/prepare_training35_images.py
 
 # 建立统一训练路径并做 CPU 完整预检
@@ -498,9 +503,8 @@ python scripts/preflight_training35.py
 ```
 
 运行前可加 `--dry-run` 检查前 3 条准备命令的来源和目标，不会下载或扫描大文件。
-模型来自 ModelScope `Fun10165/rs-mllm-*`；五阶段 JSON 来自
-`yasumi/rs-mllm-datasets`；续训练 JSON 来自
-`Uchitachi/RS-MLLM-Distillation-Data`。原数据需自行取得并按上述目录放置；
+Base 模型来自 ModelScope `Fun10165/qwen-3.5-rs`；五阶段 JSON 来自
+`yasumi/rs-mllm-datasets`。原数据需自行取得并按上述目录放置；
 `training/distillation/expert_lora/scripts/download_official_datasets.sh` 仅用于下载和
 校验专家续训练所需的部分官方图像，不能代替完整五阶段数据准备，也不包含
 LEVIR-CC。MME 下载前需阅读并同意其许可。由于原图可达数百 GB，官方下载不会
@@ -533,6 +537,38 @@ bash scripts/train.sh caption           # Caption 双域训练
 ```
 
 #### General / Grounding 续训练
+
+这是独立于五阶段的可选复现实验。首次运行前额外准备两个专家模型、续训练 JSON
+和图片；专家图片索引约 74 GB，请先确认磁盘空间：
+
+```bash
+python scripts/stage_training35_models.py --profile expert-lora --download
+python scripts/fetch_training35_data.py --include-expert
+python scripts/prepare_training35_images.py --include-expert
+python scripts/stage_training35_data.py --include-expert
+python scripts/preflight_training35.py --include-expert
+```
+
+续训练 JSON 来自 ModelScope `Uchitachi/RS-MLLM-Distillation-Data`。
+
+磁盘不足时，可先只恢复每个入口的两条样本并做真实 GPU smoke test；它会验证
+JSON、图片哈希、模型加载、前后向和 LoRA 保存，但不代表完整训练结果：
+
+```bash
+python scripts/prepare_training35_images.py \
+  --include-expert --expert-smoke-samples 2
+python scripts/stage_training35_data.py --include-expert
+
+ARTIFACT_ROOT="$PWD/models/training35/runs/expert-smoke"
+bash training/train_general_expert.sh --gpus 1 --max-updates 2 \
+  --smoke-samples 2 --output-root "$ARTIFACT_ROOT"
+bash training/train_grounding_expert.sh --stage bootstrap --gpus 1 \
+  --max-updates 2 --smoke-samples 2 --output-root "$ARTIFACT_ROOT"
+bash training/train_grounding_expert.sh --stage final --gpus 1 \
+  --max-updates 2 --smoke-samples 2 \
+  --init-lora "$ARTIFACT_ROOT/bootstrap/expert_ground_lora" \
+  --output-root "$ARTIFACT_ROOT"
+```
 
 以下是 30 updates 的功能验收，不用于复现历史最终指标：
 

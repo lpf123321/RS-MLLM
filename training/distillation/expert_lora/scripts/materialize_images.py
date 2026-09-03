@@ -45,6 +45,26 @@ def load_index(path: Path) -> list[dict[str, object]]:
     return rows
 
 
+def referenced_images(path: Path, limit: int) -> set[str]:
+    """Return portable image paths referenced by a JSON/JSONL training file."""
+    if path.suffix == ".jsonl":
+        with path.open(encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
+    else:
+        records = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError(f"expected a JSON array or JSONL records: {path}")
+    selected = records[:limit] if limit else records
+    result: set[str] = set()
+    for number, record in enumerate(selected, 1):
+        images = record.get("image", [])
+        values = [images] if isinstance(images, str) else images
+        if not isinstance(values, list) or not all(isinstance(x, str) for x in values):
+            raise ValueError(f"invalid image field in {path}, record {number}")
+        result.update(values)
+    return result
+
+
 def candidate_index(root: Path, needed_names: set[str]) -> dict[str, list[Path]]:
     result: dict[str, list[Path]] = defaultdict(list)
     for current, directories, files in os.walk(root):
@@ -237,10 +257,39 @@ def main() -> None:
         action="store_true",
         help="skip existing files after a prior SHA-verified run; never use for first construction",
     )
+    parser.add_argument(
+        "--required-from",
+        action="append",
+        type=Path,
+        help="only materialize images referenced by this training JSON/JSONL; repeatable",
+    )
+    parser.add_argument(
+        "--limit-records",
+        type=int,
+        default=0,
+        help="with --required-from, inspect only the first N records of each file",
+    )
     args = parser.parse_args()
+
+    if args.limit_records < 0:
+        raise ValueError("--limit-records must be non-negative")
+    if args.limit_records and not args.required_from:
+        raise ValueError("--limit-records requires --required-from")
 
     dataset_root = args.dataset_root.expanduser().resolve()
     rows = load_index(dataset_root / "IMAGE_INDEX.jsonl")
+    if args.required_from:
+        required: set[str] = set()
+        for path in args.required_from:
+            required.update(referenced_images(path.expanduser().resolve(), args.limit_records))
+        indexed = {str(row["path"]) for row in rows}
+        missing = sorted(required - indexed)
+        if missing:
+            raise ValueError(
+                f"training data references paths absent from IMAGE_INDEX: {missing[:5]}"
+            )
+        rows = [row for row in rows if str(row["path"]) in required]
+        print(f"filtered image index: {len(rows)} of {len(indexed)} assets")
     sources = dict(args.source)
     expected_names = {str(row["upstream_dataset"]) for row in rows}
     missing_roots = sorted(expected_names - sources.keys())

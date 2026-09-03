@@ -70,12 +70,20 @@ def main() -> None:
     parser.add_argument("--gpu-ids", help="comma-separated visible GPU IDs")
     parser.add_argument("--init-lora", type=Path)
     parser.add_argument("--max-updates", type=int, default=0)
+    parser.add_argument(
+        "--smoke-samples",
+        type=int,
+        default=0,
+        help="train on the first N records while exercising the real GPU path",
+    )
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     if args.max_updates < 0:
         raise ValueError("max_updates must be non-negative")
+    if args.smoke_samples < 0:
+        raise ValueError("smoke_samples must be non-negative")
     if args.gpus and args.gpu_ids:
         raise ValueError("use only one of --gpus and --gpu-ids")
 
@@ -95,10 +103,22 @@ def main() -> None:
         raise FileNotFoundError(f"missing training data: {data}")
 
     records = load_records(data)
+    expected_records = int(config["expected_records"])
+    if args.smoke_samples:
+        records = records[: args.smoke_samples]
+        if not records:
+            raise ValueError("smoke selection produced no training records")
+        smoke_root = output_root / ".smoke_data"
+        smoke_root.mkdir(parents=True, exist_ok=True)
+        data = smoke_root / f"{config['name'].replace('/', '_')}.json"
+        data.write_text(
+            json.dumps(records, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        expected_records = len(records)
     report = validate_records(records, schema=config["data_schema"], image_root=dataset_root, check_images=True, allow_absolute=False)
-    if len(records) != int(config["expected_records"]):
+    if len(records) != expected_records:
         report["passed"] = False
-        report["errors"].append(f"expected {config['expected_records']} records, found {len(records)}")
+        report["errors"].append(f"expected {expected_records} records, found {len(records)}")
     if not report["passed"]:
         raise ValueError(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps({"dataset_validation": report}, ensure_ascii=False, indent=2))
@@ -111,7 +131,7 @@ def main() -> None:
     effective_batch = int(config["effective_batch_size"])
     if effective_batch % world_size:
         raise ValueError(f"effective_batch_size {effective_batch} is not divisible by {world_size} GPUs")
-    grad_accum = effective_batch // world_size
+    grad_accum = 1 if args.smoke_samples else effective_batch // world_size
     init_adapter = resolve_init_adapter(config, args.init_lora, output_root)
     if adapter_output.exists() and any(adapter_output.iterdir()):
         raise FileExistsError(f"refusing to overwrite adapter: {adapter_output}")
@@ -120,7 +140,7 @@ def main() -> None:
         sys.executable, "-m", "torch.distributed.run", "--standalone",
         f"--nproc_per_node={world_size}", "-m", "expert_lora.train",
         "--model", str(model), "--data", str(data), "--image-root", str(dataset_root),
-        "--output", str(adapter_output), "--expected-records", str(config["expected_records"]),
+        "--output", str(adapter_output), "--expected-records", str(expected_records),
         "--epochs", str(config["epochs"]), "--grad-accum", str(grad_accum),
         "--lr", str(config["learning_rate"]), "--rank", str(config["rank"]),
         "--alpha", str(config["alpha"]), "--dropout", str(config["dropout"]),
@@ -134,7 +154,7 @@ def main() -> None:
 
     env = os.environ.copy()
     env.update({"CUDA_VISIBLE_DEVICES": ",".join(ids), "TOKENIZERS_PARALLELISM": "false", "OMP_NUM_THREADS": env.get("OMP_NUM_THREADS", "4")})
-    print(json.dumps({"experiment": config["name"], "retained_world_size": retained_world_size, "actual_world_size": world_size, "effective_batch_size": effective_batch, "gradient_accumulation": grad_accum, "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "output": str(adapter_output), "command": command}, indent=2))
+    print(json.dumps({"experiment": config["name"], "retained_world_size": retained_world_size, "actual_world_size": world_size, "retained_effective_batch_size": effective_batch, "actual_effective_batch_size": world_size * grad_accum, "gradient_accumulation": grad_accum, "smoke_samples": args.smoke_samples, "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "output": str(adapter_output), "command": command}, indent=2))
     if not args.dry_run:
         adapter_output.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(command, check=True, env=env)

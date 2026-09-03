@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage the canonical README 3.5 dataset layout with portable paths."""
+"""Stage the canonical README 3.6 dataset layout with portable paths."""
 from __future__ import annotations
 
 import argparse
@@ -73,7 +73,7 @@ def stage_five_stage_file(destination: Path, source: Path) -> int:
                     f"refusing unknown absolute image path in {source}, row {row_number}: {value}"
                 )
             suffix = slash_value.split(SHARED_MARKER, 1)[1]
-            normalized.append(f"../{suffix}")
+            normalized.append(f"../shared_datasets/{suffix}")
             rewritten += 1
         row["image"] = normalized[0] if was_string else normalized
 
@@ -85,9 +85,25 @@ def stage_five_stage_file(destination: Path, source: Path) -> int:
         destination.unlink()
     elif destination.exists():
         existing = json.loads(destination.read_text(encoding="utf-8"))
-        if existing != rows:
+        # Migrate files produced by the older layout, which resolved raw data
+        # through datasets/<name> instead of datasets/shared_datasets/<name>.
+        legacy = json.loads(json.dumps(rows))
+        for row in legacy:
+            images = row.get("image", [])
+            values = [images] if isinstance(images, str) else images
+            if isinstance(values, list):
+                migrated = [
+                    value.replace("../shared_datasets/", "../", 1)
+                    if isinstance(value, str)
+                    and value.startswith("../shared_datasets/")
+                    else value
+                    for value in values
+                ]
+                row["image"] = migrated[0] if isinstance(images, str) else migrated
+        if existing != rows and existing != legacy:
             raise FileExistsError(f"refusing to replace modified staged JSON: {destination}")
-        return rewritten
+        if existing == rows:
+            return rewritten
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         json.dumps(rows, ensure_ascii=False, separators=(",", ":")) + "\n",
@@ -107,8 +123,15 @@ def main() -> None:
         type=Path,
         default=repo / "datasets/training35/.source",
     )
-    parser.add_argument("--raw-source", type=Path, default=repo / "datasets")
+    parser.add_argument(
+        "--raw-source", type=Path, default=repo / "datasets" / "shared_datasets"
+    )
     parser.add_argument("--output", type=Path, default=repo / "datasets/training35")
+    parser.add_argument(
+        "--include-expert",
+        action="store_true",
+        help="also stage optional General/Grounding continuation data and images",
+    )
     args = parser.parse_args()
 
     output = args.output.expanduser().resolve()
@@ -120,24 +143,19 @@ def main() -> None:
             raise FileNotFoundError(source)
         rewrites[name] = stage_five_stage_file(output / name, source)
         links[name] = str(source.resolve())
-    for name, source_name in EXPERT_DATA.items():
-        source = args.expert_source / source_name
-        ensure_link(output / name, source)
-        links[name] = str(source.resolve())
-
     ensure_link(output / "assets", repo / "data/assets")
-    ensure_link(output / "images", args.expert_source / "images")
-    for name in ("ASSET_MANIFEST.json", "IMAGE_INDEX.jsonl", "LICENSES.md", "SHA256SUMS"):
-        source = args.expert_source / name
-        if source.is_file():
+    if args.include_expert:
+        for name, source_name in EXPERT_DATA.items():
+            source = args.expert_source / source_name
             ensure_link(output / name, source)
+            links[name] = str(source.resolve())
+        ensure_link(output / "images", args.expert_source / "images")
+        for name in ("ASSET_MANIFEST.json", "IMAGE_INDEX.jsonl", "LICENSES.md", "SHA256SUMS"):
+            source = args.expert_source / name
+            if source.is_file():
+                ensure_link(output / name, source)
 
     raw_source = args.raw_source.expanduser().resolve()
-    for name in RAW_DATASETS:
-        source = raw_source / name
-        destination = repo / "datasets" / name
-        if source.exists() and source.resolve() != destination.resolve():
-            ensure_link(destination, source)
 
     manifest = {
         "schema_version": 1,
@@ -146,6 +164,7 @@ def main() -> None:
         "rewritten_absolute_images": rewrites,
         "assets": str((repo / "data/assets").resolve()),
         "expert_images": str((args.expert_source / "images").resolve()),
+        "include_expert": args.include_expert,
         "raw_source": str(raw_source),
     }
     output.mkdir(parents=True, exist_ok=True)

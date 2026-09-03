@@ -38,11 +38,13 @@ def _hash_one(p):
 
 def build(args):
     out_root = Path(args.out)
-    pairs = list(zip(args.raw, args.sub))
+    pairs = [
+        (Path(raw).expanduser().resolve(), sub)
+        for raw, sub in zip(args.raw, args.sub)
+    ]
     # 收集所有图片文件
     files = []
-    for raw in args.raw:
-        base = Path(raw).expanduser()
+    for base, _ in pairs:
         if not base.exists():
             print(f"[warn] raw dir missing: {base}")
             continue
@@ -59,7 +61,7 @@ def build(args):
         for h, p in ex.map(_hash_one, files, chunksize=64):
             sub = None
             for raw, s in pairs:
-                if str(p).startswith(str(Path(raw).expanduser())):
+                if Path(p).is_relative_to(raw):
                     sub = s
                     break
             if sub is None:
@@ -71,10 +73,12 @@ def build(args):
             # former first-48 alias so older manifests still run.
             for digest in (h, h[:48]):
                 target = d / f"{digest}.png"
+                if target.is_symlink() and not target.exists():
+                    target.unlink()
                 if target.exists():
                     dup += 1
                     continue
-                target.symlink_to(p)
+                target.symlink_to(Path(p).resolve())
                 linked += 1
     print(f"linked={linked} dup(existing)={dup}")
     for s in args.sub:
