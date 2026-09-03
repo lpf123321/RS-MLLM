@@ -1,4 +1,4 @@
-"""Dependency-free lexical caption metrics for smoke tests.
+"""Caption metrics for reported evaluation and lightweight smoke tests.
 
 These metrics deliberately carry a ``_proxy`` suffix. They verify that the scoring
 pipeline is working; they are not claimed to reproduce each dataset's official
@@ -10,6 +10,26 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from pathlib import Path
+import sys
+
+# ``vision_opd_vllm_eval.py`` is normally launched by path, making its own
+# directory sys.path[0].  Add the repository root so the shared, audited metric
+# implementations are importable in that supported invocation mode.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from evaluation.metrics.bleu import BLEU
+from evaluation.metrics.cider import CIDEr
+from evaluation.metrics.meteor import METEOR
+from evaluation.metrics.rouge import ROUGEL
+
+import nltk
+
+_NLTK_DATA = Path(__file__).resolve().parent / ".nltk_data"
+if _NLTK_DATA.is_dir() and str(_NLTK_DATA) not in nltk.data.path:
+    nltk.data.path.insert(0, str(_NLTK_DATA))
 
 
 def tokenize(text: str) -> list[str]:
@@ -202,4 +222,64 @@ def summarize_caption_proxies(
         "meteor_exact_proxy": sum(meteor) / len(meteor),
         "rouge_l_proxy": sum(rouge) / len(rouge),
         "cider_tfidf_proxy": cider_proxy(predictions, references),
+    }
+
+
+class _NoWordNet:
+    """METEOR fallback retaining exact/stem matching when WordNet is absent."""
+
+    @staticmethod
+    def synsets(_word: str) -> list:
+        return []
+
+
+def _meteor_with_corpus_fallback(
+    predictions: list[str], references: list[list[str]]
+) -> tuple[float, str]:
+    try:
+        return METEOR().compute(references, predictions)["METEOR"], "nltk_wordnet"
+    except LookupError:
+        from nltk.translate.meteor_score import meteor_score
+
+        values = []
+        for prediction, sample_references in zip(
+            predictions, references, strict=True
+        ):
+            candidate = tokenize(prediction)
+            if not candidate:
+                values.append(0.0)
+                continue
+            values.append(
+                meteor_score(
+                    [tokenize(reference) for reference in sample_references],
+                    candidate,
+                    wordnet=_NoWordNet(),
+                )
+            )
+        return sum(values) / len(values), "nltk_exact_stem_no_wordnet_fallback"
+
+
+def summarize_reported_caption_metrics(
+    predictions: list[str], references: list[list[str]]
+) -> dict[str, object]:
+    """Compute report-compatible caption metrics and their percentage units.
+
+    Raw CIDEr-D is conventionally around 0--10 while the project report prints
+    every metric, including CIDEr-D, after multiplication by 100.
+    """
+    if len(predictions) != len(references):
+        raise ValueError("Prediction/reference length mismatch")
+    if not predictions:
+        return {}
+    raw: dict[str, float] = {}
+    raw.update(BLEU().compute(references, predictions))
+    meteor, meteor_backend = _meteor_with_corpus_fallback(predictions, references)
+    raw["METEOR"] = meteor
+    raw.update(ROUGEL().compute(references, predictions))
+    raw["CIDEr-D"] = CIDEr().compute(references, predictions)["CIDEr"]
+    return {
+        "protocol": "project_report_caption_metrics_v1",
+        "meteor_backend": meteor_backend,
+        "raw": raw,
+        "percent": {name: value * 100.0 for name, value in raw.items()},
     }

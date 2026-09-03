@@ -13,7 +13,12 @@ from pathlib import Path
 
 from rsmllm.config import REPORT_CONF
 from rsmllm.models import get_model, MODEL_REGISTRY
-from rsmllm.router_eval import QUANT_EXPERTS, build_subtask_manifest, resolve_model
+from rsmllm.router_eval import (
+    QUANT_EXPERTS,
+    build_subtask_manifest,
+    evaluation_runtime_config,
+    resolve_model,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # 训练类分支(deepspeed/trl)依赖根环境; 评测/推理(vllm)依赖评测环境
@@ -144,16 +149,17 @@ def _cmd_eval() -> None:
             if manifest.stat().st_size == 0:
                 print(f"  [warn] {ds} 无 {subtask} 子任务样本, 跳过")
                 continue
+        runtime = evaluation_runtime_config(manifest)
         cmd = [EVAL_PY, str(eval_dir / "vision_opd_vllm_eval.py"),
                "--manifest", str(manifest),
                "--model", model_dir,
                "--model-profile", profile,
                "--quantization", quant,
-               "--min-pixels", str(REPORT_CONF["min_pixels"]),
-               "--max-pixels", str(REPORT_CONF["max_pixels"]),
-               "--batch-size", str(REPORT_CONF["batch_size"]),
-               "--max-model-len", str(REPORT_CONF["max_model_len"]),
-               "--max-num-seqs", str(REPORT_CONF["max_num_seqs"]),
+               "--min-pixels", str(runtime["min_pixels"]),
+               "--max-pixels", str(runtime["max_pixels"]),
+               "--batch-size", str(runtime["batch_size"]),
+               "--max-model-len", str(runtime["max_model_len"]),
+               "--max-num-seqs", str(runtime["max_num_seqs"]),
                "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
                "--enforce-eager"]
         print(f"  → 评测 {ds} (model={alias}, profile={profile}, manifest={manifest.name}, subtask={subtask or '全量'})")

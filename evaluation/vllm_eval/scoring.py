@@ -6,7 +6,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
-from caption_metrics import summarize_caption_proxies
+from caption_metrics import summarize_reported_caption_metrics
 from schema import Sample
 
 _NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -206,7 +206,7 @@ def summarize_predictions(
         ]
         if not caption_rows:
             return {}
-        return summarize_caption_proxies(
+        return summarize_reported_caption_metrics(
             [row["prediction"] for row in caption_rows],
             [row["sample"]["references"] for row in caption_rows],
         )
@@ -257,7 +257,7 @@ def summarize_predictions(
             "scoreable_samples": len(discrete),
             "correct": official_correct,
             "accuracy": _accuracy(official_correct, len(discrete)),
-            "caption_smoke_metrics": caption_metrics(group_rows, clean=False),
+            "caption_metrics": caption_metrics(group_rows, clean=False),
         }
         clean_group = {
             "samples": len(group_rows),
@@ -267,12 +267,16 @@ def summarize_predictions(
             ),
             "correct": clean_correct,
             "accuracy": _accuracy(clean_correct, len(clean_rows)),
-            "caption_smoke_metrics": caption_metrics(group_rows, clean=True),
+            "caption_metrics": caption_metrics(group_rows, clean=True),
         }
         if bbox := bbox_metrics(group_rows, clean=False):
             official_group["bbox_metrics"] = bbox
         if bbox := bbox_metrics(group_rows, clean=True):
             clean_group["bbox_metrics"] = bbox
+            # Historical XLRS Grounding experiments use continuous normalized
+            # boxes (no integer-coordinate +1 area convention).  Expose that
+            # exact report-facing result in both summaries.
+            official_group["reported_bbox_metrics"] = bbox
         official_groups[group_name] = official_group
         clean_groups[group_name] = clean_group
 

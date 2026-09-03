@@ -63,6 +63,11 @@ fi
 echo "==> 校验 Pillow"
 ".venv/bin/python" -c 'from PIL import Image; print("    Pillow OK:", Image.__version__)'
 
+echo "==> 安装 METEOR 英文 WordNet 语料"
+if ! .venv/bin/python -m nltk.downloader -d "${EVAL_DIR}/.nltk_data" wordnet </dev/null; then
+    echo "    [warn] WordNet 下载失败；METEOR 将使用 exact+stem 回退口径" >&2
+fi
+
 echo ""
 echo "==> 完成。运行评测前:"
 echo "    ${EVAL_DIR}/.venv/bin/python ${EVAL_DIR}/vision_opd_vllm_eval.py --help"

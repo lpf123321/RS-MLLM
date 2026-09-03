@@ -104,14 +104,28 @@ def generation_policy() -> dict[str, Any]:
         "base_max_new_tokens": {
             "caption": 384,
             "change_caption": 128,
-            "open_vqa": 64,
+            "open_vqa": 128,
             "bbox": 64,
             "single_choice": 128,
-            "multi_choice": 16,
+            "multi_choice": 64,
         },
+        "dataset_overrides": {"xlrs_caption/caption": 550},
+        "grounding_prompt_protocol": "historical_exp5_explicit_assistant_prefix_v1",
         "retry_token_multiplier": "2**min(previous_attempts, 2)",
         "maximum_attempts_per_invocation": 1,
     }
+
+
+def intentional_length_constraint(
+    sample: Sample, *, truncated: bool, max_new_tokens: int
+) -> bool:
+    """Whether reaching the decode cap is the dataset's reported protocol."""
+    return (
+        truncated
+        and sample.dataset == "xlrs_caption"
+        and sample.task_type == "caption"
+        and max_new_tokens == _max_new_tokens(sample)
+    )
 
 
 def run_config(
@@ -160,7 +174,16 @@ def successful_rows(attempts_path: Path, expected: dict[str, dict[str, Any]]) ->
         if row["sample"] != expected[identifier]:
             raise ValueError(f"Attempt sample differs from manifest: {identifier}")
         attempts[identifier] += 1
-        if not row.get("error") and not row.get("generation_truncated"):
+        raw_sample = row.get("sample", {})
+        constrained = (
+            row.get("generation_truncated")
+            and raw_sample.get("dataset") == "xlrs_caption"
+            and raw_sample.get("task_type") == "caption"
+            and row.get("max_new_tokens") == 550
+        )
+        if not row.get("error") and (
+            not row.get("generation_truncated") or constrained
+        ):
             completed[identifier] = row
     return completed, attempts
 
@@ -405,6 +428,11 @@ def main() -> None:
                 "elapsed_seconds": elapsed,
                 "generated_tokens": generated_tokens,
                 "generation_truncated": truncated,
+                "accepted_length_constraint": intentional_length_constraint(
+                    sample,
+                    truncated=truncated,
+                    max_new_tokens=max_new_tokens,
+                ),
                 "max_new_tokens": max_new_tokens,
                 "attempt": attempt_number,
                 "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -412,7 +440,14 @@ def main() -> None:
             }
             output.write(json.dumps(row, ensure_ascii=False) + "\n")
             output.flush()
-            if not error and not truncated:
+            if not error and (
+                not truncated
+                or intentional_length_constraint(
+                    sample,
+                    truncated=truncated,
+                    max_new_tokens=max_new_tokens,
+                )
+            ):
                 completed[sample.id] = row
             if consecutive_errors >= 3:
                 raise RuntimeError("Three consecutive generation errors; aborting shard for diagnosis")

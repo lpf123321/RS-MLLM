@@ -99,10 +99,10 @@ python -m rsmllm.router_eval --quant bf16     # 或 w8a8 / gptq
 6. 报告后续 PEFT LoRA 数字与当前 vLLM 结果必须注明计分/清单：canonical BF16
    VRSBench VQA 当前 exact-match 为 70.91%（37,409 条），与报告
    `+ LoRA (1 stage)` 的 70.43% 接近；报告多专家行的 77.5% 使用 GPT-4 语义判定，
-   不能直接与 exact-match 相减。当前 Caption/LEVIR 结果中的 `caption_smoke_metrics`
-   是 lexical proxy，不是报告的官方 CIDEr；当前 XLRS Grounding 的 17.59%（6,310
-   条、清单中的 resized 图像）也不能直接替代报告后续 PEFT 域对齐实验的 31.57%→
-   32.77%。
+   不能直接与 exact-match 相减。Caption/LEVIR 已改为报告口径 BLEU、METEOR、
+   ROUGE-L、CIDEr-D，并同时输出 raw 与 percent，禁止再用 lexical proxy 充当正式
+   指标。XLRS Grounding 的 31.97%来自 4096 导出和实际未生效的历史降采样参数；
+   路由已显式复现该实际像素协议。
 
 ## 5. 推理（Router，报告 §5.3）
 

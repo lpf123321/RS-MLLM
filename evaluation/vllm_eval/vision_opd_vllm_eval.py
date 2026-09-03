@@ -465,11 +465,25 @@ class VLLMBatchAdapter:
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": content}
         ]
+        # The published grounding expert (including its Exp5 LoRA) was
+        # evaluated with this explicit Qwen3.5 assistant surface.  Using the
+        # generic add_generation_prompt template changes the first generated
+        # tokens and measurably degrades box accuracy even with identical
+        # weights.  Keep this profile-scoped: other experts were evaluated via
+        # the normal non-thinking template below.
+        if self.profile_key.startswith("expert_ground"):
+            rendered = self.processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+                enable_thinking=False,
+            )
+            return rendered + "<|im_start|>assistant\n thinking\n\n response\n\n"
         return self.processor.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,  # 与 qwen35vl 默认一致(报告主链路口径); thinking 为待确认项
+            enable_thinking=False,
         )
 
     def generate_batch(
@@ -805,6 +819,11 @@ def main() -> None:
                         "first_token_seconds": result.first_token_seconds,
                         "generated_tokens": result.generated_tokens,
                         "generation_truncated": result.truncated,
+                        "accepted_length_constraint": base.intentional_length_constraint(
+                            sample,
+                            truncated=result.truncated,
+                            max_new_tokens=max_new_tokens,
+                        ),
                         "max_new_tokens": max_new_tokens,
                         "attempt": attempt_numbers[sample.id],
                         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -812,7 +831,14 @@ def main() -> None:
                     }
                     output.write(json.dumps(row, ensure_ascii=False) + "\n")
                     previous_attempts[sample.id] += 1
-                    if not result.truncated:
+                    if (
+                        not result.truncated
+                        or base.intentional_length_constraint(
+                            sample,
+                            truncated=result.truncated,
+                            max_new_tokens=max_new_tokens,
+                        )
+                    ):
                         completed[sample.id] = row
                 output.flush()
                 if chunk_number % 10 == 0 or chunk_number == len(chunks):

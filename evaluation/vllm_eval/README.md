@@ -15,7 +15,7 @@
 | `schema.py` / `scoring.py` | 样例结构与计分（含 clean_correct 计分） |
 | `vision_opd_tools.py` / `_v2` / `_v3` | 工具（sha256、percentile 等） |
 | `vision_opd_profile.py` | 注册 vision_opd_9b profile |
-| `prompts.py` / `sampling.py` / `caption_metrics.py` / `validate_run.py` | 提示词、采样、caption 代理指标、验证 |
+| `prompts.py` / `sampling.py` / `caption_metrics.py` / `validate_run.py` | 提示词、采样、报告口径 Caption 指标、验证 |
 
 ## 运行方式
 
@@ -45,6 +45,11 @@ cd evaluation/vllm_eval
 - `--enforce-eager` 仍是路由默认稳定配置。关闭 eager 可减少稳态 kernel launch
   开销，但 vLLM 0.26 的首次编译/graph capture 可能超过 3 分钟，不能把冷启动时间
   当作稳态吞吐。
+
+协议例外：XLRS Caption 使用训练时九宫格长提示和 550-token 长度约束；XLRS
+Grounding 为复现 Exp5 的实际运行条件，使用 4096 导出、16,777,216 像素上限、
+32K 上下文和显式 `thinking -> response` assistant 前缀。历史脚本中声称的
+1,048,576 上限写到了 processor 的无效属性，不能代表 31.97%结果的真实条件。
 
 ## 运行环境（vllm 0.26 + torch 2.11 cu129）
 

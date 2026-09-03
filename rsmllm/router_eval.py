@@ -152,16 +152,17 @@ def run_eval(
                     break
                 g.write(line)
         manifest = sub
+    runtime = evaluation_runtime_config(manifest)
     cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
            "--manifest", str(manifest),
            "--model", model_path,
            "--model-profile", profile,
            "--quantization", quantization,
-           "--min-pixels", str(REPORT_CONF["min_pixels"]),
-           "--max-pixels", str(REPORT_CONF["max_pixels"]),
-           "--batch-size", str(REPORT_CONF["batch_size"]),
-           "--max-model-len", str(REPORT_CONF["max_model_len"]),
-           "--max-num-seqs", str(REPORT_CONF["max_num_seqs"]),
+           "--min-pixels", str(runtime["min_pixels"]),
+           "--max-pixels", str(runtime["max_pixels"]),
+           "--batch-size", str(runtime["batch_size"]),
+           "--max-model-len", str(runtime["max_model_len"]),
+           "--max-num-seqs", str(runtime["max_num_seqs"]),
            "--image-load-workers", str(REPORT_CONF["image_load_workers"]),
            "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
            "--enforce-eager"]  # 当前稳定配置；graph 模式的启动耗时须看完整结果判断
@@ -185,6 +186,28 @@ def run_eval(
             flush=True,
         )
     return result.returncode
+
+
+def evaluation_runtime_config(manifest: Path) -> dict[str, int]:
+    """Return the task-specific runtime shared by route and single modes."""
+    # Exp5's published XLRS Grounding score was produced from the 4096 export.
+    # Its Transformers adapter attempted to set ``processor.image_max_pixels``
+    # but that was a no-op; the inner image processor retained 16,777,216.
+    # Reproduce the *actual* experiment here, and record it explicitly instead
+    # of continuing to call it a 1024-downsample run.
+    historical_xlrs_grounding = manifest.stem.startswith("xlrs_grounding")
+    min_pixels = 65_536 if historical_xlrs_grounding else REPORT_CONF["min_pixels"]
+    max_pixels = 16_777_216 if historical_xlrs_grounding else REPORT_CONF["max_pixels"]
+    max_model_len = 32_768 if historical_xlrs_grounding else REPORT_CONF["max_model_len"]
+    batch_size = 4 if historical_xlrs_grounding else REPORT_CONF["batch_size"]
+    max_num_seqs = 4 if historical_xlrs_grounding else REPORT_CONF["max_num_seqs"]
+    return {
+        "min_pixels": min_pixels,
+        "max_pixels": max_pixels,
+        "max_model_len": max_model_len,
+        "batch_size": batch_size,
+        "max_num_seqs": max_num_seqs,
+    }
 
 
 def _model_dir_ready(path: Path) -> bool:

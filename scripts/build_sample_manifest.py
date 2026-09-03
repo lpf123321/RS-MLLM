@@ -31,6 +31,7 @@ else:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = REPO_ROOT / "evaluation" / "vllm_eval" / "manifests"
+XLRS_CAPTION_PROMPT_PATH = REPO_ROOT / "evaluation" / "prompts" / "xlrs_caption_en.txt"
 
 PREFIX_RE = re.compile(r"^\s*\[(VQA|CAP|REF|CD|MCQ)\]")
 
@@ -284,12 +285,22 @@ def convert_flat_caption(
         source_dir=source_dir,
         images_root=images_root,
     )
+    # XLRS caption expert was trained with this long nine-grid instruction in
+    # the user turn.  The source eval JSONL only contains a generic prompt, so
+    # forwarding it silently changes the task and causes extremely short
+    # generations (and a catastrophic BLEU brevity penalty).
+    if dataset == "xlrs_caption":
+        prompt = XLRS_CAPTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
+        prompt_protocol = "xlrs_caption_nine_grid_user_v1"
+    else:
+        prompt = raw.get("prompt", "Describe the image in detail.")
+        prompt_protocol = "source_prompt"
     return {
         "id": str(raw.get("id", f"{dataset}_{index}")),
         "dataset": dataset,
         "subtask": "caption",
         "task_type": "caption",
-        "prompt": raw.get("prompt", "Describe the image in detail."),
+        "prompt": prompt,
         "images": [image],
         "references": raw.get("references", []) or [],
         "choices": {},
@@ -297,7 +308,10 @@ def convert_flat_caption(
         "accepted_labels": [],
         "clean_status": "keep",
         "issues": [],
-        "metadata": {"source": f"{dataset}_flat"},
+        "metadata": {
+            "source": f"{dataset}_flat",
+            "prompt_protocol": prompt_protocol,
+        },
         "split": "test",
         "source": {"format": "flat_caption", "index": index},
         "schema_version": "1.0",
@@ -314,15 +328,22 @@ def convert_flat_grounding(
 ) -> dict:
     """平铺 grounding 记录 -> Sample dict (v1.0, bbox)."""
     path = raw.get("image", "")
+    # The reported Exp4/Exp5 XLRS grounding protocol feeds the 4096px export
+    # into Qwen's processor.  Its attempted image_max_pixels assignment did
+    # not reach the inner image processor, so the actual run retained the full
+    # 4096 input.  The 1024px JPEG cache is a different protocol.
+    if dataset == "xlrs_grounding":
+        path = path.replace(
+            "/images_exported_test/", "/images_exported_test_4096/"
+        )
     image = _image_ref(
         path,
         role="none",
         source_dir=source_dir,
         images_root=images_root,
     )
-    # The source annotations express boxes in the declared image coordinate
-    # system (normally 4096x4096).  Probe the file for validity, but preserve
-    # those coordinates when they are present and positive.
+    # The annotations use the declared source coordinate system (normally
+    # 4096x4096). Probe the file first, then preserve those coordinates.
     source_width = int(raw.get("image_width", 0) or 0)
     source_height = int(raw.get("image_height", 0) or 0)
     if source_width > 0 and source_height > 0:
@@ -346,7 +367,12 @@ def convert_flat_grounding(
         "accepted_labels": [],
         "clean_status": "keep",
         "issues": [],
-        "metadata": {"source": f"{dataset}_flat", "bbox": bbox, "category": raw.get("category", "")},
+        "metadata": {
+            "source": f"{dataset}_flat",
+            "bbox": bbox,
+            "category": raw.get("category", ""),
+            "image_protocol": "xlrs_grounding_4096_export_v1",
+        },
         "split": "test",
         "source": {"format": "flat_grounding", "index": index},
         "schema_version": "1.0",

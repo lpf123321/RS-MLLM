@@ -45,11 +45,16 @@ def _sha256(path: Path) -> str:
 
 
 def _max_new_tokens(sample: Sample) -> int:
+    # XLRS Caption references are intentionally long, structured nine-grid
+    # reports.  This is the decode budget used by the caption-expert protocol;
+    # the generic caption budget is retained for VRSBench.
+    if sample.dataset == "xlrs_caption" and sample.task_type == "caption":
+        return 550
     return {
         "caption": 384,
         "change_caption": 128,
         "open_vqa": 128,   # thinking 模型预留思考空间, 防正文截断
-        "bbox": 128,
+        "bbox": 64,
         "single_choice": 128,
         "multi_choice": 64,
     }[sample.task_type]
