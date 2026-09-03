@@ -99,6 +99,28 @@ def test_attempts_choose_latest_successful_row_and_accept_integer_ids(tmp_path: 
     assert loaded.rows[0]["score"]["official_correct"] is True
 
 
+def test_attempts_can_select_an_explicit_generation_round(tmp_path: Path) -> None:
+    sample = _sample("fixed-round", prediction_reference="red")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_rows(
+        run_dir / "prediction_attempts.jsonl",
+        [
+            _prediction_row(sample, "first", attempt=1, generation_truncated=True),
+            _prediction_row(sample, "second", attempt=2),
+        ],
+    )
+    _write_rows(run_dir / "predictions.jsonl", [_prediction_row(sample, "second", attempt=2)])
+
+    loaded = metrics.load_predictions(run_dir, attempt=1)
+    assert loaded.path.name == "prediction_attempts.jsonl"
+    assert loaded.selection.startswith("explicit_attempt_1")
+    assert loaded.rows[0]["prediction"] == "first"
+
+    with pytest.raises(ValueError, match="attempt=3"):
+        metrics.load_predictions(run_dir, attempt=3)
+
+
 def test_attempts_reject_sample_definition_drift(tmp_path: Path) -> None:
     first = _sample("same", prediction_reference="red")
     second = _sample("same", prediction_reference="blue")

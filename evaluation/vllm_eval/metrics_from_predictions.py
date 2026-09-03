@@ -177,13 +177,30 @@ def _validate_and_rescore(
     return row
 
 
-def load_predictions(input_path: Path) -> LoadedPredictions:
-    """Load a finalized predictions file or select latest rows from attempts."""
+def load_predictions(
+    input_path: Path, *, attempt: int | None = None
+) -> LoadedPredictions:
+    """Load finalized predictions or select one row per ID from attempts.
+
+    ``attempt=None`` prefers finalized ``predictions.jsonl`` for a run
+    directory and otherwise selects each ID's latest successful attempt.
+    ``attempt=N`` reads ``prediction_attempts.jsonl`` and requires exactly one
+    row at that explicit attempt number for every sample ID.  This is needed
+    for fixed first-pass protocols such as XLRS Caption at 550 tokens.
+    """
+    if attempt is not None and attempt < 1:
+        raise ValueError("attempt must be >= 1")
     input_path = _resolve_path(input_path, must_exist=True)
     if input_path.is_dir():
         predictions = input_path / "predictions.jsonl"
         attempts = input_path / "prediction_attempts.jsonl"
-        if predictions.is_file():
+        if attempt is not None:
+            if not attempts.is_file():
+                raise FileNotFoundError(
+                    f"Explicit --attempt requires {attempts}"
+                )
+            path = attempts
+        elif predictions.is_file():
             path = predictions
         elif attempts.is_file():
             path = attempts
@@ -198,7 +215,7 @@ def load_predictions(input_path: Path) -> LoadedPredictions:
             f"Prediction input is neither a file nor directory: {input_path}"
         )
 
-    if path.name == "prediction_attempts.jsonl":
+    if path.name == "prediction_attempts.jsonl" or attempt is not None:
         # Keep first-seen order (the manifest order in evaluator attempts), but
         # select the latest successful attempt. A later failed retry must not
         # erase an earlier valid generation; if no valid attempt exists, retain
@@ -211,7 +228,7 @@ def load_predictions(input_path: Path) -> LoadedPredictions:
             identifier = raw_sample.get("id") if isinstance(raw_sample, dict) else None
             try:
                 key = _sample_key(identifier)
-            except ValueError as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(f"{path}:{line_number}: {exc}") from exc
             if key not in all_rows:
                 order.append(key)
@@ -229,9 +246,21 @@ def load_predictions(input_path: Path) -> LoadedPredictions:
         rows = []
         for key in order:
             candidates = all_rows[key]
-            valid = [row for row in candidates if _successful_row(row)]
-            rows.append(valid[-1] if valid else candidates[-1])
-        selection = "latest_successful_attempt_per_sample_id_from_prediction_attempts"
+            if attempt is not None:
+                selected = [row for row in candidates if row.get("attempt") == attempt]
+                if len(selected) != 1:
+                    raise ValueError(
+                        f"{path}: sample {key} has {len(selected)} rows for attempt={attempt}; expected 1"
+                    )
+                rows.append(selected[0])
+            else:
+                valid = [row for row in candidates if _successful_row(row)]
+                rows.append(valid[-1] if valid else candidates[-1])
+        selection = (
+            f"explicit_attempt_{attempt}_per_sample_id_from_prediction_attempts"
+            if attempt is not None
+            else "latest_successful_attempt_per_sample_id_from_prediction_attempts"
+        )
     else:
         rows = []
         seen: set[str] = set()
@@ -715,13 +744,14 @@ def write_metric_report(
     predictions: Path,
     output_dir: Path | None = None,
     *,
+    attempt: int | None = None,
     include_coco: bool = True,
     include_spice: bool = False,
     require_coco: bool = False,
     refuse_existing: bool = True,
 ) -> dict[str, Any]:
     """Load raw results, recompute metrics, and write JSON/CSV/Markdown."""
-    loaded = load_predictions(predictions)
+    loaded = load_predictions(predictions, attempt=attempt)
     if output_dir is None:
         output_dir = loaded.source_run_dir / "metrics"
     report = build_metric_report(
@@ -750,6 +780,12 @@ def main() -> int:
     )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
+        "--attempt",
+        type=int,
+        default=None,
+        help="从 prediction_attempts.jsonl 固定选择该轮次（例如 XLRS Caption: --attempt 1）",
+    )
+    parser.add_argument(
         "--spice",
         action="store_true",
         help="额外运行官方 COCO SPICE（需要 Stanford CoreNLP/Java 资源）",
@@ -774,7 +810,7 @@ def main() -> int:
         parser.error("--skip-coco and --require-coco cannot be used together")
     input_path = args.predictions or args.run_dir
     assert input_path is not None
-    loaded = load_predictions(input_path)
+    loaded = load_predictions(input_path, attempt=args.attempt)
     if args.require_complete:
         bad = [
             row["sample"]["id"]
