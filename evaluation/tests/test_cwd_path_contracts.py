@@ -98,10 +98,14 @@ def test_quantize_resolves_exec_script_and_defaults_from_repository(
     )
 
 
-def test_router_default_runtime_paths_are_absolute() -> None:
-    assert all(Path(path).is_absolute() for path in router.DEFAULT_MODELS.values())
-    assert all(Path(path).is_absolute() for path in router.DEFAULT_LORAS.values())
+def test_router_default_runtime_executable_and_ports_are_valid() -> None:
     assert Path(router.DEFAULT_PYTHON).is_absolute()
+    assert set(router.DEFAULT_PORTS) == set(router.EXPERT_ORDER)
+    assert all(isinstance(port, int) and port > 0 for port in router.DEFAULT_PORTS.values())
+    assert all(
+        Path(router._runtime_path(path)).is_absolute()
+        for path in ("./models/example", "~/models/example")
+    )
 
 
 def test_missing_cluster_fallback_does_not_escape_to_a_nonexistent_root(

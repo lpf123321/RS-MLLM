@@ -115,7 +115,7 @@ def compute_official_coco_caption(
         from pycocoevalcap.meteor.meteor import Meteor
         from pycocoevalcap.rouge.rouge import Rouge
         from pycocoevalcap.tokenizer.ptbtokenizer import PTBTokenizer
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         return _unavailable(
@@ -129,7 +129,7 @@ def compute_official_coco_caption(
         tokenizer = PTBTokenizer()
         gts = tokenizer.tokenize(raw_gts)
         results = tokenizer.tokenize(raw_results)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         return _unavailable(
@@ -146,7 +146,7 @@ def compute_official_coco_caption(
         raw.update(
             {f"Bleu_{index + 1}": float(value) for index, value in enumerate(bleu)}
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         errors["BLEU"] = f"{type(exc).__name__}: {exc}"
@@ -156,7 +156,7 @@ def compute_official_coco_caption(
         meteor_scorer = Meteor()
         meteor, _ = meteor_scorer.compute_score(gts, results)
         raw["METEOR"] = float(meteor)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         errors["METEOR"] = f"{type(exc).__name__}: {exc}"
@@ -166,14 +166,14 @@ def compute_official_coco_caption(
 
     try:
         raw["ROUGE_L"] = float(Rouge().compute_score(gts, results)[0])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         errors["ROUGE_L"] = f"{type(exc).__name__}: {exc}"
 
     try:
         raw["CIDEr"] = float(Cider().compute_score(gts, results)[0])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if strict:
             raise
         errors["CIDEr"] = f"{type(exc).__name__}: {exc}"
@@ -183,7 +183,7 @@ def compute_official_coco_caption(
             from pycocoevalcap.spice.spice import Spice
 
             raw["SPICE"] = float(Spice().compute_score(gts, results)[0])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if strict:
                 raise
             errors["SPICE"] = f"{type(exc).__name__}: {exc}"

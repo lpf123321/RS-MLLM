@@ -15,9 +15,10 @@ import hashlib
 import json
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _EVAL_DIR = Path(__file__).resolve().parent
@@ -45,7 +46,9 @@ else:  # direct ``python evaluation/vllm_eval/metrics_from_predictions.py``
         summarize_caption_proxies,
         summarize_reported_caption_metrics,
     )
-    from coco_caption_metrics import compute_official_coco_caption  # type: ignore[no-redef]
+    from coco_caption_metrics import (  # type: ignore[no-redef]
+        compute_official_coco_caption,
+    )
     from schema import Sample  # type: ignore[no-redef]
     from scoring import (  # type: ignore[no-redef]
         prediction_letter_distribution,
@@ -70,7 +73,7 @@ class LoadedPredictions:
 def _sample_key(value: object) -> str:
     """Return the stable ID key used while selecting attempt rows."""
     if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError(f"sample.id must be a non-empty string or integer: {value!r}")
+        raise TypeError(f"sample.id must be a non-empty string or integer: {value!r}")
     key = str(value)
     if not key:
         raise ValueError("sample.id must be non-empty")
@@ -132,7 +135,7 @@ def _read_jsonl(path: Path) -> Iterable[tuple[int, dict[str, Any]]]:
                     f"Invalid JSON at {path}:{line_number}: {exc}"
                 ) from exc
             if not isinstance(value, dict):
-                raise ValueError(f"JSONL row is not an object at {path}:{line_number}")
+                raise TypeError(f"JSONL row is not an object at {path}:{line_number}")
             yield line_number, value
 
 
@@ -141,11 +144,11 @@ def _validate_and_rescore(
 ) -> dict[str, Any]:
     raw_sample = raw_row.get("sample")
     if not isinstance(raw_sample, dict):
-        raise ValueError(f"{path}:{line_number}: missing object field 'sample'")
+        raise TypeError(f"{path}:{line_number}: missing object field 'sample'")
     try:
         sample = Sample.from_dict(raw_sample, manifest_dir=path.parent)
         sample.validate(check_images=False)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         identifier = raw_sample.get("id", "<missing>")
         raise ValueError(
             f"{path}:{line_number}: invalid sample {identifier}: {exc}"
@@ -153,7 +156,7 @@ def _validate_and_rescore(
 
     prediction = raw_row.get("prediction")
     if not isinstance(prediction, str):
-        raise ValueError(
+        raise TypeError(
             f"{path}:{line_number}: sample {sample.id}: 'prediction' must be a string"
         )
     error = raw_row.get("error")
@@ -163,7 +166,7 @@ def _validate_and_rescore(
         )
     truncated = raw_row.get("generation_truncated", False)
     if not isinstance(truncated, bool):
-        raise ValueError(
+        raise TypeError(
             f"{path}:{line_number}: sample {sample.id}: 'generation_truncated' must be bool"
         )
 
