@@ -181,6 +181,8 @@ def main() -> None:
         "qwen-vl-utils",
         "pillow",
         "pyarrow",
+        "pycocoevalcap",
+        "pycocotools",
     ):
         try:
             versions[package] = importlib.metadata.version(package)
@@ -223,6 +225,18 @@ def main() -> None:
     }
     (output_dir / "run_manifest.json").write_text(
         json.dumps(run_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    from metrics_from_predictions import write_metric_report
+
+    metric_report = write_metric_report(
+        output_dir / "predictions.jsonl",
+        output_dir / "metrics",
+        include_coco=True,
+        include_spice=False,
+    )
+    print(
+        f"[metrics] 自动报告已生成: {metric_report['output']['directory']}",
+        flush=True,
     )
     print(json.dumps(run_manifest, ensure_ascii=False, indent=2), flush=True)
     if run_manifest["generation_errors"] or run_manifest["generation_truncations"]:

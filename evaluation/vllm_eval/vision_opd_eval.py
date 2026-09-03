@@ -44,6 +44,8 @@ CODE_FILES = (
     "schema.py",
     "scoring.py",
     "caption_metrics.py",
+    "coco_caption_metrics.py",
+    "metrics_from_predictions.py",
     "vision_opd_eval.py",
     "vision_opd_tools.py",
 )
@@ -197,6 +199,8 @@ def package_versions() -> dict[str, str | None]:
         "qwen-vl-utils",
         "pillow",
         "pyarrow",
+        "pycocoevalcap",
+        "pycocotools",
     ):
         try:
             versions[package] = importlib.metadata.version(package)
@@ -228,6 +232,9 @@ def finalize(
     ]
     if any(path.exists() for path in final_paths):
         raise FileExistsError("Refusing to overwrite finalized run outputs")
+    metric_dir = output_dir / "metrics"
+    if any((metric_dir / name).exists() for name in ("metrics.json", "metrics.csv", "metrics.md")):
+        raise FileExistsError("Refusing to overwrite finalized metric report outputs")
     rows = [completed[sample.id] for sample in samples]
     with (output_dir / "predictions.jsonl").open("w", encoding="utf-8") as handle:
         for row in rows:
@@ -307,6 +314,21 @@ def finalize(
     }
     (output_dir / "run_manifest.json").write_text(
         json.dumps(run_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    # Recompute every metric family from the persisted raw predictions.  This
+    # deliberately does not trust the score object embedded in a prediction
+    # row, so reports remain correct after a scoring/prompt convention change.
+    from metrics_from_predictions import write_metric_report
+
+    metric_report = write_metric_report(
+        output_dir / "predictions.jsonl",
+        metric_dir,
+        include_coco=True,
+        include_spice=False,
+    )
+    print(
+        f"[metrics] 自动报告已生成: {metric_report['output']['directory']}",
+        flush=True,
     )
     print(json.dumps(run_manifest, ensure_ascii=False, indent=2), flush=True)
 

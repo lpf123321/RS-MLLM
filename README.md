@@ -355,6 +355,46 @@ base + delta + PEFT LoRA 合并，不应再次叠加 LoRA。change/caption 为 b
 评测结束后，控制台会汇总关键指标。详细结果保存在 `results/`，正式分见各结果
 目录中的 `clean_summary.json`。
 
+#### 从原始推理结果重算全部指标
+
+评测结果目录中的 `predictions.jsonl` 是唯一计分输入。可以在不重新推理的情况下，
+自动生成多种可追溯的计分口径：
+
+```bash
+# 从结果目录读取 predictions.jsonl
+evaluation/vllm_eval/.venv/bin/python \
+  evaluation/vllm_eval/metrics_from_predictions.py \
+  --run-dir results/<run-dir>
+
+# 也可以直接指定原始 JSONL；输出目录默认是同目录下的 metrics/
+evaluation/vllm_eval/.venv/bin/python \
+  -m evaluation.vllm_eval.metrics_from_predictions \
+  --predictions results/<run-dir>/predictions.jsonl
+```
+
+脚本会重算而不是信任 prediction 行中已有的 `score` 字段，并写出：
+
+```text
+results/<run-dir>/metrics/
+├── metrics.json   # 完整结构化结果、来源 hash、prompt/reference hash
+├── metrics.csv    # 展平后的逐组/逐指标表
+└── metrics.md     # 人读速查表与口径说明
+```
+
+输出同时包含：
+
+- source-answer 与 clean 两套离散 / 定位指标；
+- legacy lexical proxy（`cider_tfidf_proxy` 明确不是官方 CIDEr）；
+- 仓库当前 report implementation 的 BLEU、METEOR、ROUGE-L、CIDEr-D；
+- `pycocoevalcap==1.2` + Stanford PTBTokenizer 的官方 COCO BLEU、METEOR、
+  ROUGE-L、CIDEr；
+- 原始值和报告百分数，明确记录 CIDEr 的原生 0–10 范围；
+- attempts 文件的 latest successful attempt 选择、错误/截断/清洗过滤计数。
+
+`--spice` 可额外运行官方 SPICE（需要 Java/CoreNLP 资源）；`--skip-coco` 只输出
+不依赖 COCO 的指标；`--require-coco` 与 `--require-complete` 可用于验收时 fail closed。
+评测器在完成新的 vLLM/Transformers run 后也会自动写入同样的 `metrics/` 目录。
+
 #### 参考结果（BF16 全量评测）
 
 使用当前仓库的 BF16 专家模型、完整测试集和默认参数时，关键指标应大致

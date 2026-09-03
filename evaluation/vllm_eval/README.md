@@ -16,6 +16,8 @@
 | `vision_opd_tools.py` / `_v2` / `_v3` | 工具（sha256、percentile 等） |
 | `vision_opd_profile.py` | 注册 vision_opd_9b profile |
 | `prompts.py` / `sampling.py` / `caption_metrics.py` / `validate_run.py` | 提示词、采样、报告口径 Caption 指标、验证 |
+| `coco_caption_metrics.py` | 官方 `pycocoevalcap==1.2` Caption scorer（PTBTokenizer、BLEU/METEOR/ROUGE-L/CIDEr，可选 SPICE） |
+| `metrics_from_predictions.py` | 从原始 `predictions.jsonl` / `prediction_attempts.jsonl` 重算全部口径并输出 JSON/CSV/Markdown |
 
 ## 运行方式
 
@@ -45,6 +47,19 @@ cd evaluation/vllm_eval
 - `--enforce-eager` 仍是路由默认稳定配置。关闭 eager 可减少稳态 kernel launch
   开销，但 vLLM 0.26 的首次编译/graph capture 可能超过 3 分钟，不能把冷启动时间
   当作稳态吞吐。
+
+评测完成后会自动生成 `results/<run>/metrics/metrics.json`、`metrics.csv` 和
+`metrics.md`。也可以只对已有原始结果离线重算：
+
+```bash
+.venv/bin/python metrics_from_predictions.py --run-dir results/<run>
+# --spice：额外运行官方 SPICE；--skip-coco：跳过 COCO scorer
+```
+
+脚本同时保存 source-answer、clean、旧 lexical proxy、仓库 report implementation
+和官方 COCO 指标。`cider_tfidf_proxy` 不是官方 CIDEr；COCO CIDEr 原始值范围为
+0–10，百分数字段是显式乘 100 的报告展示值。输入行中的旧 `score` 不会被信任，
+而是依据嵌入的 sample/prediction 重新计分。
 
 协议例外：XLRS Caption 使用训练时九宫格长提示和 550-token 长度约束；XLRS
 Grounding 为复现 Exp5 的实际运行条件，使用 4096 导出、16,777,216 像素上限、
