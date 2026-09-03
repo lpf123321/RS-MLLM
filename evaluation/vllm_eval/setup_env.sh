@@ -69,8 +69,19 @@ mkdir -p "${EVAL_DIR}/.nltk_data"
 # restricted network or its destination safety check rejects the download.
 # The evaluator has an exact+stem fallback, so this optional resource must not
 # turn a non-interactive setup into an EOF traceback.
-if ! .venv/bin/python -m nltk.downloader -q -f -d "${EVAL_DIR}/.nltk_data" wordnet </dev/null; then
-    echo "    [warn] WordNet 下载失败；METEOR 将使用 exact+stem 回退口径" >&2
+export NLTK_DATA="${EVAL_DIR}/.nltk_data${NLTK_DATA:+:${NLTK_DATA}}"
+if ! .venv/bin/python -c 'from nltk.corpus import wordnet; raise SystemExit(0 if wordnet.synsets("car") else 1)' >/dev/null 2>&1; then
+    wordnet_log="$(mktemp)"
+    .venv/bin/python -m nltk.downloader -q -f -d "${EVAL_DIR}/.nltk_data" wordnet \
+        </dev/null >"${wordnet_log}" 2>&1 || true
+    if .venv/bin/python -c 'from nltk.corpus import wordnet; raise SystemExit(0 if wordnet.synsets("car") else 1)' >/dev/null 2>&1; then
+        echo "    WordNet OK"
+    else
+        echo "    [warn] WordNet 下载失败；METEOR 将使用 exact+stem 回退口径" >&2
+    fi
+    rm -f "${wordnet_log}"
+else
+    echo "    WordNet 已存在，跳过下载"
 fi
 
 echo ""
