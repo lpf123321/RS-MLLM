@@ -347,6 +347,26 @@ route 映射，不能跨专家选择数据集或子任务。模型自动按「�
 (本地 `models/` 优先，缺失才从 ModelScope 拉取)；single 与 route 使用**同一个
 vLLM 评测器**（`evaluation/vllm_eval/vision_opd_vllm_eval.py`），只是任务范围不同。
 
+#### 参考结果（BF16 全量评测）
+
+使用当前仓库的 BF16 专家模型、完整测试集和默认参数时，关键指标应大致
+接近下表。首先确认每项的 `生成错误=0`；随后可用控制台末尾汇总或结果目录中的
+`clean_summary.json` 对照指标。表中数值为百分制，Caption/Change 的 CIDEr-D 也按
+原始分数乘 100 显示。
+
+| 专家 | 数据集 / 任务 | 样本数 | 参考关键指标 |
+|---|---|---:|---|
+| General | VRSBench VQA | 37,409 | Accuracy **70.94%** |
+| General | MME-RealWorld-RS | 3,722 | Accuracy **71.98%** |
+| General | XLRS-Bench-lite | 2,983 | Accuracy **49.78%** |
+| Grounding | VRSBench Referring | 16,159 | Acc@0.5 **77.14%**，mIoU **66.60%** |
+| Grounding | XLRS-Bench Visual Grounding EN | 6,310 | Acc@0.5 约 **31.97%**（4096 图像协议） |
+| Change | LEVIR-CC | 1,929 | BLEU-4 **52.93%**，METEOR **75.17%**，ROUGE-L **73.85%**，CIDEr-D **137.76%** |
+| Caption | VRSBench Caption | 9,350 | BLEU-4 **16.34%**，METEOR **39.20%**，ROUGE-L **38.30%**，CIDEr-D **36.93%** |
+| Caption | XLRS-Bench Caption EN | 934 | BLEU-4 **6.23%**，METEOR **30.67%**，ROUGE-L **20.61%**，CIDEr-D **1.80%** |
+
+这些数值用于检查模型、数据和评测链路是否正确，不要求末位小数完全一致。
+
 <!--
 以下命令行、量化和实验级入口暂时隐藏，源码说明保留。
 
