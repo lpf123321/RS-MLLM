@@ -439,7 +439,7 @@ evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py \
   expert_general expert_general_w8a8 expert_general_gptq
 ```
 
-模型来自 ModelScope 的 `Fun10165/rs-mllm-*` 仓库。下载完成后，`route` 和
+模型来自 ModelScope 的 `Fun10165/rs-mllm-*` 仓库（[https://modelscope.cn/profile/Fun10165](https://modelscope.cn/profile/Fun10165)）。下载完成后，`route` 和
 `single` 评测都会优先使用本地模型；离线运行可设置
 `export MODELSCOPE_OFFLINE=1`。
 
