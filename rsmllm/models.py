@@ -44,6 +44,48 @@ LOCAL_MODEL_NAMES = {
 }
 
 
+def _complete_model(directory: Path, *, adapter: bool) -> bool:
+    """Recognize a complete ModelScope snapshot without contacting the Hub."""
+    marker = "adapter_config.json" if adapter else "config.json"
+    if not (directory / marker).is_file():
+        return False
+    if adapter:
+        return any(
+            (directory / name).is_file()
+            for name in ("adapter_model.safetensors", "adapter_model.bin")
+        )
+    if (directory / "model.safetensors").is_file():
+        return True
+    index = directory / "model.safetensors.index.json"
+    if not index.is_file():
+        return False
+    try:
+        import json
+
+        weight_map = json.loads(index.read_text(encoding="utf-8"))["weight_map"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return False
+    return bool(weight_map) and all(
+        (directory / name).is_file() for name in set(weight_map.values())
+    )
+
+
+def _cached_snapshot(cache: Path, model_id: str, *, adapter: bool) -> Path | None:
+    """Find a complete snapshot in ModelScope's stable on-disk layout."""
+    snapshots = cache / "models" / model_id.replace("/", "--") / "snapshots"
+    if not snapshots.is_dir():
+        return None
+    candidates = list(snapshots.iterdir())
+    candidates.sort(
+        key=lambda path: (path.name == "master", path.stat().st_mtime),
+        reverse=True,
+    )
+    for candidate in candidates:
+        if candidate.is_dir() and _complete_model(candidate, adapter=adapter):
+            return candidate.resolve()
+    return None
+
+
 def get_model(name: str, *, cache_dir: str | None = None) -> str:
     """解析模型引用到本地目录; 未命中缓存时按需调用 ModelScope snapshot_download."""
     if name in RETIRED_MODEL_ALIASES:
@@ -63,9 +105,9 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
                 return str(candidate.resolve())
 
 
-    # README 3.3.3 defines models/<local_name>/ as the canonical offline
-    # layout (fetch_models.py downloads there). Prefer it over the ModelScope
-    # cache so a staged checkout cannot pick a different remote revision.
+    # README 3.3.2 defines models/<local_name>/ as the canonical layout for
+    # locally trained/published experts. Prefer it over the ModelScope cache so
+    # a staged checkout cannot pick a different remote revision.
     local_name = LOCAL_MODEL_NAMES.get(name)
     if local_name:
         local = MODELS_ROOT / local_name
@@ -80,6 +122,10 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
     ).expanduser()
     if not cache.is_absolute():
         cache = REPO_ROOT / cache
+    adapter = name.endswith("_lora")
+    cached = _cached_snapshot(cache.resolve(), model_id, adapter=adapter)
+    if cached is not None:
+        return str(cached)
     if not os.environ.get("MODELSCOPE_OFFLINE"):
         try:
             from modelscope import snapshot_download
@@ -89,7 +135,10 @@ def get_model(name: str, *, cache_dir: str | None = None) -> str:
         path = snapshot_download(model_id, cache_dir=str(cache.resolve()))
         return str(path)
     # 离线守卫: 无缓存时报错而不是误用
-    raise FileNotFoundError(f"模型 {name!r} 本地无缓存且 MODELSCOPE_OFFLINE=1")
+    raise FileNotFoundError(
+        f"模型 {name!r} 在 {cache.resolve()} 中无完整缓存，"
+        "且 MODELSCOPE_OFFLINE=1"
+    )
 
 
 def register(id_or_path: str, alias: str | None = None) -> str:

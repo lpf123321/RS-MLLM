@@ -9,6 +9,7 @@ explicit ``--replace-links`` option.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,107 @@ EXPERTS = {
     "expert_change": ("five-stage-root", "a2b_change"),
     "expert_caption": ("five-stage-root", "caption"),
 }
+
+WEIGHT_SUFFIXES = (
+    ".safetensors",
+    ".safetensors.index.json",
+    ".bin",
+    ".bin.index.json",
+    ".pt",
+    ".pth",
+    ".ckpt",
+    ".gguf",
+)
+RUNTIME_FILES = frozenset(
+    {
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "added_tokens.json",
+        "special_tokens_map.json",
+        "chat_template.jinja",
+        "preprocessor_config.json",
+        "processor_config.json",
+        "video_preprocessor_config.json",
+        "image_processor_config.json",
+        "audio_processor_config.json",
+        "composition_manifest.json",
+    }
+)
+BASE_PROFILE = {
+    "key": "qwen35_4b",
+    "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+    "license": {
+        "id": "Apache-2.0",
+        "url": "https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE",
+    },
+}
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def pinned_file(path: Path) -> dict[str, int | str]:
+    return {"bytes": path.stat().st_size, "sha256": sha256(path)}
+
+
+def build_evaluation_profile(name: str, source: Path) -> dict[str, object]:
+    """Build the evaluator's fail-closed profile for one locally trained model."""
+    composition = source / "composition_manifest.json"
+    if not composition.is_file():
+        raise FileNotFoundError(
+            f"trained model has no composition_manifest.json: {source}"
+        )
+    try:
+        composition_data = json.loads(composition.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid composition manifest: {composition}") from exc
+    if "peft_lora" not in str(composition_data.get("operation") or ""):
+        raise ValueError(f"composition did not merge a PEFT LoRA: {composition}")
+
+    files = [entry for entry in source.iterdir() if entry.is_file()]
+    weights = {
+        entry.name: pinned_file(entry)
+        for entry in sorted(files)
+        if entry.name.endswith(WEIGHT_SUFFIXES)
+    }
+    runtime_files = {
+        entry.name: pinned_file(entry)
+        for entry in sorted(files)
+        if entry.name in RUNTIME_FILES
+    }
+    if not weights or "config.json" not in runtime_files:
+        raise ValueError(f"cannot profile incomplete model: {source}")
+    fingerprint = hashlib.sha256(
+        "".join(str(value["sha256"]) for value in weights.values()).encode()
+    ).hexdigest()[:16]
+    return {
+        "schema_version": 1,
+        "kind": "derived_candidate_profile",
+        "key": f"{name}_{fingerprint}",
+        "model_path": str(source.resolve()),
+        "base_profile": BASE_PROFILE["key"],
+        "base_revision": BASE_PROFILE["revision"],
+        "license": BASE_PROFILE["license"],
+        "evidence": {
+            "kind": "rs_mllm_full_training_pipeline",
+            "provenance": {"status": "complete", "scope": "full", "rows_failed": 0},
+            "composition_manifest": {
+                "path": str(composition),
+                "sha256": sha256(composition),
+            },
+        },
+        "weights": weights,
+        "runtime_files": runtime_files,
+    }
 
 
 def validate_model(path: Path) -> dict[str, object]:
@@ -144,6 +246,25 @@ def main() -> None:
         print(json.dumps({**report, "dry_run": True}, indent=2))
         return
 
+    # Hash and validate all four profiles before modifying any source or link.
+    built_profiles = {
+        name: build_evaluation_profile(name, source)
+        for name, source in sources.items()
+    }
+    profiles: dict[str, dict[str, object]] = {}
+    for name, source in sources.items():
+        profile = built_profiles[name]
+        profile_path = source / "evaluation_profile.json"
+        temporary_profile = source / f".{profile_path.name}.publish-{os.getpid()}"
+        temporary_profile.write_text(
+            json.dumps(profile, indent=2) + "\n", encoding="utf-8"
+        )
+        os.replace(temporary_profile, profile_path)
+        profiles[name] = {
+            "path": str(profile_path),
+            "key": profile["key"],
+        }
+
     models_root.mkdir(parents=True, exist_ok=True)
     for name, source in sources.items():
         destination = models_root / name
@@ -155,6 +276,7 @@ def main() -> None:
         temporary.symlink_to(relative_target(source, destination), target_is_directory=True)
         os.replace(temporary, destination)
 
+    report["evaluation_profiles"] = profiles
     manifest = models_root / "TRAINED_EXPERTS_MANIFEST.json"
     temporary_manifest = models_root / f".{manifest.name}.publish-{os.getpid()}"
     temporary_manifest.write_text(

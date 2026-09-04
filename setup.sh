@@ -15,8 +15,9 @@ fi
 
 # ============================================================
 # RS-MLLM 环境安装（懒人回滚路径，自动识别）
-#   bash setup.sh  -> 安装(训练/推理环境, torch 2.8 cu128)
-#   vLLM 评测环境: bash evaluation/vllm_eval/setup_env.sh  (vllm 0.26 cu129)
+#   bash setup.sh  -> 安装通用工具环境(torch 2.8 cu128)
+#   vLLM 推理/评测: bash evaluation/vllm_eval/setup_env.sh  (vllm 0.26 cu129)
+#   完整训练另按 README 3.6 配置 conda + nvcc 环境。
 # 推荐直接跑: uv sync --locked && source .venv/bin/activate
 # ============================================================
 
@@ -26,7 +27,7 @@ ENV_NAME="rs_mllm"
 if command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
     export PATH="${HOME}/.local/bin:${PATH}"
     echo "==> uv detected, syncing locked env..."
-    echo "    (首次需下载 ~4GB: torch cu128 + nvidia 库。若卡住无进度,"
+    echo "    (首次需下载数 GB 的 torch cu128 + nvidia 库。若卡住无进度,"
     echo "     请先 export HTTPS_PROXY/HTTP_PROXY 指向代理再重跑)"
     (cd "$REPO_ROOT" && uv sync --locked)
     if [ "$_SOURCED" = "1" ]; then

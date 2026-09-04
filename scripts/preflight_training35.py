@@ -11,8 +11,6 @@ TRAINING_MODELS = {
     "Qwen3.5-4B": "config.json",
     "expert_general": "config.json",
     "expert_ground": "config.json",
-    "expert_change": "config.json",
-    "expert_caption": "config.json",
 }
 OUTPUT_MODELS = {
     "expert_general_lora": "adapter_config.json",
@@ -92,9 +90,7 @@ def main() -> None:
 
     required_models = {"Qwen3.5-4B": "config.json"}
     if args.include_expert:
-        required_models.update(
-            {name: marker for name, marker in TRAINING_MODELS.items() if name != "Qwen3.5-4B"}
-        )
+        required_models.update(TRAINING_MODELS)
     if args.require_outputs:
         required_models.update(OUTPUT_MODELS)
     for name, marker in required_models.items():
@@ -158,9 +154,12 @@ def main() -> None:
             result["passed"] = (
                 result["passed"] and len(rows) == config["expected_records"]
             )
+            all_errors = result.get("errors", [])
+            result["error_count"] = len(all_errors)
+            result["errors"] = all_errors[:20]
             report["expert_data"][config_name] = result
             if not result["passed"]:
-                failures.append(f"{config_name}: {result['errors'][:3]}")
+                failures.append(f"{config_name}: {all_errors[:3]}")
         except Exception as exc:
             failures.append(f"{config_name}: {exc}")
             report["expert_data"][config_name] = {

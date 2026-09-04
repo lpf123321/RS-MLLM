@@ -200,7 +200,8 @@ def main() -> None:
             name = f"{safe_id(audit['candidate_id'])}.jpg"
             save_preview(Path(audit["overlay_path"]), assets / name)
             final = next(row for row in accepted if row["candidate_id"] == audit["candidate_id"])
-            synthetic_html.append(f"<div><img src='assets/{html.escape(name)}'><p><b>内部描述：</b>{html.escape(audit['description_before_alignment'])}</p><p><b>同图官方模板：</b>{html.escape(audit['official_template'])}</p><p><b>最终问题：</b>{html.escape(final['messages'][0]['content'].replace('<image>\n',''))}</p><code>{html.escape(audit['answer'])}</code></div>")
+            final_question = final["messages"][0]["content"].replace("<image>\n", "")
+            synthetic_html.append(f"<div><img src='assets/{html.escape(name)}'><p><b>内部描述：</b>{html.escape(audit['description_before_alignment'])}</p><p><b>同图官方模板：</b>{html.escape(audit['official_template'])}</p><p><b>最终问题：</b>{html.escape(final_question)}</p><code>{html.escape(audit['answer'])}</code></div>")
         cards.append(f"<section><h2>{html.escape(image)}</h2><h3>原图</h3><img class='raw' src='assets/{html.escape(image)}'><h3>官方问题与框</h3><div class='grid'>{''.join(official_html)}</div><h3>新 SAM3 实例与模板对齐问题</h3><div class='grid'>{''.join(synthetic_html) or '<p>无通过候选</p>'}</div></section>")
     header = """<!doctype html><meta charset='utf-8'><title>XLRS SAM3 smoke</title><style>body{font-family:system-ui;background:#151515;color:#eee;margin:24px}section{border:1px solid #555;padding:16px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.grid img,.raw{max-width:100%;max-height:700px;object-fit:contain;background:#222}p{line-height:1.45}code{color:#9fe}a{color:#8cf}</style><h1>XLRS train-only SAM3：外层模板对齐、内部描述不变</h1>"""
     page_size = max(0, args.gallery_page_size)

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -188,8 +189,9 @@ def expert_device_map(devices: list[str]) -> dict[str, str | None]:
 
 def default_gpu_memory_utilization(device_count: int) -> float:
     """Split each GPU's vLLM reservation between experts sharing that GPU."""
-    experts_per_gpu = 4 if device_count <= 1 else (2 if device_count == 2 else 1)
-    return {1: 0.85, 2: 0.45, 4: 0.22}[experts_per_gpu]
+    usable_devices = max(1, device_count)
+    experts_per_gpu = math.ceil(len(EXPERT_ORDER) / usable_devices)
+    return {1: 0.85, 2: 0.42, 3: 0.28, 4: 0.22}[experts_per_gpu]
 
 
 def start_all_experts(

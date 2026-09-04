@@ -12,8 +12,7 @@
   - [3.2 环境配置](#32-环境配置)
   - [3.3 数据与模型准备](#33-数据与模型准备)
     - [3.3.1 评测图片：已有官方数据放哪里](#331-评测图片已有官方数据放哪里)
-    - [3.3.2 评测图片：从 ModelScope 或 HuggingFace 下载](#332-评测图片从-modelscope-或-huggingface-下载)
-    - [3.3.3 模型：下载到本地（评测前准备好）](#333-模型下载到本地评测前准备好)
+    - [3.3.2 模型：下载到本地（评测前准备好）](#332-模型下载到本地评测前准备好)
   - [3.4 模型推理](#34-模型推理)
   - [3.5 模型评测](#35-模型评测)
   - [3.6 模型训练](#36-模型训练)
@@ -118,25 +117,30 @@ CVSearch 论文原作者。参与自进化框架设计主导与技术报告优�
 
 ---
 
-## 三、 快速开始
+## 三、快速开始
 
 ### 3.1 硬件要求
 
-- **显卡**：NVIDIA GPU，显存 ≥ 12 GB，CUDA 计算能力 ≥ 8.0（Ampere 级及更高）
+- **推理/评测**：NVIDIA Ampere 或更新架构；BF16 推荐显存 ≥ 24 GB，本仓库已在
+  A100 40 GB 上验证。多专家常驻需要多卡，显存不足时可选 W8A8/GPTQ。
+- **完整训练**：General 使用 4×A100 40 GB，Grounding final 使用 8×A100 40 GB；
+  3.6 的命令可用单卡、单步 smoke test 验证链路，但不代表单卡能完成全量训练。
 - **CPU**：建议 x86_64
-- **内存**：建议 ≥ 32 GB
-- **存储**：建议 ≥ 100 GB
-- 系统：建议 Ubuntu 22.04
+- **内存**：推理/评测建议 ≥ 32 GB，完整训练建议 ≥ 128 GB
+- **存储**：仅准备一种精度建议预留 ≥ 80 GB；全部 12 个模型或完整训练请预留
+  ≥ 180 GB / ≥ 300 GB，并在开始前用 `df -h` 确认。
+- **系统**：建议 Ubuntu 22.04
 
-> **备注**：实际资源消耗量远低于此规格。本项目未在其他硬件配置上运行过，不保证完全兼容。
+上述是可复现配置而非最低理论配置；不同图像分辨率、并发数和训练 checkpoint 保留
+策略都会改变实际占用。
 
 ### 3.2 环境配置
 
 **方式一：一键脚本（推荐）**
 
 ```bash
-bash setup.sh                                              # 训练/推理环境(torch 2.8 cu128)
-bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(vllm 0.26 cu129)
+bash setup.sh                              # 通用工具环境（torch 2.8 cu128）
+bash evaluation/vllm_eval/setup_env.sh     # 推理/评测环境（vLLM 0.26 cu129）
 ```
 
 `setup.sh` 自动识别已安装的 **uv / conda**：有 `uv` 时按 `uv.lock` 精确安装并进入 `.venv`，没有 `uv` 时回退 conda；两者都没有时，先按下方「安装 uv（可选）」装好 `uv` 再重跑即可。
@@ -145,12 +149,24 @@ bash evaluation/vllm_eval/setup_env.sh                     # vLLM 评测环境(v
 目录调用这些入口不会把结果写到调用者的临时 cwd。它们的相对模型/数据/输出路径
 按仓库根目录解释；清单中的图片相对路径按清单文件所在目录解释。
 
-**方式二：Docker 容器**
+若是刚克隆的仓库，先确保 Git LFS 文件已取回（Ubuntu 可执行
+`sudo apt-get install git-lfs && git lfs install && git lfs pull`）。完整训练使用独立的
+conda + nvcc 环境，严格按 3.6 第 1 步安装，不复用上面两个 `.venv`。
+
+**方式二：Docker 容器（推理/评测）**
 
 ```bash
 docker build -t rs-mllm .
-docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
+mkdir -p .models results
+docker run --gpus all -it \
+  -v "$PWD/datasets:/app/datasets" \
+  -v "$PWD/.models:/app/.models" \
+  -v "$PWD/results:/app/results" \
+  -p 7860:7860 rs-mllm bash
 ```
+
+容器内仍从 `/app` 运行 `./rsmllm.sh`。Docker 镜像用于 3.3–3.5；3.6 完整训练需要
+conda/nvcc 和多卡资源，请使用方式一。
 
 **安装 uv（可选；仅当脚本提示找不到 uv/conda 时需要）**
 
@@ -165,7 +181,7 @@ python3 -m pip install --user uv
 
 > 评测器依赖 vllm 0.26，要用 `evaluation/vllm_eval` 的评测环境，不能用 3.2 的训练环境。
 >
-> 首次安装需下载约 4GB（torch/nvidia/vllm wheel）。若下载卡住无进度，
+> 两套环境首次安装需下载数 GB 的 torch/nvidia/vllm wheel。若下载卡住无进度，
 > 设置代理后重跑：`export HTTPS_PROXY=http://<代理>:<端口> HTTP_PROXY=http://<代理>:<端口>`。
 
 ### 3.3 数据与模型准备
@@ -196,11 +212,12 @@ datasets/shared_datasets/
   zip 解压后文件自然对上，无需改名；
 - XLRS 三件套 / MME：清单引用的是**预处理重编号名**（`images_resized/xlrs_00000.png`、
   `images_exported/xlrs_caption_00000.jpg`），官方 HF 数据是 arrow 内嵌图；若你拿到的
-  不是与清单同名的文件，建议直接用 3.3.2 的下载脚本从官方源导出（脚本自动按 `index`
-  列顺序导出并重编号），或按上述命名规则手动对齐。
+  不是与清单同名的文件，建议让评测入口从官方源自动下载并导出（脚本会按 `index`
+  列顺序重编号），或按上述命名规则手动对齐。
 
 
-若没有官方数据，在交互式控制台选择测评功能时，会从modelscope自动下载test split并摆放到上述目录。若网络不稳，建议先手动下载。
+若没有官方数据，交互式控制台会在首次评测时从 ModelScope 自动下载测试集图片并
+摆放到上述目录。若网络不稳，可先运行 `python scripts/fetch_benchmark_data.py --all`。
 
 <!-- 摆放完成后可手动预构建评测清单（可选；不跑也不影响，首次评测会自动构建）：
 
@@ -307,7 +324,8 @@ Caption 四个专家；模型未下载时会自动从 ModelScope 获取。每次
 
 - **WebUI（推荐）**：直接回车采用默认模式，打开 `http://127.0.0.1:7860`，上传图片
   并输入上述 prompt。单卡首次请求会现场加载命中的专家，需要等待约 1 分钟。
-- **CLI**：输入 `cli`，在 `router>` 后输入 prompt，按 `Ctrl+C` 退出。
+- **CLI**：输入 `cli`，在 `router>` 后输入 prompt，按 `Ctrl+C` 退出。CLI 不接收图片，
+  主要用于检查文本路由和服务状态；真实多模态请求请使用 WebUI。
 
 在远程服务器运行 WebUI 时，可在本地建立端口转发后访问：
 
@@ -600,7 +618,9 @@ python scripts/publish_trained_experts.py \
 
 脚本检查四个模型后，将它们软链到 `models/expert_general`、
 `models/expert_ground`、`models/expert_change` 和 `models/expert_caption`。评测与推理
-会直接使用这些本地模型，发布记录位于 `models/TRAINED_EXPERTS_MANIFEST.json`。
+会直接使用这些本地模型。脚本还会为每个训练产物生成绑定权重哈希的
+`evaluation_profile.json`，因此 3.5 能在保留完整性校验的前提下直接评测新模型；
+发布记录位于 `models/TRAINED_EXPERTS_MANIFEST.json`。
 
 只检查命令而不训练时，可运行 `bash scripts/train.sh all --dry-run`；发布前也可以给
 最后一条命令加 `--dry-run`。单阶段训练和数据/delta 重建脚本仅用于调试，不属于
@@ -625,7 +645,7 @@ python scripts/publish_trained_experts.py \
 ├── evaluation/              # 评测框架
 │   ├── vllm_eval/           #   vLLM 0.26 离线评测器（vision_opd_vllm_eval.py 主入口）
 │   │   ├── setup_env.sh     #     一键还原评测环境（uv 托管 Python 3.11 + vllm 0.26）
-│   │   ├── manifest/        #     评测清单（首次由 build_sample_manifest 构建，不入库）
+│   │   ├── manifests/       #     评测清单（首次由 build_sample_manifest 构建，不入库）
 │   │   ├── schema.py / scoring.py   # 样例结构 + 官方计分（clean_correct）
 │   │   └── model_policy.py  #     可信模型 profile（sha256 校验）
 │   ├── main.py              #   transformers 批评测入口（--adapter qwen35vl/router）
@@ -638,7 +658,7 @@ python scripts/publish_trained_experts.py \
 ├── finetune_framework/      # 训练框架（Qwen-VL-Series-Finetune：SFT/DPO/GRPO）与任务数据
 ├── training/                # 训练方法补充
 │   ├── distillation/        #   在线策略蒸馏 OPD / 在线自蒸馏 OPSD
-│   ├── self_evolution/      #   CVSearch 驱动的自进化训练
+│   ├── self_evolution/      #   CVSearch 自进化研究源码（独立环境，不属于 3.6 标准入口）
 │   └── train_*_expert.sh    #   专家训练启动脚本
 ├── scripts/                 # 预处理 / 推理 / 工具
 │   ├── preprocess_*.py       #   数据集预处理（vrsbench/mme/xlrs/levircc/caption/grounding）

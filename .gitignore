@@ -19,6 +19,7 @@ output/
 outputs/
 logs/
 log/
+/results/
 
 # 一次性产物/探索文档（保留本地，不入库）
 _archive/

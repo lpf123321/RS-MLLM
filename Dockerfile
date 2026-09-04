@@ -2,12 +2,12 @@
 # 用法:
 #   docker build -t rs-mllm .                             # (Docker Hub 直连)
 #   docker build --build-arg BASE_IMAGE=镜像代理/nvidia/cuda:12.8.1-devel-ubuntu22.04 -t rs-mllm .
-#   docker run --gpus all -it -v $(pwd):/workspace rs-mllm bash
+#   docker run --gpus all -it -p 7860:7860 rs-mllm bash
 ARG BASE_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/.local/bin:$PATH"
+ENV PATH="/app/.venv/bin:/root/.local/bin:$PATH"
 
 # Python 3.10 + 编译工具（flash-attn 等需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,7 +28,7 @@ RUN uv sync --locked --no-dev
 COPY evaluation/vllm_eval/pyproject.toml evaluation/vllm_eval/uv.lock evaluation/vllm_eval/
 RUN cd evaluation/vllm_eval && uv sync --locked
 
-# 代码放入镜像；评测数据（datasets_data/*.jsonl 等）通过 -v 挂载
+# 代码和仓库内置清单放入镜像；大体积图片、模型缓存和结果通过 -v 挂载
 COPY . .
 
 CMD ["bash"]

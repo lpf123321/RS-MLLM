@@ -181,7 +181,6 @@ def run_eval(
            "--manifest", str(manifest),
            "--model", model_path,
            "--output-dir", str(output_dir),
-           "--model-profile", profile,
            "--quantization", quantization,
            "--min-pixels", str(runtime["min_pixels"]),
            "--max-pixels", str(runtime["max_pixels"]),
@@ -191,6 +190,12 @@ def run_eval(
            "--image-load-workers", str(REPORT_CONF["image_load_workers"]),
            "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
            "--enforce-eager"]  # 当前稳定配置；graph 模式的启动耗时须看完整结果判断
+    derived_profile = Path(model_path) / "evaluation_profile.json"
+    if derived_profile.is_file():
+        cmd.extend(["--derived-profile", str(derived_profile)])
+        print(f"  [model] 使用训练产物 profile: {derived_profile}", flush=True)
+    else:
+        cmd.extend(["--model-profile", profile])
     print(f"  → 评测 {manifest.name} ...", flush=True)
     env = dict(os.environ)
     existing = env.get("PYTHONPATH")
@@ -262,7 +267,11 @@ def _model_dir_ready(path: Path) -> bool:
 
 def _print_lineage(path: Path) -> None:
     """Print small provenance markers without reading model weights."""
-    for filename in ("merge_manifest.json", "conversion_manifest.json"):
+    for filename in (
+        "merge_manifest.json",
+        "composition_manifest.json",
+        "conversion_manifest.json",
+    ):
         marker = path / filename
         if not marker.is_file():
             continue
@@ -274,6 +283,11 @@ def _print_lineage(path: Path) -> None:
         if filename == "merge_manifest.json":
             order = data.get("merge_order") or data.get("merge_method")
             print(f"  [model] lineage: {filename} ({order})", flush=True)
+        elif filename == "composition_manifest.json":
+            print(
+                f"  [model] lineage: {filename} ({data.get('operation')})",
+                flush=True,
+            )
         else:
             print(
                 f"  [model] lineage: {filename} (source={data.get('model_source')})",
@@ -285,20 +299,30 @@ def _assert_canonical_lineage(path: Path, expert: str, quant: str) -> None:
     """Fail closed if a LoRA expert lacks its one-merge provenance marker."""
     if quant != "bf16" or expert not in {"general", "grounding"}:
         return
-    marker = path / "merge_manifest.json"
-    if not marker.is_file():
-        raise RuntimeError(
-            f"{expert} canonical 模型缺少 merge_manifest.json，拒绝评测以免误用未合并或二次合并权重: {path}"
-        )
-    try:
-        data = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"无法解析 canonical 模型合并记录: {marker}") from exc
-    order = data.get("merge_order") or []
-    if not (data.get("peft_lora") or (isinstance(order, list) and "peft_lora" in order)):
-        raise RuntimeError(
-            f"{expert} canonical 模型的合并记录未包含 PEFT LoRA，拒绝评测: {marker}"
-        )
+    markers = (path / "merge_manifest.json", path / "composition_manifest.json")
+    errors: list[str] = []
+    for marker in markers:
+        if not marker.is_file():
+            continue
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"{marker.name}: {exc}")
+            continue
+        order = data.get("merge_order") or []
+        operation = str(data.get("operation") or "")
+        if (
+            data.get("peft_lora")
+            or (isinstance(order, list) and "peft_lora" in order)
+            or "peft_lora" in operation
+        ):
+            return
+        errors.append(f"{marker.name}: 未记录 peft_lora")
+    detail = "; ".join(errors) if errors else "未找到合并记录"
+    raise RuntimeError(
+        f"{expert} canonical 模型缺少可验证的 PEFT LoRA 合并记录，"
+        f"拒绝评测: {path} ({detail})"
+    )
 
 
 def resolve_model(expert: str, quant: str) -> str:
