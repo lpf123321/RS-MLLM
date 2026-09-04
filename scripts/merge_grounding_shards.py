@@ -62,6 +62,20 @@ def _fingerprint(value: object) -> str:
     )
 
 
+def _canonical_sample(row: dict[str, Any], manifest_dir: Path) -> dict[str, Any]:
+    """Normalize image paths like the evaluator's ``Sample.from_dict``."""
+    canonical = dict(row)
+    images = []
+    for raw_image in row.get("images", []):
+        image = dict(raw_image)
+        image_path = image.get("path")
+        if isinstance(image_path, str) and not Path(image_path).is_absolute():
+            image["path"] = str((manifest_dir / image_path).resolve())
+        images.append(image)
+    canonical["images"] = images
+    return canonical
+
+
 def _successful(row: dict[str, Any]) -> bool:
     return not row.get("error") and not row.get("generation_truncated", False)
 
@@ -86,6 +100,7 @@ def _select_successful_rows(
     source: Path,
     rows: list[dict[str, Any]],
     manifest_by_id: dict[str, dict[str, Any]],
+    manifest_dir: Path,
 ) -> dict[str, dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -96,7 +111,9 @@ def _select_successful_rows(
         expected = manifest_by_id.get(identifier)
         if expected is None:
             raise ValueError(f"{source}: unknown manifest id {identifier}")
-        if _fingerprint(raw_sample) != _fingerprint(expected):
+        if _fingerprint(_canonical_sample(raw_sample, manifest_dir)) != _fingerprint(
+            _canonical_sample(expected, manifest_dir)
+        ):
             raise ValueError(f"{source}: sample definition differs for {identifier}")
         if _successful(row):
             selected[identifier] = row
@@ -161,7 +178,9 @@ def main() -> None:
         manifest_by_id[identifier] = row
 
     base_path, base_rows = _source_rows(args.base_attempts)
-    selected = _select_successful_rows(base_path, base_rows, manifest_by_id)
+    selected = _select_successful_rows(
+        base_path, base_rows, manifest_by_id, manifest_path.parent
+    )
     provenance: list[dict[str, Any]] = [
         {
             "source": str(base_path),
@@ -172,7 +191,7 @@ def main() -> None:
     for shard_arg in args.shard:
         shard_path, shard_rows = _source_rows(shard_arg)
         shard_selected = _select_successful_rows(
-            shard_path, shard_rows, manifest_by_id
+            shard_path, shard_rows, manifest_by_id, manifest_path.parent
         )
         overlap = sorted(set(selected) & set(shard_selected))
         if overlap:
@@ -201,7 +220,22 @@ def main() -> None:
     # environment, which is intentional for a final acceptance operation.
     import sys
 
-    eval_dir = Path(__file__).resolve().parents[1] / "evaluation" / "vllm_eval"
+    repo_candidates = tuple(Path(__file__).resolve().parents) + tuple(
+        manifest_path.parents
+    )
+    repo_root = next(
+        (
+            parent
+            for parent in repo_candidates
+            if (parent / "evaluation" / "vllm_eval" / "schema.py").is_file()
+        ),
+        None,
+    )
+    if repo_root is None:
+        raise FileNotFoundError(
+            "cannot locate evaluation/vllm_eval beside the merge script or manifest"
+        )
+    eval_dir = repo_root / "evaluation" / "vllm_eval"
     if str(eval_dir) not in sys.path:
         sys.path.insert(0, str(eval_dir))
     from schema import Sample

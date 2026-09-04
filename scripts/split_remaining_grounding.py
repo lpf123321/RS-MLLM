@@ -54,6 +54,20 @@ def _fingerprint(value: object) -> str:
     )
 
 
+def _canonical_sample(row: dict[str, Any], manifest_dir: Path) -> dict[str, Any]:
+    """Normalize image paths like the evaluator's ``Sample.from_dict``."""
+    canonical = dict(row)
+    images = []
+    for raw_image in row.get("images", []):
+        image = dict(raw_image)
+        image_path = image.get("path")
+        if isinstance(image_path, str) and not Path(image_path).is_absolute():
+            image["path"] = str((manifest_dir / image_path).resolve())
+        images.append(image)
+    canonical["images"] = images
+    return canonical
+
+
 def _successful_attempt(row: dict[str, Any]) -> bool:
     # This utility is intentionally Grounding-specific: unlike XLRS Caption,
     # a truncated Grounding generation is never an accepted result.
@@ -83,7 +97,9 @@ def split_remaining(
         expected = manifest_by_id.get(identifier)
         if expected is None:
             raise ValueError(f"attempt has unknown manifest id: {identifier}")
-        if _fingerprint(raw_sample) != _fingerprint(expected):
+        if _fingerprint(_canonical_sample(raw_sample, manifest_path.parent)) != _fingerprint(
+            _canonical_sample(expected, manifest_path.parent)
+        ):
             raise ValueError(f"attempt sample differs from manifest: {identifier}")
         seen_attempts.add(identifier)
         if _successful_attempt(row):
