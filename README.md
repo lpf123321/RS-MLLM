@@ -5,9 +5,10 @@
   - [1.1 摘要](#11-摘要)
   - [1.2 主要工作](#12-主要工作)
   - [1.3 项目分工](#13-项目分工)
-- [二、项目概述](#二项目概述)
+- [二、目录索引](#二目录索引点击展开)
+- [三、项目概述](#三项目概述)
   - [2.1 整体架构图](#21-整体架构图)
-- [三、快速开始](#三快速开始)
+- [四、快速开始](#四快速开始)
   - [3.1 硬件要求](#31-硬件要求)
   - [3.2 环境配置](#32-环境配置)
   - [3.3 数据与模型准备](#33-数据与模型准备)
@@ -16,7 +17,6 @@
   - [3.4 模型推理](#34-模型推理)
   - [3.5 模型评测](#35-模型评测)
   - [3.6 模型训练](#36-模型训练)
-- [四、目录索引](#四目录索引)
 
 ---
 
@@ -109,7 +109,80 @@ CVSearch 论文原作者。参与自进化框架设计主导与技术报告优�
 
 ---
 
-## 二、项目概述
+---
+
+<details>
+<summary><b>二、目录索引（点击展开）</b></summary>
+
+```
+.
+├── rsmllm/                  # 统一入口与懒加载（Python 包）
+│   ├── console.py           #   交互式控制台（菜单：评测/推理/训练/量化/数据/容错）
+│   ├── router_eval.py       #   一键路由专家评测（canonical 完整快照 + vLLM 0.26）
+│   ├── models.py            #   模型懒加载（get_model：本地 models/ → ModelScope）
+│   ├── data.py              #   数据懒加载（get_dataset / prepare_eval：图片+清单）
+│   ├── quantize.py          #   W8A8/GPTQ 量化入口
+│   ├── serve.py / webui.py  #   vLLM 推理服务 / WebUI
+│   ├── router.py            #   多专家路由推理（前缀/关键词分发）
+│   ├── config.py            #   集中配置（路径 / MODEL_REGISTRY / 报告参数）
+│   └── eval_reporting.py    #   多协议指标生成与汇总
+├── evaluation/              # 评测框架
+│   ├── vllm_eval/           #   vLLM 0.26 离线评测器（vision_opd_vllm_eval.py 主入口）
+│   │   ├── setup_env.sh     #     一键还原评测环境（uv 托管 Python 3.11 + vllm 0.26）
+│   │   ├── manifests/       #     评测清单（首次由 build_sample_manifest 构建，不入库）
+│   │   ├── schema.py / scoring.py   # 样例结构 + 官方计分（clean_correct）
+│   │   └── model_policy.py  #     可信模型 profile（sha256 校验）
+│   ├── main.py              #   transformers 批评测入口（--adapter qwen35vl/router）
+│   ├── evalsets/            #   数据集加载（vrsbench/mme/xlrs/levircc/xlrs_caption/grounding）
+│   ├── adapters/            #   模型适配器（qwen35vl / router / router_pruned / geoeyes 等）
+│   ├── metrics/             #   指标（accuracy/bleu/rouge/cider/referring/meteor/mcq/grounding）
+│   ├── router/              #   路由规则（rules.py）+ task-adaptive 剪枝配置
+│   ├── prompts/             #   评测提示词模板
+│   └── data/                #   评测子集清单（切片）
+├── finetune_framework/      # 训练框架（Qwen-VL-Series-Finetune：SFT/DPO/GRPO）与任务数据
+├── training/                # 训练方法补充
+│   ├── distillation/        #   在线策略蒸馏 OPD / 在线自蒸馏 OPSD
+│   ├── self_evolution/      #   CVSearch 自进化研究源码（独立环境，不属于 3.6 标准入口）
+│   └── train_*_expert.sh    #   专家训练启动脚本
+├── scripts/                 # 预处理 / 推理 / 工具
+│   ├── preprocess_*.py       #   数据集预处理（vrsbench/mme/xlrs/levircc/caption/grounding）
+│   ├── fetch_benchmark_data.py   # 评测图片下载（ModelScope / HF 镜像）
+│   ├── fetch_training_data.sh    # 训练 json 懒加载（ModelScope）
+│   ├── fetch_raw_images.sh       # 训练图片哈希重命名还原 assets
+│   ├── build_sample_manifest.py  # 评测清单构建（Sample 格式，可移植路径）
+│   ├── build_caption_expert_data.py  # Caption 双域数据构建
+│   ├── generate_mcq_data.py      # 合成 MCQ 样本
+│   ├── gen_expert_deltas.py      # 四专家 delta 生成与验证
+│   ├── merge_checkpoint.sh       # LoRA → 完整模型合并
+│   ├── load_base_with_delta.py   # W0 + delta 装配加载器
+│   ├── inference.py              # 单图推理
+│   ├── quant_tol_probe.py        # 位翻转容错探针
+│   ├── training/                 # 训练 SLURM 阶段脚本（train.sh 一键）
+│   └── train.sh                  # 训练一键启动（stage / all / --local）
+├── prune/                    # 免训练视觉 token 剪枝（L2、SCOPE）与可视化
+├── token_compression/        # token 压缩方法集（uniform/random/mmtok/l2norm/scope_l2/divprune/fourier）
+├── quantization/             # 模型量化（W8A8/GPTQ：pyproject + setup_env.sh + uv.lock）
+├── tolerance/                # 星载容错与故障恢复（README 说明）
+├── deploy/                   # 一键部署脚本（GPU 自适应）
+│   ├── deploy.sh             #   部署（推理/评估，可选微调）
+│   └── fix_data_paths.sh     #   数据路径修复
+├── datasets_data/            # 四数据集评测清单（messages jsonl）
+├── docs/                     # 文档
+│   ├── PROJECT_STRUCTURE.md  #   结构与技术报告章节对照
+│   ├── EXPERIMENT_MAP.md     #   报告实验 ↔ 仓库脚本映射链
+│   ├── HANDOFF.md            #   交接说明
+│   ├── DEPLOY_FALLBACK.md    #   部署回滚路径
+│   └── TODO_UPLOAD.md        #   待上传模块清单
+├── assets/                   # 整体架构图等文档插图
+├── rsmllm.sh                 # 交互式统一入口（自动选解释器）
+└── setup.sh                  # 环境一键安装（conda/uv）
+```
+
+</details>
+
+---
+
+## 三、项目概述
 
 ### 2.1 整体架构图
 
@@ -117,7 +190,7 @@ CVSearch 论文原作者。参与自进化框架设计主导与技术报告优�
 
 ---
 
-## 三、快速开始
+## 四、快速开始
 
 ### 3.1 硬件要求
 
@@ -628,68 +701,4 @@ python scripts/publish_trained_experts.py \
 
 ---
 
-## 四、目录索引
 
-```
-.
-├── rsmllm/                  # 统一入口与懒加载（Python 包）
-│   ├── console.py           #   交互式控制台（菜单：评测/推理/训练/量化/数据/容错）
-│   ├── router_eval.py       #   一键路由专家评测（canonical 完整快照 + vLLM 0.26）
-│   ├── models.py            #   模型懒加载（get_model：本地 models/ → ModelScope）
-│   ├── data.py              #   数据懒加载（get_dataset / prepare_eval：图片+清单）
-│   ├── quantize.py          #   W8A8/GPTQ 量化入口
-│   ├── serve.py / webui.py  #   vLLM 推理服务 / WebUI
-│   ├── router.py            #   多专家路由推理（前缀/关键词分发）
-│   ├── config.py            #   集中配置（路径 / MODEL_REGISTRY / 报告参数）
-│   └── eval_reporting.py    #   多协议指标生成与汇总
-├── evaluation/              # 评测框架
-│   ├── vllm_eval/           #   vLLM 0.26 离线评测器（vision_opd_vllm_eval.py 主入口）
-│   │   ├── setup_env.sh     #     一键还原评测环境（uv 托管 Python 3.11 + vllm 0.26）
-│   │   ├── manifests/       #     评测清单（首次由 build_sample_manifest 构建，不入库）
-│   │   ├── schema.py / scoring.py   # 样例结构 + 官方计分（clean_correct）
-│   │   └── model_policy.py  #     可信模型 profile（sha256 校验）
-│   ├── main.py              #   transformers 批评测入口（--adapter qwen35vl/router）
-│   ├── evalsets/            #   数据集加载（vrsbench/mme/xlrs/levircc/xlrs_caption/grounding）
-│   ├── adapters/            #   模型适配器（qwen35vl / router / router_pruned / geoeyes 等）
-│   ├── metrics/             #   指标（accuracy/bleu/rouge/cider/referring/meteor/mcq/grounding）
-│   ├── router/              #   路由规则（rules.py）+ task-adaptive 剪枝配置
-│   ├── prompts/             #   评测提示词模板
-│   └── data/                #   评测子集清单（切片）
-├── finetune_framework/      # 训练框架（Qwen-VL-Series-Finetune：SFT/DPO/GRPO）与任务数据
-├── training/                # 训练方法补充
-│   ├── distillation/        #   在线策略蒸馏 OPD / 在线自蒸馏 OPSD
-│   ├── self_evolution/      #   CVSearch 自进化研究源码（独立环境，不属于 3.6 标准入口）
-│   └── train_*_expert.sh    #   专家训练启动脚本
-├── scripts/                 # 预处理 / 推理 / 工具
-│   ├── preprocess_*.py       #   数据集预处理（vrsbench/mme/xlrs/levircc/caption/grounding）
-│   ├── fetch_benchmark_data.py   # 评测图片下载（ModelScope / HF 镜像）
-│   ├── fetch_training_data.sh    # 训练 json 懒加载（ModelScope）
-│   ├── fetch_raw_images.sh       # 训练图片哈希重命名还原 assets
-│   ├── build_sample_manifest.py  # 评测清单构建（Sample 格式，可移植路径）
-│   ├── build_caption_expert_data.py  # Caption 双域数据构建
-│   ├── generate_mcq_data.py      # 合成 MCQ 样本
-│   ├── gen_expert_deltas.py      # 四专家 delta 生成与验证
-│   ├── merge_checkpoint.sh       # LoRA → 完整模型合并
-│   ├── load_base_with_delta.py   # W0 + delta 装配加载器
-│   ├── inference.py              # 单图推理
-│   ├── quant_tol_probe.py        # 位翻转容错探针
-│   ├── training/                 # 训练 SLURM 阶段脚本（train.sh 一键）
-│   └── train.sh                  # 训练一键启动（stage / all / --local）
-├── prune/                    # 免训练视觉 token 剪枝（L2、SCOPE）与可视化
-├── token_compression/        # token 压缩方法集（uniform/random/mmtok/l2norm/scope_l2/divprune/fourier）
-├── quantization/             # 模型量化（W8A8/GPTQ：pyproject + setup_env.sh + uv.lock）
-├── tolerance/                # 星载容错与故障恢复（README 说明）
-├── deploy/                   # 一键部署脚本（GPU 自适应）
-│   ├── deploy.sh             #   部署（推理/评估，可选微调）
-│   └── fix_data_paths.sh     #   数据路径修复
-├── datasets_data/            # 四数据集评测清单（messages jsonl）
-├── docs/                     # 文档
-│   ├── PROJECT_STRUCTURE.md  #   结构与技术报告章节对照
-│   ├── EXPERIMENT_MAP.md     #   报告实验 ↔ 仓库脚本映射链
-│   ├── HANDOFF.md            #   交接说明
-│   ├── DEPLOY_FALLBACK.md    #   部署回滚路径
-│   └── TODO_UPLOAD.md        #   待上传模块清单
-├── assets/                   # 整体架构图等文档插图
-├── rsmllm.sh                 # 交互式统一入口（自动选解释器）
-└── setup.sh                  # 环境一键安装（conda/uv）
-```
