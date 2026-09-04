@@ -10,7 +10,7 @@ THRESHOLD_EPSILON = 0.05
 
 # Empirical retention thresholds (R*) for L2Norm, the deterministic default,
 # computed on the exp7 R sweep with epsilon=0.05:
-#   VQA    (VRSBench Accuracy):     R* = 0.25  (drop 0.035)
+#   VQA    (VRSBench Accuracy):     R* = 0.50  (drop 0.035)
 #   MME    (MCQ Accuracy):          R* = 0.25  (drop 0.024)
 #   XLRS   (MCQ Accuracy):          R* = 0.10  (drop 0.004)
 #   Change (LEVIR-CC CIDEr):        R* = 0.50  (drop 0.043)
@@ -18,7 +18,7 @@ THRESHOLD_EPSILON = 0.05
 # XLRS is routed to "mcq" (same task key as MME), so the binding MME threshold
 # R=0.25 also covers XLRS.
 THRESHOLD_TASK_PRUNE_CONFIG = {
-    "vqa": {"method": "l2norm", "keep_ratio": 0.25},
+    "vqa": {"method": "l2norm", "keep_ratio": 0.50},
     "mcq": {"method": "l2norm", "keep_ratio": 0.25},
     "change": {"method": "l2norm", "keep_ratio": 0.50},
     "referring": {"method": "scope_l2", "keep_ratio": 0.75},
