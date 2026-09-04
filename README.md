@@ -438,7 +438,8 @@ base + delta + PEFT LoRA 合并，不应再次叠加 LoRA。change/caption 为 b
 评测结束后，控制台会汇总关键指标。详细结果保存在 `results/`，正式分见各结果
 目录中的 `clean_summary.json`。
 
-#### 从原始推理结果重算全部指标
+<details>
+<summary><b>从原始推理结果重算全部指标（点击展开）</b></summary>
 
 评测结果目录中的 `predictions.jsonl` 是唯一计分输入。可以在不重新推理的情况下，
 自动生成多种可追溯的计分口径：
@@ -477,6 +478,8 @@ results/<run-dir>/metrics/
 `--spice` 可额外运行官方 SPICE（需要 Java/CoreNLP 资源）；`--skip-coco` 只输出
 不依赖 COCO 的指标；`--require-coco` 与 `--require-complete` 可用于验收时 fail closed。
 评测器在完成新的 vLLM/Transformers run 后也会自动写入同样的 `metrics/` 目录。
+
+</details>
 
 #### 参考结果（BF16 全量评测）
 
