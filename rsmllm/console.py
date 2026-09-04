@@ -47,7 +47,7 @@ MAIN_MENU = {
 }
 
 # 实现和数字入口继续保留，只从交互菜单中暂时隐藏。
-HIDDEN_MENU_KEYS = frozenset({"4", "5", "6", "7", "8"})
+HIDDEN_MENU_KEYS = frozenset({"3", "4", "5", "6", "7", "8"})
 
 
 def _repo_env() -> dict[str, str]:
