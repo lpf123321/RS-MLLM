@@ -19,6 +19,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -49,10 +50,57 @@ def _resolve_output_dir(path: Path) -> Path:
     return path.resolve() if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
+def _prepare_bundled_ffmpeg_aliases(av_libs: Path) -> Path | None:
+    """Expose PyAV's hashed FFmpeg libraries under canonical SONAMEs.
+
+    The manylinux ``av`` wheel stores names such as
+    ``libavutil-<hash>.so.60.*`` and keeps that hashed name as its SONAME.
+    TorchCodec asks the dynamic loader for ``libavutil.so.60`` instead.  A
+    minimal host without a system FFmpeg therefore needs a private alias
+    directory; no root installation or mutation of the virtual environment is
+    required.
+    """
+    prefixes = (
+        "libavutil",
+        "libavcodec",
+        "libavformat",
+        "libavdevice",
+        "libavfilter",
+        "libswscale",
+        "libswresample",
+    )
+    aliases: list[tuple[str, Path]] = []
+    for prefix in prefixes:
+        matches = sorted(av_libs.glob(f"{prefix}-*.so.*"))
+        if len(matches) != 1:
+            continue
+        version_tail = matches[0].name.split(".so.", 1)[-1]
+        major = version_tail.split(".", 1)[0]
+        if not major.isdigit():
+            continue
+        aliases.append((f"{prefix}.so.{major}", matches[0]))
+    if not aliases:
+        return None
+    alias_dir: Path | None = None
+    try:
+        alias_dir = Path(tempfile.mkdtemp(prefix="rsmllm-ffmpeg-"))
+        for alias, target in aliases:
+            link = alias_dir / alias
+            link.symlink_to(target.resolve())
+        atexit.register(shutil.rmtree, alias_dir, ignore_errors=True)
+    except OSError:
+        if alias_dir is not None:
+            with contextlib.suppress(OSError):
+                shutil.rmtree(alias_dir)
+        return None
+    return alias_dir
+
+
 def setup_runtime_env() -> None:
     """自动设置 vLLM 运行时所需环境变量(用户无需手动 export)。
 
     - LD_LIBRARY_PATH: 从本 venv site-packages 自动推导 av.libs / nvidia/*/lib
+      并为无系统 FFmpeg 的最小主机创建 bundled FFmpeg SONAME 别名
     - VLLM_USE_FLASHINFER_SAMPLER=0: flashinfer 0.6.14 与 nvcc12.4 不兼容
     - VLLM_WORKER_MULTIPROC_METHOD=spawn: vllm 多进程必须 spawn
     """
@@ -61,7 +109,14 @@ def setup_runtime_env() -> None:
     site_pkgs = Path(__file__).resolve().parent / ".venv" / "lib" / "python3*" / "site-packages"
     site_pkgs = next(iter(glob.glob(str(site_pkgs))), None)
     if site_pkgs:
-        lib_dirs = [d for d in glob.glob(f"{site_pkgs}/av.libs") + glob.glob(f"{site_pkgs}/nvidia/*/lib")]
+        av_libs = Path(site_pkgs) / "av.libs"
+        lib_dirs = []
+        if av_libs.is_dir():
+            alias_dir = _prepare_bundled_ffmpeg_aliases(av_libs)
+            if alias_dir is not None:
+                lib_dirs.append(str(alias_dir))
+            lib_dirs.append(str(av_libs))
+        lib_dirs.extend(glob.glob(f"{site_pkgs}/nvidia/*/lib"))
         if lib_dirs:
             os.environ["LD_LIBRARY_PATH"] = ":".join(lib_dirs) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
