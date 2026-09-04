@@ -31,6 +31,7 @@ from vision_opd_eval import intentional_length_constraint
 from evaluation.router.rules import route, route_task
 from rsmllm.router import expert_device_map
 from rsmllm.router_eval import evaluation_runtime_config, route_manifest
+from rsmllm.pruning_policy import pruning_spec
 from rsmllm import console
 from rsmllm.console import _single_task_plan
 from rsmllm.eval_reporting import key_metric_lines, print_combined_key_metrics
@@ -66,7 +67,7 @@ class ProtocolFixTests(unittest.TestCase):
             self.assertFalse((root / "models" / "expert_general").exists())
 
     def test_hidden_console_services_remain_registered(self) -> None:
-        self.assertEqual(console.HIDDEN_MENU_KEYS, {"4", "5", "6", "7", "8"})
+        self.assertEqual(console.HIDDEN_MENU_KEYS, {"3", "4", "5", "6", "7", "8"})
         self.assertTrue(console.HIDDEN_MENU_KEYS <= console.MAIN_MENU.keys())
 
     def test_prompt_router_covers_four_experts_and_bbox_wins_change_words(self) -> None:
@@ -102,13 +103,16 @@ class ProtocolFixTests(unittest.TestCase):
 
     def test_console_serve_starts_prompt_router(self) -> None:
         with (
-            patch.object(console, "_ask", side_effect=["bf16", "webui"]),
+            patch.object(console, "_ask", side_effect=["bf16", "no", "webui"]),
             patch.object(console, "_run_repo") as run_repo,
         ):
             console._cmd_serve()
         command = run_repo.call_args.args[0]
         self.assertEqual(command[1:5], ["-m", "rsmllm.router", "--serve", "--quant"])
-        self.assertEqual(command[5:], ["bf16", "--webui"])
+        self.assertEqual(
+            command[5:],
+            ["bf16", "--prune-keep-ratio", "1.0", "--webui"],
+        )
 
     def test_console_key_metrics_cover_discrete_bbox_and_caption(self) -> None:
         summary = {
@@ -197,7 +201,13 @@ class ProtocolFixTests(unittest.TestCase):
             patch.object(
                 console,
                 "_ask",
-                side_effect=["single", "grounding", "bf16", "xlrs_grounding"],
+                side_effect=[
+                    "single",
+                    "grounding",
+                    "bf16",
+                    "no",
+                    "xlrs_grounding",
+                ],
             ),
             patch.object(console, "resolve_model", return_value="/models/ground"),
             patch("rsmllm.data.prepare_eval") as prepare_eval,
@@ -223,6 +233,7 @@ class ProtocolFixTests(unittest.TestCase):
             None,
             "bf16",
             output_dir=output_dir,
+            pruning=pruning_spec("referring", 1.0),
         )
         combined.assert_called_once_with([output_dir])
 

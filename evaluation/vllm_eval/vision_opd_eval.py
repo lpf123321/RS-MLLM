@@ -218,6 +218,8 @@ def finalize(
     model_info: dict[str, Any],
     model_load_seconds: float,
     adapter: QwenAdapter,
+    *,
+    inference_timing: dict[str, Any] | None = None,
 ) -> None:
     if len(completed) != len(samples):
         raise ValueError("Cannot finalize an incomplete run")
@@ -230,6 +232,8 @@ def finalize(
         output_dir / "efficiency.json",
         output_dir / "run_manifest.json",
     ]
+    if inference_timing is not None:
+        final_paths.append(output_dir / "inference_time.json")
     if any(path.exists() for path in final_paths):
         raise FileExistsError("Refusing to overwrite finalized run outputs")
     metric_dir = output_dir / "metrics"
@@ -283,6 +287,10 @@ def finalize(
         "peak_cuda_memory_mb": adapter.peak_memory_mb(),
         "model_load_seconds": model_load_seconds,
     }
+    if inference_timing is not None:
+        efficiency["inference_wall_seconds"] = float(
+            inference_timing["wall_seconds"]
+        )
     (output_dir / "efficiency.json").write_text(
         json.dumps(efficiency, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -312,9 +320,18 @@ def finalize(
             "packages": package_versions(),
         },
     }
+    if inference_timing is not None:
+        run_manifest["inference_wall_seconds"] = float(
+            inference_timing["wall_seconds"]
+        )
     (output_dir / "run_manifest.json").write_text(
         json.dumps(run_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    if inference_timing is not None:
+        (output_dir / "inference_time.json").write_text(
+            json.dumps(inference_timing, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
     # Recompute every metric family from the persisted raw predictions.  This
     # deliberately does not trust the score object embedded in a prediction
     # row, so reports remain correct after a scoring/prompt convention change.

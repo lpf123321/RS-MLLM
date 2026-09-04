@@ -14,6 +14,7 @@ from pathlib import Path
 from rsmllm.config import REPORT_CONF
 from rsmllm.eval_reporting import print_combined_key_metrics
 from rsmllm.models import get_model, MODEL_REGISTRY
+from rsmllm.pruning_policy import ROUTE_TASK, pruning_spec
 from rsmllm.router_eval import (
     QUANT_EXPERTS,
     ROUTE_PLAN,
@@ -85,6 +86,17 @@ def _ask_model() -> str:
     return get_model(raw)  # 首次自动下载(缓存命中则秒回)
 
 
+def _ask_pruning_enabled() -> bool:
+    """Expose pruning as a simple switch in the interactive console."""
+    while True:
+        raw = _ask("是否启用视觉 Token 剪枝 (yes / no)", "no").lower()
+        if raw == "yes":
+            return True
+        if raw == "no":
+            return False
+        print("  ✗ 请输入 yes 或 no")
+
+
 def _single_task_plan(
     expert: str, selection: str
 ) -> list[tuple[str, str, str | None]]:
@@ -125,9 +137,16 @@ def _cmd_eval() -> None:
     )
     if mode == "route":
         quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16")
+        pruning_enabled = _ask_pruning_enabled()
+        prune_keep_ratio: str | float = "adaptive" if pruning_enabled else 1.0
         limit = _ask("每任务样本上限(留空=全量, 验证用填小值)", "")
-        print(f"  → Prompt Router 全量评测: 量化={quant} (逐任务核验路由后选择专家)")
+        print(
+            f"  → Prompt Router 全量评测: 量化={quant}, "
+            f"视觉Token剪枝={'开启（任务默认配置）' if pruning_enabled else '关闭'} "
+            "(逐任务核验路由后选择专家)"
+        )
         cmd = [EVAL_PY, "-m", "rsmllm.router_eval", "--quant", quant]
+        cmd += ["--prune-keep-ratio", str(prune_keep_ratio)]
         if limit:
             cmd += ["--limit", limit]
         result = _run_repo(cmd)
@@ -143,6 +162,8 @@ def _cmd_eval() -> None:
     if quant not in QUANT_EXPERTS:
         print(f"  ✗ 未知量化方式 {quant!r}, 使用默认 bf16")
         quant = "bf16"
+    pruning_enabled = _ask_pruning_enabled()
+    prune_keep_ratio = "adaptive" if pruning_enabled else 1.0
     alias, _profile = QUANT_EXPERTS[quant][expert]
     print(f"  → 模型: {alias} ({expert} × {quant}); 本地 models/ 优先, 缺失时 ModelScope 拉取")
     # 与 route 同一解析: canonical 专家(含 merge_manifest 校验), 量化版由 canonical 导出
@@ -174,6 +195,13 @@ def _cmd_eval() -> None:
             f"manifest={manifest.name})"
         )
         output_dir = new_evaluation_output_dir(manifest, profile)
+        task_pruning = pruning_spec(ROUTE_TASK[task_name], prune_keep_ratio)
+        print(
+            "  [pruning] "
+            f"method={task_pruning.method}, "
+            f"keep_ratio={task_pruning.keep_ratio:.2f}, "
+            f"enabled={task_pruning.enabled}"
+        )
         rc = run_eval(
             model_dir,
             profile,
@@ -181,6 +209,7 @@ def _cmd_eval() -> None:
             None,
             quant,
             output_dir=output_dir,
+            pruning=task_pruning,
         )
         if rc == 0:
             completed_outputs.append(output_dir)
@@ -193,11 +222,22 @@ def _cmd_serve() -> None:
     quant = _ask("量化方式 (bf16 / w8a8 / gptq)", "bf16").lower()
     if quant not in QUANT_EXPERTS:
         raise ValueError(f"不支持的量化方式: {quant}")
+    pruning_enabled = _ask_pruning_enabled()
+    prune_keep_ratio: str | float = "adaptive" if pruning_enabled else 1.0
     mode = _ask("模式 (webui=网页界面 / cli=命令行对话)", "webui")
     # vLLM 在评测环境(evaluation/vllm_eval/.venv), 用它的 python 启动
     eval_py = Path(__file__).resolve().parent.parent / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
     py = eval_py if eval_py.exists() else sys.executable
-    cmd = [str(py), "-m", "rsmllm.router", "--serve", "--quant", quant]
+    cmd = [
+        str(py),
+        "-m",
+        "rsmllm.router",
+        "--serve",
+        "--quant",
+        quant,
+        "--prune-keep-ratio",
+        str(prune_keep_ratio),
+    ]
     if mode == "webui":
         print("  → 启动四专家 Router + WebUI (浏览器打开 http://127.0.0.1:7860)")
         cmd.append("--webui")

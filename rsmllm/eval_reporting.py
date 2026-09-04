@@ -11,6 +11,30 @@ def _metric_percent(value: object) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}小时{minutes}分{secs}秒 ({seconds:.2f} s)"
+    if minutes:
+        return f"{minutes}分{secs}秒 ({seconds:.2f} s)"
+    return f"{secs}秒 ({seconds:.2f} s)"
+
+
+def inference_time_line(output_dir: Path) -> str | None:
+    """Read the persisted wall time spent only inside inference calls."""
+    timing_path = output_dir / "inference_time.json"
+    if timing_path.is_file():
+        try:
+            timing = json.loads(timing_path.read_text(encoding="utf-8"))
+            seconds = float(timing["wall_seconds"])
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return f"推理耗时={_format_duration(seconds)}"
+    return None
+
+
 def key_metric_lines(summary: dict[str, Any]) -> list[str]:
     """Render the key metrics for every dataset/task group in one summary."""
     lines = [
@@ -75,6 +99,9 @@ def print_key_metrics(output_dir: Path) -> None:
     print("本次评测关键指标（报告/clean 口径）", flush=True)
     for line in key_metric_lines(summary):
         print(f"  {line}", flush=True)
+    timing = inference_time_line(output_dir)
+    if timing:
+        print(f"  {timing}", flush=True)
     print(f"  结果目录: {output_dir}", flush=True)
     print("=" * 60, flush=True)
 
@@ -96,5 +123,8 @@ def print_combined_key_metrics(output_dirs: Iterable[Path]) -> None:
         print(f"\n[{index}] {output_dir.name}", flush=True)
         for line in key_metric_lines(summary):
             print(f"  {line}", flush=True)
+        timing = inference_time_line(output_dir)
+        if timing:
+            print(f"  {timing}", flush=True)
         print(f"  结果目录: {output_dir}", flush=True)
     print("=" * 72, flush=True)

@@ -32,6 +32,12 @@ from pathlib import Path
 from evaluation.router.rules import route
 from rsmllm.config import EXPERT_MODEL_ALIASES, MODELS_ROOT, REPORT_CONF
 from rsmllm.eval_reporting import print_combined_key_metrics
+from rsmllm.pruning_policy import (
+    ROUTE_TASK,
+    PruningSpec,
+    parse_keep_ratio,
+    pruning_spec,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = REPO_ROOT / "evaluation" / "vllm_eval"
@@ -164,6 +170,7 @@ def run_eval(
     quantization: str,
     *,
     output_dir: Path | None = None,
+    pruning: PruningSpec | None = None,
 ) -> int:
     if limit:
         # 子清单截断(评测器无 --max-samples)
@@ -174,7 +181,7 @@ def run_eval(
                     break
                 g.write(line)
         manifest = sub
-    runtime = evaluation_runtime_config(manifest)
+    runtime = evaluation_runtime_config(manifest, pruning=pruning)
     if output_dir is None:
         output_dir = new_evaluation_output_dir(manifest, profile)
     cmd = [str(PY), str(EVAL_DIR / "vision_opd_vllm_eval.py"),
@@ -190,6 +197,15 @@ def run_eval(
            "--image-load-workers", str(REPORT_CONF["image_load_workers"]),
            "--gpu-memory-utilization", str(REPORT_CONF["gpu_memory_utilization"]),
            "--enforce-eager"]  # 当前稳定配置；graph 模式的启动耗时须看完整结果判断
+    if pruning is not None:
+        cmd.extend(
+            [
+                "--prune-method",
+                pruning.method,
+                "--prune-keep-ratio",
+                format(pruning.keep_ratio, ".12g"),
+            ]
+        )
     derived_profile = Path(model_path) / "evaluation_profile.json"
     if derived_profile.is_file():
         cmd.extend(["--derived-profile", str(derived_profile)])
@@ -227,7 +243,9 @@ def new_evaluation_output_dir(
     return REPO_ROOT / "results" / f"{stem}_{profile}_{stamp}"
 
 
-def evaluation_runtime_config(manifest: Path) -> dict[str, int]:
+def evaluation_runtime_config(
+    manifest: Path, *, pruning: PruningSpec | None = None
+) -> dict[str, int]:
     """Return the task-specific runtime shared by route and single modes."""
     # Exp5's published XLRS Grounding score was produced from the 4096 export.
     # Its Transformers adapter attempted to set ``processor.image_max_pixels``
@@ -240,6 +258,12 @@ def evaluation_runtime_config(manifest: Path) -> dict[str, int]:
     max_model_len = 32_768 if historical_xlrs_grounding else REPORT_CONF["max_model_len"]
     batch_size = 4 if historical_xlrs_grounding else REPORT_CONF["batch_size"]
     max_num_seqs = 4 if historical_xlrs_grounding else REPORT_CONF["max_num_seqs"]
+    if pruning is not None and pruning.enabled and pruning.method == "scope_l2":
+        # Scope-L2 materializes a token-similarity matrix. It is no longer part
+        # of the Grounding policy, but keep explicitly requested low-level runs
+        # bounded without silently changing their image protocol.
+        batch_size = min(batch_size, 4)
+        max_num_seqs = min(max_num_seqs, 4)
     return {
         "min_pixels": min_pixels,
         "max_pixels": max_pixels,
@@ -350,6 +374,16 @@ def main() -> int:
     ap.add_argument("--experts", nargs="+", choices=list(ROUTE_PLAN),
                     help="只跑指定专家(默认全部; 断点续跑用)")
     ap.add_argument("--limit", type=int, help="每任务最多样本(验证用)")
+    ap.add_argument(
+        "--prune-keep-ratio",
+        type=parse_keep_ratio,
+        default=1.0,
+        metavar="RATIO|adaptive",
+        help=(
+            "视觉 Token 保留率 (0,1]；方法按任务自动选择。"
+            "adaptive 使用仓库任务默认值，默认 1.0=不剪枝"
+        ),
+    )
     ap.add_argument("--list", action="store_true", help="打印映射表")
     args = ap.parse_args()
 
@@ -390,6 +424,15 @@ def main() -> int:
                 f"\n[{expert}] {task_name} "
                 f"(prompt 路由 {sum(route_counts.values())} 条) ..."
             )
+            task_pruning = pruning_spec(
+                ROUTE_TASK[task_name], args.prune_keep_ratio
+            )
+            print(
+                "  [pruning] "
+                f"method={task_pruning.method}, "
+                f"keep_ratio={task_pruning.keep_ratio:.2f}, "
+                f"enabled={task_pruning.enabled}"
+            )
             output_dir = new_evaluation_output_dir(
                 manifest, profile, args.limit
             )
@@ -400,6 +443,7 @@ def main() -> int:
                 args.limit,
                 args.quant,
                 output_dir=output_dir,
+                pruning=task_pruning,
             )
             if r == 0:
                 completed_outputs.append(output_dir)

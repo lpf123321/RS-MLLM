@@ -222,6 +222,12 @@ def main() -> int:
         max_shard_size="2GB",
         save_original_format=False,
     )
+    # The calibration collator deliberately enables max_length truncation.
+    # Do not persist that backend state into the deployable tokenizer: a
+    # 4096x4096 image expands to 16384 visual placeholders at evaluation time.
+    backend_tokenizer = getattr(processor.tokenizer, "backend_tokenizer", None)
+    if backend_tokenizer is not None:
+        backend_tokenizer.no_truncation()
     processor.save_pretrained(staging)
 
     elapsed = time.monotonic() - started

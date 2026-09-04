@@ -26,7 +26,9 @@ import gradio as gr
 from openai import OpenAI
 
 from evaluation.router.rules import route
+from rsmllm.config import vllm_mm_processor_kwargs
 from rsmllm.router import DEFAULT_PORTS, LazyExpertPool
+from rsmllm.pruning_policy import parse_keep_ratio
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # rsmllm/ 的父目录 = 仓库根
 EVAL_DIR = REPO_ROOT / "evaluation" / "vllm_eval"
@@ -43,6 +45,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--quant", choices=("bf16", "w8a8", "gptq"), default="bf16")
     ap.add_argument("--device", help=argparse.SUPPRESS)
     ap.add_argument("--gpu-mem", type=float, default=0.85, help=argparse.SUPPRESS)
+    ap.add_argument(
+        "--prune-keep-ratio",
+        type=parse_keep_ratio,
+        default=1.0,
+        help=argparse.SUPPRESS,
+    )
     ap.add_argument("--port", type=int, default=8001, help="vLLM API 端口")
     ap.add_argument("--web-port", type=int, default=7860, help="Gradio WebUI 端口")
     ap.add_argument("--max-pixels", type=int, default=2_097_152)
@@ -65,7 +73,8 @@ def start_vllm_server(args: argparse.Namespace) -> None:
         "--max-model-len", "65536",
         "--limit-mm-per-prompt", '{"image": 2}',
         "--allowed-local-media-path", "/tmp",
-        "--mm-processor-kwargs", f'{{"min_pixels": {args.min_pixels}, "max_pixels": {args.max_pixels}}}',
+        "--mm-processor-kwargs",
+        json.dumps(vllm_mm_processor_kwargs(args.min_pixels, args.max_pixels)),
     ]
     threading.Thread(target=lambda: subprocess.run(cmd), daemon=True).start()
 
@@ -145,7 +154,10 @@ def main() -> int:
         if args.lazy_router:
             print("[webui] 单 GPU 按需 Router；首次请求或切换专家时需要加载模型。")
             client = LazyExpertPool(
-                args.quant, device=args.device, gpu_memory_utilization=args.gpu_mem
+                args.quant,
+                device=args.device,
+                gpu_memory_utilization=args.gpu_mem,
+                prune_keep_ratio=args.prune_keep_ratio,
             )
         else:
             ports = DEFAULT_PORTS

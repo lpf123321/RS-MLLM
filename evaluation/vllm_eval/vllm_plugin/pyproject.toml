@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rs-mllm-vllm-pruning"
+version = "0.1.0"
+description = "vLLM 0.26 Qwen3.5-VL visual-token pruning plugin for RS-MLLM"
+requires-python = ">=3.11,<3.12"
+
+[project.entry-points."vllm.general_plugins"]
+rs_mllm_token_pruning = "rs_mllm_vllm_plugin:register"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rs_mllm_vllm_plugin*"]
+

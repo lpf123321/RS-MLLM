@@ -139,6 +139,7 @@ CVSearch 论文原作者。参与自进化框架设计主导与技术报告优�
 ├── evaluation/              # 评测框架
 │   ├── vllm_eval/           #   vLLM 0.26 离线评测器（vision_opd_vllm_eval.py 主入口）
 │   │   ├── setup_env.sh     #     一键还原评测环境（uv 托管 Python 3.11 + vllm 0.26）
+│   │   ├── vllm_plugin/     #     Qwen3.5 原生视觉 Token 剪枝插件（L2/SCOPE）
 │   │   ├── manifests/       #     评测清单（首次由 build_sample_manifest 构建，不入库）
 │   │   ├── schema.py / scoring.py   # 样例结构 + 官方计分（clean_correct）
 │   │   └── model_policy.py  #     可信模型 profile（sha256 校验）
@@ -239,7 +240,7 @@ GeoLLaVA 等遥感专家模型，在四个数据集上系统评估各候选基�
 通过系统的消融实验探究六种免训练视觉 Token 剪枝方法在不同保留率下的性能变化，发现
 不同任务对视觉 Token 保留率的敏感性存在显著差异。据此设计任务自适应的免训练视觉
 Token 剪枝路由机制：为 VQA/MCQ 配置 L2 Norm 且保留 25%、为 Change/Caption 配置
-L2 Norm 且保留 50%、为 Referring 配置 SCOPE L2 且保留 75%，在精准削减冗余视觉 Token
+L2 Norm 且保留 50%、为 Referring/Grounding 配置 L2 Norm 且保留 75%，在精准削减冗余视觉 Token
 的同时最大程度保留核心视觉特征。
 
 在模型量化方面，实测对比 W8A8-INT8 与 W4A16-GPTQ 两种离线训练后量化方案，两者均
@@ -281,53 +282,31 @@ L2 Norm 且保留 50%、为 Referring 配置 SCOPE L2 且保留 75%，在精准�
 
 ### 3.2 环境配置
 
-**方式一：一键脚本（推荐）**
+**第一步：安装 uv**
+
+如果机器上还没有 `uv`，先执行下面任意一种安装方式：
+
+```bash
+# 方式一：官方安装脚本（推荐，安装到 ~/.local/bin）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 方式二：pip 安装
+python3 -m pip install --user uv
+```
+
+安装后重新打开终端即可使用 `uv`。若需要在当前终端立即生效，执行：
+
+```bash
+source ~/.local/bin/env
+uv --version
+```
+
+**第二步：运行一键环境脚本**
 
 ```bash
 bash setup.sh                              # 通用工具环境（torch 2.8 cu128）
 bash evaluation/vllm_eval/setup_env.sh     # 推理/评测环境（vLLM 0.26 cu129）
 ```
-
-`setup.sh` 自动识别已安装的 **uv / conda**：有 `uv` 时按 `uv.lock` 精确安装并进入 `.venv`，没有 `uv` 时回退 conda；两者都没有时，先按下方「安装 uv（可选）」装好 `uv` 再重跑即可。
-
-最终维护的安装、评测、推理和数据工具入口会按脚本位置定位仓库根目录：从其他
-目录调用这些入口不会把结果写到调用者的临时 cwd。它们的相对模型/数据/输出路径
-按仓库根目录解释；清单中的图片相对路径按清单文件所在目录解释。
-
-若是刚克隆的仓库，先确保 Git LFS 文件已取回（Ubuntu 可执行
-`sudo apt-get install git-lfs && git lfs install && git lfs pull`）。完整训练使用独立的
-conda + nvcc 环境，严格按 3.6 第 1 步安装，不复用上面两个 `.venv`。
-
-**方式二：Docker 容器（推理/评测）**
-
-```bash
-docker build -t rs-mllm .
-mkdir -p .models results
-docker run --gpus all -it \
-  -v "$PWD/datasets:/app/datasets" \
-  -v "$PWD/.models:/app/.models" \
-  -v "$PWD/results:/app/results" \
-  -p 7860:7860 rs-mllm bash
-```
-
-容器内仍从 `/app` 运行 `./rsmllm.sh`。Docker 镜像用于 3.3–3.5；3.6 完整训练需要
-conda/nvcc 和多卡资源，请使用方式一。
-
-**安装 uv（可选；仅当脚本提示找不到 uv/conda 时需要）**
-
-```bash
-# 任选一种：
-curl -LsSf https://astral.sh/uv/install.sh | sh   # 官方安装脚本（uv 装到 ~/.local/bin）
-# 或
-python3 -m pip install --user uv
-```
-
-官方脚本装完后，新开终端即可直接使用 `uv`；若要在当前终端立即生效，执行 `source ~/.local/bin/env`。
-
-> 评测器依赖 vllm 0.26，要用 `evaluation/vllm_eval` 的评测环境，不能用 3.2 的训练环境。
->
-> 两套环境首次安装需下载数 GB 的 torch/nvidia/vllm wheel。若下载卡住无进度，
-> 设置代理后重跑：`export HTTPS_PROXY=http://<代理>:<端口> HTTP_PROXY=http://<代理>:<端口>`。
 
 ### 3.3 数据与模型准备
 
@@ -451,8 +430,13 @@ evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py \
 ./rsmllm.sh
 ```
 
-按提示选择 `bf16`、`w8a8` 或 `gptq`。服务包含 General、Grounding、Change 和
-Caption 四个专家；模型未下载时会自动从 ModelScope 获取。每次请求都会根据 prompt
+按提示选择 `bf16`、`w8a8` 或 `gptq`；模型未下载时会自动从 ModelScope 获取。
+
+> **Token 剪枝**只提供 `yes` / `no` 开关：`no` 不剪枝；`yes` 使用 L2Norm，并按
+> 路由任务自动保留视觉 Token：VQA/MCQ 25%、Grounding 75%、Change/Caption 50%。
+> 所有 Grounding 任务均不使用 Scope-L2；XLRS Grounding 始终使用 4096 图像。
+
+服务包含 General、Grounding、Change 和 Caption 四个专家；每次请求都会根据 prompt
 中的任务前缀和关键词自动选择专家，例如 `[VQA]`、`[REF]`、`[CD]` 和 `[CAP]`。
 
 当前 Router 会对**每一条 prompt 独立路由**，不会只根据第一条消息永久锁定专家。
@@ -506,11 +490,26 @@ base + delta + PEFT LoRA 合并，不应再次叠加 LoRA。change/caption 为 b
   整个任务的路由结果。
 - **single 模式**：手动选择一个专家，只评测该专家负责的任务。
 - 可选择 `bf16`、`w8a8` 或 `gptq`；填写样本上限可进行快速测试。
+- 剪枝只需选择 `yes` / `no`：`no` 不剪枝，`yes` 使用下表的默认配置。
 
-评测结束后，控制台会汇总关键指标。详细结果保存在 `results/`，正式分见各结果
-目录中的 `clean_summary.json`。
+| 任务 | 默认剪枝方法 | 默认保留率 |
+|---|---|---:|
+| VQA / MCQ | L2Norm | 25% |
+| Referring / Grounding | L2Norm | 75% |
+| Change / Caption | L2Norm | 50% |
 
-<details>
+剪枝由 vLLM 的 Qwen3.5-VL 插件执行，`route` 与 `single` 使用同一实现；配置会写入
+`run_config.json`。三种量化档使用相同的图片、prompt 和计分链路，XLRS Grounding
+无论是否剪枝都保持 4096 图像协议。
+
+评测结束后，控制台会汇总关键指标和每个数据集的纯推理耗时。详细结果保存在
+`results/`；正式分见 `clean_summary.json`，推理耗时见 `inference_time.json`。
+该时间只累计 vLLM 引擎的生成调用（包含引擎内的视觉编码和必要的重试），
+不包含评测器侧图像解码与 prompt 构建、模型加载、结果计分、文件写入和指标报告生成；
+同一数值也会写入 `efficiency.json` 和
+`run_manifest.json` 的 `inference_wall_seconds`。
+
+<!-- <details>
 <summary><b>从原始推理结果重算全部指标（点击展开）</b></summary>
 
 评测结果目录中的 `predictions.jsonl` 是唯一计分输入。可以在不重新推理的情况下，
@@ -551,7 +550,7 @@ results/<run-dir>/metrics/
 不依赖 COCO 的指标；`--require-coco` 与 `--require-complete` 可用于验收时 fail closed。
 评测器在完成新的 vLLM/Transformers run 后也会自动写入同样的 `metrics/` 目录。
 
-</details>
+</details> -->
 
 #### 参考结果
 
@@ -569,6 +568,7 @@ results/<run-dir>/metrics/
 evaluation/vllm_eval/.venv/bin/python -m rsmllm.router_eval --quant bf16
 # 量化方式可选: bf16 / w8a8 / gptq
 # 只跑某专家或快速验证: 追加 --experts general --limit 50
+# 自定义保留率: 追加 --prune-keep-ratio 0.5；任务默认值: adaptive
 ```
 
 评测图片（已有官方数据摆放 / ModelScope、HF 下载）与模型准备见 3.3；

@@ -19,6 +19,7 @@ dependencies = [
     "qwen-vl-utils==0.0.14",
     "pillow>=10.0.0",
     "pycocoevalcap==1.2",
+    "rs-mllm-vllm-pruning",
 ]
 
 [tool.uv.sources]
@@ -29,6 +30,7 @@ torchcodec = { index = "pytorch-cu129" }
 # vllm 0.26 cu129 wheel 使用 SourceForge 的 GitHub release 镜像(仅 Linux x86_64)
 # uv.lock 固定 wheel 的 SHA-256, 同步时会校验镜像内容
 vllm = { url = "https://downloads.sourceforge.net/project/vllm.mirror/v0.26.0/vllm-0.26.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
+rs-mllm-vllm-pruning = { path = "vllm_plugin", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cu129"

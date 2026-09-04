@@ -78,6 +78,22 @@ REPORT_CONF = {
     "gpu_memory_utilization": 0.85,
 }
 
+
+def vllm_mm_processor_kwargs(
+    min_pixels: int, max_pixels: int
+) -> dict[str, int | bool]:
+    """Return safe multimodal kwargs for base and quantized Qwen snapshots.
+
+    Some compressed-model tokenizer.json files persist the calibration-time
+    ``max_length=4096`` truncation state.  Explicitly disabling truncation is
+    required for high-resolution images whose visual placeholders exceed it.
+    """
+    return {
+        "min_pixels": min_pixels,
+        "max_pixels": max_pixels,
+        "truncation": False,
+    }
+
 # ModelScope 模型注册表(download → 按需拉取)
 # 这些旧产物是在 canonical 快照上二次合并 LoRA 得到的，保留 profile 仅供
 # 历史结果读取，不再作为可解析别名暴露给新入口。

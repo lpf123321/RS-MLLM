@@ -63,6 +63,16 @@ fi
 echo "==> 校验 Pillow"
 ".venv/bin/python" -c 'from PIL import Image; print("    Pillow OK:", Image.__version__)'
 
+echo "==> 校验 RS-MLLM vLLM Token 剪枝插件"
+".venv/bin/python" - <<'PY'
+from importlib.metadata import entry_points
+
+plugins = entry_points().select(group="vllm.general_plugins")
+if not any(item.name == "rs_mllm_token_pruning" for item in plugins):
+    raise SystemExit("[error] rs_mllm_token_pruning entry point missing")
+print("    rs_mllm_token_pruning OK")
+PY
+
 echo "==> 安装 METEOR 英文 WordNet 语料"
 mkdir -p "${EVAL_DIR}/.nltk_data"
 # ``-f`` prevents NLTK 3.10 from opening an interactive retry prompt when a

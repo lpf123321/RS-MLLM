@@ -13,7 +13,7 @@ import atexit
 import argparse
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -30,6 +30,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from rsmllm.eval_reporting import print_key_metrics
+from rsmllm.config import vllm_mm_processor_kwargs
+from rsmllm.pruning_policy import PruningSpec, activate_current_process
 
 
 def _resolve_cli_path(path: Path) -> Path:
@@ -94,6 +96,17 @@ CODE_FILES = base.CODE_FILES + (
     "vision_opd_profile.py",
     "vision_opd_vllm_eval.py",
 )
+PRUNING_CODE_FILES = (
+    REPO_ROOT / "rsmllm" / "pruning_policy.py",
+    Path(__file__).resolve().parent
+    / "vllm_plugin"
+    / "rs_mllm_vllm_plugin"
+    / "__init__.py",
+    Path(__file__).resolve().parent
+    / "vllm_plugin"
+    / "rs_mllm_vllm_plugin"
+    / "model.py",
+)
 
 MAX_PASSES = 3  # token multiplier 1x, 2x, 4x -- same policy as the serial evaluator
 
@@ -111,6 +124,11 @@ def code_sha256() -> str:
     digest = hashlib.sha256()
     for name in CODE_FILES:
         path = package_dir / name
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    for path in PRUNING_CODE_FILES:
+        name = path.relative_to(REPO_ROOT).as_posix()
         digest.update(name.encode("utf-8") + b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
@@ -302,6 +320,8 @@ class VLLMBatchAdapter:
         image_load_workers: int = 4,
         cudagraph_mm_encoder: bool = False,
         mm_encoder_attn_backend: str | None = None,
+        prune_method: str = "none",
+        prune_keep_ratio: float = 1.0,
         skip_content_verification: bool = False,
     ) -> None:
         if enforce_eager and cudagraph_mm_encoder:
@@ -313,6 +333,12 @@ class VLLMBatchAdapter:
             )
         if image_load_workers < 1:
             raise ValueError("image_load_workers must be >= 1")
+        if not 0.0 < prune_keep_ratio <= 1.0:
+            raise ValueError("prune_keep_ratio must be in (0, 1]")
+        if prune_keep_ratio < 1.0 and prune_method not in {"l2norm", "scope_l2"}:
+            raise ValueError(
+                "enabled visual-token pruning requires l2norm or scope_l2"
+            )
         assert_model_allowed(model_path)
         if not skip_content_verification:
             verify_trusted_model_content(model_path, profile_key=profile_key)
@@ -328,6 +354,9 @@ class VLLMBatchAdapter:
         self.enforce_eager = enforce_eager
         self.cudagraph_mm_encoder = cudagraph_mm_encoder
         self.mm_encoder_attn_backend = mm_encoder_attn_backend
+        self.prune_method = prune_method
+        self.prune_keep_ratio = prune_keep_ratio
+        self.inference_wall_seconds = 0.0
         self.family = ""
         self.llm: Any = None
         self.processor: Any = None
@@ -346,6 +375,13 @@ class VLLMBatchAdapter:
             raise
 
     def _load_impl(self) -> dict[str, Any]:
+        pruning_spec = PruningSpec(
+            task="direct",
+            method=self.prune_method,
+            keep_ratio=self.prune_keep_ratio,
+            policy="explicit_vllm_evaluator",
+        )
+        activate_current_process(pruning_spec)
         import torch
         from transformers import AutoConfig, AutoProcessor
         from vllm import LLM
@@ -369,10 +405,9 @@ class VLLMBatchAdapter:
             "trust_remote_code": True,
             "max_model_len": self.max_model_len,
             "limit_mm_per_prompt": {"image": 2},
-            "mm_processor_kwargs": {
-                "min_pixels": self.min_pixels,
-                "max_pixels": self.max_pixels,
-            },
+            "mm_processor_kwargs": vllm_mm_processor_kwargs(
+                self.min_pixels, self.max_pixels
+            ),
             "gpu_memory_utilization": self.gpu_memory_utilization,
             "max_num_seqs": self.max_num_seqs,
             "enforce_eager": self.enforce_eager,
@@ -381,12 +416,21 @@ class VLLMBatchAdapter:
             llm_kwargs["compilation_config"] = {"cudagraph_mm_encoder": True}
         if self.mm_encoder_attn_backend is not None:
             llm_kwargs["mm_encoder_attn_backend"] = self.mm_encoder_attn_backend
+        if pruning_spec.enabled:
+            # vLLM 0.26 uses this validated config switch to activate its
+            # variable-length multimodal scheduler. The plugin supplies image
+            # selection and Qwen3.5 MRoPE recomputation.
+            llm_kwargs["video_pruning_rate"] = pruning_spec.prune_ratio
         self.llm = LLM(**llm_kwargs)
         load_seconds = time.perf_counter() - started
         self.torch = torch
         return {
             "model_type": self.family,
-            "model_class": "Qwen3_5ForConditionalGeneration",
+            "model_class": (
+                "RSMQwen3_5ForConditionalGeneration"
+                if pruning_spec.enabled
+                else "Qwen3_5ForConditionalGeneration"
+            ),
             "processor_class": type(self.processor).__name__,
             "loader": "vllm.LLM",
             "loader_vllm_version": __import__("vllm").__version__,
@@ -405,6 +449,13 @@ class VLLMBatchAdapter:
             # loader; this field records the route selection explicitly.
             "quantization": self.quantization,
             "pruning": {"ratio": 0.0, "modules": 0, "parameters": 0, "zeros": 0},
+            "visual_token_pruning": {
+                "enabled": pruning_spec.enabled,
+                "method": pruning_spec.method,
+                "keep_ratio": pruning_spec.keep_ratio,
+                "prune_ratio": pruning_spec.prune_ratio,
+                "policy": pruning_spec.policy,
+            },
             "cuda_device": torch.cuda.get_device_name(),
             "cuda_capability": list(torch.cuda.get_device_capability()),
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
@@ -539,8 +590,11 @@ class VLLMBatchAdapter:
                 )
             )
         started = time.perf_counter()
-        outputs = self.llm.generate(requests, params)
-        wall = time.perf_counter() - started
+        try:
+            outputs = self.llm.generate(requests, params)
+        finally:
+            wall = time.perf_counter() - started
+            self.inference_wall_seconds += wall
         results: list[GenerationResult] = []
         for (_, _, max_new_tokens), output in zip(items, outputs):
             completion = output.outputs[0]
@@ -595,6 +649,18 @@ def main() -> None:
     parser.add_argument("--image-load-workers", type=int, default=4)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument(
+        "--prune-method",
+        choices=("none", "l2norm", "scope_l2"),
+        default="none",
+        help="vLLM visual-token selector; route/single normally choose this automatically",
+    )
+    parser.add_argument(
+        "--prune-keep-ratio",
+        type=float,
+        default=1.0,
+        help="fraction of merged visual tokens retained, in (0, 1]",
+    )
+    parser.add_argument(
         "--quantization",
         choices=("bf16", "w8a8", "gptq"),
         default="bf16",
@@ -628,6 +694,10 @@ def main() -> None:
         raise ValueError("batch-size must be >= 1")
     if args.image_load_workers < 1:
         raise ValueError("image-load-workers must be >= 1")
+    if not 0.0 < args.prune_keep_ratio <= 1.0:
+        raise ValueError("prune-keep-ratio must be in (0, 1]")
+    if args.prune_keep_ratio < 1.0 and args.prune_method == "none":
+        raise ValueError("prune-method is required when prune-keep-ratio < 1")
     # 默认输出目录: 仓库根/results/<manifest文件名>_<profile>_<时间戳>
     # 每次运行独占目录, 多次跑同一模型互不覆盖; 显式 --output-dir 时尊重传入(保留 resume 语义)
     if args.output_dir is None:
@@ -664,7 +734,7 @@ def main() -> None:
         min_pixels=args.min_pixels,
         max_pixels=args.max_pixels,
         quantization=args.quantization,
-        prune_ratio=0.0,
+        prune_ratio=1.0 - args.prune_keep_ratio,
         profile_key=profile_key,
     )
     config["code_sha256"] = code_sha256()
@@ -681,6 +751,13 @@ def main() -> None:
         "cudagraph_mm_encoder": args.cudagraph_mm_encoder,
         "mm_encoder_attn_backend": args.mm_encoder_attn_backend,
         "max_passes": MAX_PASSES,
+        "visual_token_pruning": {
+            "enabled": args.prune_keep_ratio < 1.0,
+            "method": args.prune_method,
+            "keep_ratio": args.prune_keep_ratio,
+            "prune_ratio": 1.0 - args.prune_keep_ratio,
+            "implementation": "rs-mllm-vllm-pruning",
+        },
     }
     if derived_manifest is not None:
         engine["derived_profile_manifest"] = str(derived_manifest)
@@ -746,6 +823,8 @@ def main() -> None:
         enforce_eager=args.enforce_eager,
         cudagraph_mm_encoder=args.cudagraph_mm_encoder,
         mm_encoder_attn_backend=args.mm_encoder_attn_backend,
+        prune_method=args.prune_method,
+        prune_keep_ratio=args.prune_keep_ratio,
         # The derived profile was fully hash-verified in-process above on the
         # same resolved path; the adapter re-verification would re-read every
         # weight file (multi-GB) without adding a new trust check.
@@ -754,6 +833,7 @@ def main() -> None:
     model_info = adapter.load()
     model_load_seconds = time.perf_counter() - load_started
 
+    inference_started_at = datetime.now(timezone.utc)
     with attempts_path.open("a", encoding="utf-8") as output:
         for pass_index in range(1, MAX_PASSES + 1):
             if not pending:
@@ -858,6 +938,8 @@ def main() -> None:
                     )
             pending = [sample for sample in samples if sample.id not in completed]
 
+    inference_finished_at = datetime.now(timezone.utc)
+
     if pending:
         report_path = output_dir / f"incomplete_report_{os.environ.get('SLURM_JOB_ID', 'local')}.json"
         report_path.write_text(
@@ -883,6 +965,18 @@ def main() -> None:
         model_info,
         model_load_seconds,
         adapter,
+        inference_timing={
+            "schema_version": 1,
+            "started_at_utc": inference_started_at.isoformat(),
+            "finished_at_utc": inference_finished_at.isoformat(),
+            "wall_seconds": adapter.inference_wall_seconds,
+            "scope": (
+                "sum of wall time inside vLLM engine generate calls, including "
+                "engine-side multimodal encoding and retry passes; excludes "
+                "evaluator-side image decoding and prompt construction, model "
+                "loading, result scoring, file writing, and metric report generation"
+            ),
+        },
     )
     # 释放 vLLM 引擎(避免 EngineCore 残留占显存, 影响后续评测)
     try:

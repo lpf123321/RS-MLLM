@@ -35,8 +35,20 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from evaluation.router.rules import route  # 与评测一致的路由规则
-from rsmllm.config import EXPERT_MODEL_ALIASES, LOGS_DIR, REPORT_CONF
+from rsmllm.config import (
+    EXPERT_MODEL_ALIASES,
+    LOGS_DIR,
+    REPORT_CONF,
+    vllm_mm_processor_kwargs,
+)
 from rsmllm.models import get_model
+from rsmllm.pruning_policy import (
+    PruningSpec,
+    configure_vllm_pruning_env,
+    expert_pruning_spec,
+    parse_keep_ratio,
+    require_vllm_plugin,
+)
 
 DEFAULT_PORTS = {"general": 8001, "grounding": 8002, "change": 8003, "caption": 8004}
 EVAL_PY = REPO_ROOT / "evaluation" / "vllm_eval" / ".venv" / "bin" / "python"
@@ -81,11 +93,16 @@ def start_expert(
     device: str | None = None,
     gpu_memory_utilization: float = 0.85,
     python: str = DEFAULT_PYTHON,
+    pruning: PruningSpec | None = None,
 ) -> subprocess.Popen:
     """启动一个专家的 vLLM OpenAI 兼容服务."""
     python_path = _executable_path(python)
     model_path = _runtime_path(model_dir)
     env = dict(os.environ)
+    if pruning is not None:
+        configure_vllm_pruning_env(pruning, env)
+        if pruning.enabled:
+            require_vllm_plugin()
     env.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")  # flashinfer JIT 与 cub 不兼容
     if device is not None:
         env["CUDA_VISIBLE_DEVICES"] = device
@@ -103,19 +120,22 @@ def start_expert(
         "--allowed-local-media-path", "/tmp",
         "--mm-processor-kwargs",
         json.dumps(
-            {
-                "min_pixels": REPORT_CONF["min_pixels"],
-                "max_pixels": REPORT_CONF["max_pixels"],
-            }
+            vllm_mm_processor_kwargs(
+                REPORT_CONF["min_pixels"], REPORT_CONF["max_pixels"]
+            )
         ),
         "--gpu-memory-utilization", str(gpu_memory_utilization),
     ]
+    if pruning is not None and pruning.enabled:
+        cmd.extend(["--video-pruning-rate", format(pruning.prune_ratio, ".12g")])
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOGS_DIR / f"router_{name}.log"
     log_file = log_path.open("a", encoding="utf-8")
     print(
         f"[router] 启动 {name}: {model_path} "
-        f"(port {port}, GPU {device or '默认'}, log {log_path})",
+        f"(port {port}, GPU {device or '默认'}, "
+        f"pruning={pruning.method + '@' + format(pruning.keep_ratio, '.2f') if pruning and pruning.enabled else 'off'}, "
+        f"log {log_path})",
         flush=True,
     )
     process = subprocess.Popen(
@@ -200,6 +220,7 @@ def start_all_experts(
     *,
     devices: list[str],
     gpu_memory_utilization: float | None,
+    prune_keep_ratio: str | float = 1.0,
 ) -> tuple[dict[str, int], list[subprocess.Popen]]:
     """Resolve canonical models and start the four routed vLLM endpoints."""
     ports: dict[str, int] = {}
@@ -227,6 +248,7 @@ def start_all_experts(
                 port,
                 device=device,
                 gpu_memory_utilization=float(cfg.get("gpu_memory_utilization", gpu_mem)),
+                pruning=expert_pruning_spec(name, prune_keep_ratio),
             )
             processes.append(process)
             ports[name] = port
@@ -262,10 +284,12 @@ class LazyExpertPool:
         *,
         device: str | None,
         gpu_memory_utilization: float = 0.85,
+        prune_keep_ratio: str | float = 1.0,
     ) -> None:
         self.quant = quant
         self.device = device
         self.gpu_memory_utilization = gpu_memory_utilization
+        self.prune_keep_ratio = prune_keep_ratio
         self.current_expert: str | None = None
         self.current_process: subprocess.Popen | None = None
         self.lock = threading.Lock()
@@ -290,6 +314,7 @@ class LazyExpertPool:
             port,
             device=self.device,
             gpu_memory_utilization=self.gpu_memory_utilization,
+            pruning=expert_pruning_spec(expert, self.prune_keep_ratio),
         )
         try:
             wait_ready(port, process=process)
@@ -338,6 +363,16 @@ def main() -> int:
     ap.add_argument("--quant", choices=tuple(EXPERT_MODEL_ALIASES), default="bf16")
     ap.add_argument("--devices", help="专家可用 GPU，例如 0,1,2,3；默认自动检测")
     ap.add_argument("--gpu-mem", type=float, help="每个专家的 GPU 显存占比")
+    ap.add_argument(
+        "--prune-keep-ratio",
+        type=parse_keep_ratio,
+        default=1.0,
+        metavar="RATIO|adaptive",
+        help=(
+            "视觉 Token 保留率；剪枝方法按 expert 对应任务自动选择，"
+            "默认 1.0=关闭"
+        ),
+    )
     args = ap.parse_args()
 
     for key in ("NO_PROXY", "no_proxy"):
@@ -372,6 +407,7 @@ def main() -> int:
                 args.quant,
                 device=devices[0] if devices else None,
                 gpu_memory_utilization=args.gpu_mem or 0.85,
+                prune_keep_ratio=args.prune_keep_ratio,
             )
             print(
                 "[router] 单 GPU 模式: 按 prompt 加载命中专家，切换专家时自动释放旧实例。",
@@ -383,6 +419,7 @@ def main() -> int:
                 config,
                 devices=devices,
                 gpu_memory_utilization=args.gpu_mem,
+                prune_keep_ratio=args.prune_keep_ratio,
             )
             detail = " ".join(f"{name}:{ports[name]}" for name in EXPERT_ORDER)
             print(f"[router] 全部专家就绪: {detail}", flush=True)
@@ -403,6 +440,7 @@ def main() -> int:
             if lazy_pool.device is not None:
                 command += ["--device", lazy_pool.device]
             command += ["--gpu-mem", str(lazy_pool.gpu_memory_utilization)]
+            command += ["--prune-keep-ratio", str(args.prune_keep_ratio)]
         try:
             return subprocess.run(command, cwd=str(REPO_ROOT), check=False).returncode
         finally:
