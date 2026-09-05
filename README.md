@@ -317,6 +317,10 @@ bash evaluation/vllm_eval/setup_env.sh     # 推理/评测环境（vLLM 0.26 cu1
 
 #### 4.3.1 评测图片：已有官方数据放哪里
 
+> **图像版本警告：本仓库不二次分发 4096 级及更高分辨率的图片。**
+> ModelScope 提供的 XLRS Caption / Grounding 图片包是 **1024 级低分辨率版本**，不能用于复现报告中的原图 / 4096 级评测结果，也不能通过放大缩图替代原图。
+> 请评委自行从 Hugging Face 官方数据集 [XLRS Caption](https://huggingface.co/datasets/initiacms/XLRS-Bench_caption_en) 和 [XLRS Grounding](https://huggingface.co/datasets/initiacms/XLRS-Bench_visual_grounding_en) 下载原始数据，遵守原数据集许可，并按下面的目录契约准备图片。
+
 官方数据集不随仓库重复分发。若已从赛题 / 官方渠道取得原始图片，按下面的**目录契约**
 放到 `datasets/shared_datasets/<数据名>/` 即可；评测入口检测到图片就绪会直接复用，
 不会重新下载：
@@ -328,7 +332,7 @@ datasets/shared_datasets/
 ├── MME-RealWorld-RS/                  # mme: 官方 images_resized/mme_*.png
 ├── XLRS-Bench-lite/                   # xlrs: images_resized/xlrs_00000.png (重编号)
 ├── XLRS-Bench_caption_en/             # xlrs_caption: images_exported/xlrs_caption_*.jpg
-├── XLRS-Bench_visual_grounding_en/    # xlrs_grounding: images_exported_test/xlrs_vg_*.jpg
+├── XLRS-Bench_visual_grounding_en/    # xlrs_grounding: images_exported_test_4096/xlrs_vg_*.jpg
 └── LEVIR-CC/                          # levircc: 官方 zip 原文件名直放
     └── images/test/A/test_000001.png
 ```
@@ -338,8 +342,8 @@ datasets/shared_datasets/
   zip 解压后文件自然对上，无需改名；
 - XLRS 三件套 / MME：清单引用的是**预处理重编号名**（`images_resized/xlrs_00000.png`、
   `images_exported/xlrs_caption_00000.jpg`），官方 HF 数据是 arrow 内嵌图；若你拿到的
-  不是与清单同名的文件，建议让评测入口从官方源自动下载并导出（脚本会按 `index`
-  列顺序重编号），或按上述命名规则手动对齐。
+  不是与清单同名的文件，请先按对应任务的样本编号导出并对齐；Grounding 须使用
+  4096 级图片及 `images_exported_test_4096` 目录，不要直接将 1024 级缓存改名。
 
 <!--
 若没有官方数据，交互式控制台会在首次评测时从 ModelScope 自动下载测试集图片并

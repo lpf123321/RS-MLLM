@@ -49,7 +49,7 @@
   - 目录契约：`datasets/shared_datasets/<VRSBench|MME-RealWorld-RS|XLRS-Bench-lite|XLRS-Bench_caption_en|XLRS-Bench_visual_grounding_en|LEVIR-CC>/`
 - **评测清单**（Sample schema）：`evaluation/vllm_eval/manifests/`（gitignore，由 `scripts/build_sample_manifest.py` 从 `datasets_data/` 转换，`--images-root` 重写路径）
 - **训练数据**：`bash scripts/fetch_training_data.sh`（默认 `yasumi/rs-mllm-datasets`，队友仓库）
-- datasets_data/*.jsonl 是 **Git LFS**（clone 后 `git lfs pull`）
+- datasets_data/*.jsonl 是普通 Git 文本，clone 后即完整可用；图片和模型另从 ModelScope 获取。
 
 ## 4. 评测（唯一入口）
 

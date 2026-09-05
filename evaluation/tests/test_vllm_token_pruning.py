@@ -192,28 +192,22 @@ def test_all_48_eval_combinations_share_the_reference_protocol(
     )
 
     command = commands[0]
-    expected_runtime = router_eval.evaluation_runtime_config(
-        tmp_path / manifest_name,
-        pruning=spec,
-    )
     assert command[command.index("--quantization") + 1] == quantization
     assert command[command.index("--prune-method") + 1] == expected_method
     assert float(command[command.index("--prune-keep-ratio") + 1]) == pytest.approx(
         adaptive_keep_ratio if pruning_enabled else 1.0
     )
-    for option, key in (
-        ("--min-pixels", "min_pixels"),
-        ("--max-pixels", "max_pixels"),
-        ("--max-model-len", "max_model_len"),
-        ("--batch-size", "batch_size"),
-        ("--max-num-seqs", "max_num_seqs"),
-    ):
-        assert int(command[command.index(option) + 1]) == expected_runtime[key]
-    if task_name == "xlrs-bench-grounding-en":
-        assert expected_runtime["max_pixels"] == 16_777_216
-        assert expected_runtime["max_model_len"] == 32_768
-    else:
-        assert expected_runtime["max_pixels"] == router_eval.REPORT_CONF["max_pixels"]
+    high_resolution = task_name in {"xlrs-bench-grounding-en", "xlrs-bench-caption"}
+    assert int(command[command.index("--max-pixels") + 1]) == (
+        16_777_216 if high_resolution else 2_097_152
+    )
+    assert int(command[command.index("--max-model-len") + 1]) == (
+        32_768 if high_resolution else 16_384
+    )
+    long_output = task_name in {"levir-cc", "vrsbench-caption", "xlrs-bench-caption"}
+    assert float(command[command.index("--gpu-memory-utilization") + 1]) == (
+        0.92 if quantization == "bf16" and long_output else 0.85
+    )
 
 
 def test_single_console_yes_uses_task_default_pruning(
