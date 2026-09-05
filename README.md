@@ -339,9 +339,9 @@ datasets/shared_datasets/
   不是与清单同名的文件，建议让评测入口从官方源自动下载并导出（脚本会按 `index`
   列顺序重编号），或按上述命名规则手动对齐。
 
-
+<!--
 若没有官方数据，交互式控制台会在首次评测时从 ModelScope 自动下载测试集图片并
-摆放到上述目录。若网络不稳，可先运行 `python scripts/fetch_benchmark_data.py --all`。
+摆放到上述目录。若网络不稳，可先运行 `python scripts/fetch_benchmark_data.py --all`。 -->
 
 <!-- 摆放完成后可手动预构建评测清单（可选；不跑也不影响，首次评测会自动构建）：
 
@@ -376,7 +376,7 @@ python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
 
 菜单路径：`./rsmllm.sh` → `[5] 数据预处理` → `download`。 -->
 
-#### 3.3.2 模型：下载到本地（评测前准备好）
+#### 3.3.2 模型：下载到本地
 
 评测只使用以下 12 个专家模型，即 4 个专家 × 3 种精度：
 
@@ -391,7 +391,10 @@ python scripts/fetch_benchmark_data.py --dataset vrsbench --source hf
 `.models/models/<组织--仓库>/snapshots/<版本>/`；目录中已有完整模型时会自动复用，
 不会重复下载或再复制到 `models/`。
 
-一次下载全部 12 个模型：
+<details>
+<summary><b>手动批量下载模型（点击展开）</b></summary>
+
+交互式控制台会自动下载缺失模型；如需提前下载全部 12 个模型，可运行：
 
 ```bash
 evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --all
@@ -417,6 +420,8 @@ evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py --quant gptq
 evaluation/vllm_eval/.venv/bin/python scripts/fetch_models.py \
   expert_general expert_general_w8a8 expert_general_gptq
 ```
+
+</details>
 
 模型来自 ModelScope 的 `Fun10165/rs-mllm-*` 仓库（[https://modelscope.cn/profile/Fun10165](https://modelscope.cn/profile/Fun10165)）。下载完成后，`route` 和
 `single` 评测都会优先使用本地模型；离线运行可设置
@@ -498,16 +503,12 @@ base + delta + PEFT LoRA 合并，不应再次叠加 LoRA。change/caption 为 b
 | Referring / Grounding | L2Norm | 75% |
 | Change / Caption | L2Norm | 50% |
 
-剪枝由 vLLM 的 Qwen3.5-VL 插件执行，`route` 与 `single` 使用同一实现；配置会写入
-`run_config.json`。三种量化档使用相同的图片、prompt 和计分链路，XLRS Grounding
-无论是否剪枝都保持 4096 图像协议。
+`route` 与 `single` 使用同一套 vLLM 评测与剪枝实现；三种量化档共用相同的图片、
+prompt 和计分链路，XLRS Grounding 始终使用 4096 图像协议。运行配置记录在
+`run_config.json`。
 
-评测结束后，控制台会汇总关键指标和每个数据集的纯推理耗时。详细结果保存在
-`results/`；正式分见 `clean_summary.json`，推理耗时见 `inference_time.json`。
-该时间只累计 vLLM 引擎的生成调用（包含引擎内的视觉编码和必要的重试），
-不包含评测器侧图像解码与 prompt 构建、模型加载、结果计分、文件写入和指标报告生成；
-同一数值也会写入 `efficiency.json` 和
-`run_manifest.json` 的 `inference_wall_seconds`。
+评测结束后，控制台会汇总关键指标和纯推理耗时。完整结果在 `results/`：正式分见
+`clean_summary.json`，耗时见 `inference_time.json`（只统计 vLLM 生成，不含模型加载和计分）。
 
 <!-- <details>
 <summary><b>从原始推理结果重算全部指标（点击展开）</b></summary>
@@ -554,9 +555,23 @@ results/<run-dir>/metrics/
 
 #### 参考结果
 
-使用当前仓库的 BF16 专家模型、完整测试集和默认参数时，可先确认每项的
-`生成错误=0`，再对照 [五、实验结果](#五实验结果) 中的最终指标核验链路是否正确
-（控制台末尾汇总与结果目录中的 `clean_summary.json` 亦为同一套正式口径）。
+以下是当前四个 **BF16（未量化）专家、开启默认剪枝、完整测试集**的参考结果。
+复现时应同时确认每项 `生成错误=0`。
+
+| 任务 | 测试用例数 | 关键指标 | 纯推理时间 |
+|---|---:|---|---:|
+| VRSBench-VQA | 37,409 | Accuracy **67.74%** | 8分14秒 |
+| MME-RealWorld-RS | 3,722 | Accuracy **66.95%** | 3分29秒 |
+| XLRS-Bench-lite | 2,983 | Accuracy **48.11%** | 3分13秒 |
+| VRSBench-Referring | 16,159 | Acc@0.5 **74.35%**，Acc@0.7 **55.66%**，mIoU **63.83%** | 8分50秒 |
+| XLRS-Grounding | 6,310 | Acc@0.5 **32.47%**，Acc@0.7 **23.71%**，mIoU **27.85%** | 6小时52分22秒 |
+| LEVIR-CC | 1,929 | BLEU-4 **52.50%**，METEOR **73.26%**，ROUGE-L **73.25%**，CIDEr-D **135.38%** | 1分31秒 |
+| VRSBench-Caption | 9,350 | BLEU-4 **15.72%**，METEOR **37.35%**，ROUGE-L **38.06%**，CIDEr-D **35.77%** | 11分33秒 |
+| XLRS-Caption | 934 | BLEU-4 **6.61%**，METEOR **28.81%**，ROUGE-L **20.89%**，CIDEr-D **1.52%** | 7分34秒 |
+| **合计** | **78,796** | — | **约7小时37分钟** |
+
+实际结果可能因 GPU 和依赖版本产生轻微波动；控制台汇总与 `clean_summary.json`
+使用同一计分口径。
 
 <!--
 以下命令行、量化和实验级入口暂时隐藏，源码说明保留。
